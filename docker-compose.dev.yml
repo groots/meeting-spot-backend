@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ~/.config/gcloud:/root/.config/gcloud  # Mount gcloud config for ADC
+    environment:
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql+psycopg2://postgres:ggSO12ro9u5N1VxANoQOlyGDuOzsHyv3Su7t9LO9IiQ@localhost:5433/findameetingspot_dev
+    network_mode: host  # Use host networking to access Cloud SQL proxy
+    extra_hosts:
+      - "host.docker.internal:host-gateway" 
