@@ -1,4 +1,3 @@
-
 from .. import db
 from .enums import ContactType, MeetingRequestStatus
 from .meeting_request import MeetingRequest

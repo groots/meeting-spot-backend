@@ -1,3 +1,5 @@
+"""Test the API routes."""
+
 import json
 
 from app.models import MeetingRequestStatus

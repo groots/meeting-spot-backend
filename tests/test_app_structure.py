@@ -1,3 +1,5 @@
+"""Test the application structure."""
+
 import os
 import pytest
 from flask import Flask

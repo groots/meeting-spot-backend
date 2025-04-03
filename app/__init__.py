@@ -1,4 +1,3 @@
-
 from flask import Flask
 from flask_cors import CORS
 from flask_migrate import Migrate
@@ -31,7 +30,7 @@ def create_app(config_name="default") -> None:
         CORS(app, resources={r"/*": {"origins": app.config["CORS_ORIGINS"]}})
 
     # Import models to register them with SQLAlchemy
-    from .models import MeetingRequest, MeetingRequestStatus, ContactType
+    from .models import MeetingRequest, MeetingRequestStatus, ContactType  # noqa: F401
 
     # Register API blueprints
     from .routes import api_bp as api_v2_bp
