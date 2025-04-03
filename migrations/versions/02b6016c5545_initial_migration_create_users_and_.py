@@ -35,7 +35,7 @@ def upgrade():
 
     op.create_table(
         "meeting_requests",
-        sa.Column("request_id", sa.UUID(), nullable=False),
+        sa.Column("request_id", postgresql.UUID(), nullable=False),
         sa.Column("user_a_id", sa.Integer(), nullable=True),
         sa.Column(
             "user_b_contact_type",
