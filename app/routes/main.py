@@ -3,6 +3,7 @@ import secrets
 from datetime import datetime, timezone, timedelta
 import os
 import uuid
+from typing import Tuple, Dict, Any, Optional, List
 
 import googlemaps
 from flask import Blueprint, current_app, jsonify, request, send_from_directory
@@ -137,7 +138,7 @@ def get_request_status(request_id) -> None:
     )
 
 
-def validate_request_id(request_id: str) -> tuple[bool, str, int]:
+def validate_request_id(request_id: str) -> Tuple[bool, str, int]:
     """Validate the request ID format."""
     try:
         return True, str(uuid.UUID(request_id)), 200
@@ -145,7 +146,7 @@ def validate_request_id(request_id: str) -> tuple[bool, str, int]:
         return False, "Invalid request ID format", 400
 
 
-def validate_request_data(data: dict) -> tuple[bool, str, int]:
+def validate_request_data(data: Dict[str, Any]) -> Tuple[bool, str, int]:
     """Validate the request data."""
     if not data:
         return False, "No data provided", 400
@@ -158,7 +159,7 @@ def validate_request_data(data: dict) -> tuple[bool, str, int]:
     return True, "", 200
 
 
-def validate_meeting_request(meeting_request, token: str) -> tuple[bool, str, int]:
+def validate_meeting_request(meeting_request: Optional[MeetingRequest], token: str) -> Tuple[bool, str, int]:
     """Validate the meeting request and token."""
     if not meeting_request:
         return False, "Request not found", 404
