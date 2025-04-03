@@ -66,7 +66,7 @@ def verify_user_b_token(token) -> None:
         return None
 
 
-@api_bp.route("/meeting-requests", methods=["POST"])
+@api_bp.route("/meeting-requests/", methods=["POST"])
 def create_request() -> None:
     """Create a new meeting request."""
     data = request.get_json()
@@ -116,7 +116,7 @@ def create_request() -> None:
     )
 
 
-@api_bp.route("/meeting-requests/<request_id>/status", methods=["GET"])
+@api_bp.route("/meeting-requests/<request_id>/status/", methods=["GET"])
 def get_request_status(request_id) -> None:
     """Get the status of a meeting request."""
     try:
@@ -148,7 +148,7 @@ def get_request_status(request_id) -> None:
     )
 
 
-@api_bp.route("/meeting-requests/<request_id>/respond", methods=["POST"])
+@api_bp.route("/meeting-requests/<request_id>/respond/", methods=["POST"])
 def respond_to_request(request_id) -> None:
     """Handle user B's response to a meeting request."""
     try:
@@ -180,7 +180,7 @@ def respond_to_request(request_id) -> None:
                    "status": meeting_request.status.value})
 
 
-@api_bp.route("/meeting-requests/<request_id>/results", methods=["GET"])
+@api_bp.route("/meeting-requests/<request_id>/results/", methods=["GET"])
 def get_request_results(request_id) -> None:
     """Get the results of a meeting request calculation."""
     try:
@@ -217,7 +217,7 @@ def get_request_results(request_id) -> None:
     )
 
 
-@api_bp.route("/meeting-requests/<request_id>/select-spot", methods=["POST"])
+@api_bp.route("/meeting-requests/<request_id>/select-spot/", methods=["POST"])
 def select_spot(request_id) -> None:
     """Handle selection of a meeting spot."""
     try:
