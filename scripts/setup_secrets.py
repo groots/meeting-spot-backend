@@ -1,76 +1,121 @@
-import os
+"""Script for setting up secrets in Google Cloud Secret Manager.
 
-from dotenv import load_dotenv
+This script helps manage secrets for the Find a Meeting Spot application by
+providing functionality to create, update, and delete secrets in Google Cloud
+Secret Manager.
+"""
+
+import argparse
+import os
+from typing import Optional
+
 from google.cloud import secretmanager
 
 
-def create_secret(secret_client, project_id, secret_id, secret_value) -> None:
-    """Create a secret in Secret Manager if it doesn't exist."""
+def create_secret(project_id: str, secret_id: str, secret_value: str) -> None:
+    """Create a new secret in Google Cloud Secret Manager.
+
+    Args:
+        project_id: The Google Cloud project ID.
+        secret_id: The ID of the secret to create.
+        secret_value: The value to store in the secret.
+    """
+    client = secretmanager.SecretManagerServiceClient()
     parent = f"projects/{project_id}"
 
-    try:
-        # Check if secret exists
-        secret_client.get_secret(request={"name": f"{parent}/secrets/{secret_id}"})
-        print(f"Secret {secret_id} already exists")
-    except Exception:
-        # Create the secret
-        secret = secret_client.create_secret(
-            request={
-                "parent": parent,
-                "secret_id": secret_id,
-                "secret": {"replication": {"automatic": {}}},
-            }
-        )
-        print(f"Created secret: {secret.name}")
+    # Create the secret
+    secret = client.create_secret(
+        request={
+            "parent": parent,
+            "secret_id": secret_id,
+            "secret": {"replication": {"automatic": {}}},
+        }
+    )
 
     # Add the secret version
-    secret_client.add_secret_version(
+    client.add_secret_version(
         request={
-            "parent": f"{parent}/secrets/{secret_id}",
+            "parent": secret.name,
             "payload": {"data": secret_value.encode("UTF-8")},
         }
     )
-    print(f"Added version to secret: {secret_id}")
+
+    print(f"Created secret {secret_id}")
+
+
+def update_secret(project_id: str, secret_id: str, secret_value: str) -> None:
+    """Update an existing secret in Google Cloud Secret Manager.
+
+    Args:
+        project_id: The Google Cloud project ID.
+        secret_id: The ID of the secret to update.
+        secret_value: The new value to store in the secret.
+    """
+    client = secretmanager.SecretManagerServiceClient()
+    name = f"projects/{project_id}/secrets/{secret_id}"
+
+    # Add a new version to the secret
+    client.add_secret_version(
+        request={
+            "parent": name,
+            "payload": {"data": secret_value.encode("UTF-8")},
+        }
+    )
+
+    print(f"Updated secret {secret_id}")
+
+
+def delete_secret(project_id: str, secret_id: str) -> None:
+    """Delete a secret from Google Cloud Secret Manager.
+
+    Args:
+        project_id: The Google Cloud project ID.
+        secret_id: The ID of the secret to delete.
+    """
+    client = secretmanager.SecretManagerServiceClient()
+    name = f"projects/{project_id}/secrets/{secret_id}"
+
+    client.delete_secret(request={"name": name})
+    print(f"Deleted secret {secret_id}")
 
 
 def main() -> None:
-    # Load environment variables
-    load_dotenv()
-
-    # Initialize Secret Manager client
-    secret_client = secretmanager.SecretManagerServiceClient()
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "find-a-meeting-spot")
-
-    # Database secrets
-    create_secret(secret_client, project_id, "db-user", os.getenv("DB_USER", "postgres"))
-    create_secret(
-        secret_client,
-        project_id,
-        "db-pass",
-        os.getenv("DB_PASS", "ggSO12ro9u5N1VxANoQOlyGDuOzsHyv3Su7t9LO9IiQ"),
+    """Main function for the setup_secrets script."""
+    parser = argparse.ArgumentParser(description="Manage secrets in Google Cloud Secret Manager")
+    parser.add_argument(
+        "--project-id",
+        required=True,
+        help="Google Cloud project ID",
     )
-    create_secret(secret_client, project_id, "db-name", os.getenv("DB_NAME", "findameetingspot"))
-    create_secret(
-        secret_client,
-        project_id,
-        "instance-connection-name",
-        os.getenv(
-            "INSTANCE_CONNECTION_NAME",
-            "find-a-meeting-spot:us-central1:findameetingspot",
-        ),
+    parser.add_argument(
+        "--secret-id",
+        required=True,
+        help="ID of the secret to manage",
+    )
+    parser.add_argument(
+        "--secret-value",
+        help="Value to store in the secret",
+    )
+    parser.add_argument(
+        "--delete",
+        action="store_true",
+        help="Delete the secret instead of creating/updating it",
     )
 
-    # API keys and security
-    create_secret(
-        secret_client,
-        project_id,
-        "google-maps-api-key",
-        os.getenv("GOOGLE_MAPS_API_KEY", ""),
-    )
-    create_secret(secret_client, project_id, "encryption-key", os.getenv("ENCRYPTION_KEY", ""))
-    create_secret(secret_client, project_id, "jwt-secret-key", os.getenv("JWT_SECRET_KEY", "dev"))
+    args = parser.parse_args()
 
-    print("All secrets have been set up successfully!")
+    if args.delete:
+        delete_secret(args.project_id, args.secret_id)
+    elif args.secret_value:
+        try:
+            create_secret(args.project_id, args.secret_id, args.secret_value)
+        except Exception as e:
+            if "already exists" in str(e):
+                update_secret(args.project_id, args.secret_id, args.secret_value)
+            else:
+                raise
+    else:
+        parser.error("Either --secret-value or --delete must be specified")
 
 
 if __name__ == "__main__":
