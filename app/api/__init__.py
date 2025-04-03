@@ -1,4 +1,3 @@
-from typing import Any, Dict, List, Optional, Union
 
 from flask import Blueprint
 from flask_restx import Api

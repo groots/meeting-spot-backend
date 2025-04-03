@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, Any, Optional
 
 from flask import current_app
 from sqlalchemy import Index

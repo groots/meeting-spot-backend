@@ -1,4 +1,3 @@
-from typing import Any, Dict, List, Optional, Union
 
 from .. import db
 from .enums import ContactType, MeetingRequestStatus

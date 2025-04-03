@@ -1,5 +1,3 @@
-from typing import Any, Dict, List, Optional, Union
-import os
 import requests
 
 from flask import current_app

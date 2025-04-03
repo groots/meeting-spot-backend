@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Union
 
 from flask import request
 from flask_restx import Namespace, Resource, fields

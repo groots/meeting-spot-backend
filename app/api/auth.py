@@ -1,5 +1,4 @@
 import uuid
-from typing import Any, Dict, List, Optional, Union
 
 from flask import request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required

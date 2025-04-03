@@ -2,7 +2,6 @@ import os
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Union
 
 import jwt
 from cryptography.fernet import Fernet

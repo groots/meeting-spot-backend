@@ -1,7 +1,6 @@
 import re
 import secrets
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Union
 import os
 import uuid
 
@@ -10,9 +9,6 @@ from flask import Blueprint, current_app, jsonify, request, send_from_directory
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from app.models import ContactType, MeetingRequest, MeetingRequestStatus, db
-
-# Import Config if needed directly, or rely on current_app.config
-from app.utils.notifications import send_email, send_sms
 
 # Create a Blueprint for the main API functionality
 # We'll add routes to this blueprint
@@ -141,46 +137,67 @@ def get_request_status(request_id) -> None:
     )
 
 
-@api_bp.route("/meeting-requests/<request_id>/respond", methods=["POST"])
-def respond_to_request(request_id) -> None:
-    """Respond to a meeting request with address B."""
+def validate_request_id(request_id: str) -> tuple[bool, str, int]:
+    """Validate the request ID format."""
     try:
-        request_id = uuid.UUID(request_id)
+        return True, str(uuid.UUID(request_id)), 200
     except ValueError:
-        return jsonify({"error": "Invalid request ID format"}), 400
+        return False, "Invalid request ID format", 400
 
-    data = request.get_json()
+
+def validate_request_data(data: dict) -> tuple[bool, str, int]:
+    """Validate the request data."""
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return False, "No data provided", 400
 
     required_fields = ["address_b", "token"]
     for field in required_fields:
         if field not in data:
-            return jsonify({"error": f"Missing required field: {field}"}), 400
+            return False, f"Missing required field: {field}", 400
 
-    meeting_request = MeetingRequest.query.get(request_id)
+    return True, "", 200
+
+
+def validate_meeting_request(meeting_request, token: str) -> tuple[bool, str, int]:
+    """Validate the meeting request and token."""
     if not meeting_request:
-        return jsonify({"error": "Request not found"}), 404
+        return False, "Request not found", 404
 
-    if meeting_request.token_b != data["token"]:
-        return jsonify({"error": "Invalid token"}), 403
+    if meeting_request.token_b != token:
+        return False, "Invalid token", 403
 
     if meeting_request.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
-        return jsonify({"error": "Request has expired"}), 400
+        return False, "Request has expired", 400
+
+    return True, "", 200
+
+
+@api_bp.route("/meeting-requests/<request_id>/respond", methods=["POST"])
+def respond_to_request(request_id) -> None:
+    """Respond to a meeting request with address B."""
+    # Validate request ID
+    is_valid, result, status_code = validate_request_id(request_id)
+    if not is_valid:
+        return jsonify({"error": result}), status_code
+
+    # Validate request data
+    data = request.get_json()
+    is_valid, error_msg, status_code = validate_request_data(data)
+    if not is_valid:
+        return jsonify({"error": error_msg}), status_code
+
+    # Get and validate meeting request
+    meeting_request = MeetingRequest.query.get(result)
+    is_valid, error_msg, status_code = validate_meeting_request(meeting_request, data["token"])
+    if not is_valid:
+        return jsonify({"error": error_msg}), status_code
 
     try:
         meeting_request.address_b = data["address_b"]
         meeting_request.status = MeetingRequestStatus.CALCULATING
         db.session.commit()
 
-        return (
-            jsonify(
-                {
-                    "status": meeting_request.status.value,
-                }
-            ),
-            200,
-        )
+        return jsonify({"status": meeting_request.status.value}), 200
 
     except Exception as e:
         db.session.rollback()

@@ -1,5 +1,4 @@
 import uuid
-from typing import Any, Dict, List, Optional, Union
 
 from flask import request
 from flask_restx import Namespace, Resource, fields

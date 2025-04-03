@@ -1,10 +1,6 @@
 import json
-import uuid
-from datetime import datetime, timedelta, timezone
 
-import pytest
-
-from app.models import ContactType, MeetingRequest, MeetingRequestStatus
+from app.models import MeetingRequestStatus
 
 
 def test_create_request(client) -> None:

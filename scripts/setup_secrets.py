@@ -1,5 +1,4 @@
 import os
-from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
 from google.cloud import secretmanager

@@ -1,8 +1,6 @@
 import os
-from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
-from google.cloud import secretmanager
 from sqlalchemy.pool import StaticPool
 
 # Load environment variables
@@ -65,7 +63,8 @@ class DevelopmentConfig(Config):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "DATABASE_URL",
-        "postgresql+psycopg2://postgres:ggSO12ro9u5N1VxANoQOlyGDuOzsHyv3Su7t9LO9IiQ@localhost:5433/findameetingspot_dev",
+        "postgresql+psycopg2://postgres:ggSO12ro9u5N1VxANoQOlyGDuOzsHyv3Su7t9LO9IiQ@"
+        "localhost:5433/findameetingspot_dev",
     )
 
 
@@ -91,7 +90,8 @@ class ProductionConfig(Config):
     # Database configuration
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "DATABASE_URL",
-        "postgresql+pg8000:///findameetingspot?host=/cloudsql/find-a-meeting-spot:us-east1:findameetingspot",
+        "postgresql+pg8000:///findameetingspot?host=/cloudsql/"
+        "find-a-meeting-spot:us-east1:findameetingspot",
     )
 
     # Set up SQLAlchemy with connection pool
