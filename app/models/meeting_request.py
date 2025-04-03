@@ -26,9 +26,7 @@ class MeetingRequest(db.Model):
 
     # User B contact info
     user_b_contact_type = db.Column(db.Enum(ContactType), nullable=False)
-    user_b_contact_encrypted = db.Column(
-        db.String(255), nullable=False
-    )  # Store encrypted email/phone
+    user_b_contact_encrypted = db.Column(db.String(255), nullable=False)  # Store encrypted email/phone
 
     # Request details
     location_type = db.Column(db.String(50), nullable=False)  # e.g., "Restaurant / Food"
@@ -91,13 +89,9 @@ class MeetingRequest(db.Model):
         if not self.user_b_contact_encrypted:
             return None
         try:
-            return decrypt_data(
-                self.user_b_contact_encrypted, current_app.config.get("ENCRYPTION_KEY")
-            )
+            return decrypt_data(self.user_b_contact_encrypted, current_app.config.get("ENCRYPTION_KEY"))
         except ValueError as e:
-            current_app.logger.error(
-                f"Failed to decrypt contact info for request {self.request_id}: {e}"
-            )
+            current_app.logger.error(f"Failed to decrypt contact info for request {self.request_id}: {e}")
             return None
 
     @user_b_contact.setter
@@ -107,9 +101,7 @@ class MeetingRequest(db.Model):
             self.user_b_contact_encrypted = None
             return
         try:
-            self.user_b_contact_encrypted = encrypt_data(
-                value, current_app.config.get("ENCRYPTION_KEY")
-            )
+            self.user_b_contact_encrypted = encrypt_data(value, current_app.config.get("ENCRYPTION_KEY"))
         except ValueError as e:
             current_app.logger.error(f"Failed to encrypt contact info: {e}")
             raise

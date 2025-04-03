@@ -15,9 +15,7 @@ meeting_request_model = api.model(
     {
         "request_id": fields.String(description="Unique identifier for the request"),
         "user_a_id": fields.String(description="ID of the user who initiated the request"),
-        "user_b_contact_type": fields.String(
-            description="Type of contact for user B (email, phone, sms)"
-        ),
+        "user_b_contact_type": fields.String(description="Type of contact for user B (email, phone, sms)"),
         "location_type": fields.String(description="Type of location (e.g., Restaurant / Food)"),
         "address_a_lat": fields.Float(description="Latitude of user A's location"),
         "address_a_lon": fields.Float(description="Longitude of user A's location"),
@@ -35,12 +33,8 @@ create_request_model = api.model(
     {
         "address_a": fields.String(required=True, description="Address of user A"),
         "location_type": fields.String(required=True, description="Type of location"),
-        "user_b_contact_type": fields.String(
-            required=True, description="Type of contact for user B"
-        ),
-        "user_b_contact": fields.String(
-            required=True, description="Contact information for user B"
-        ),
+        "user_b_contact_type": fields.String(required=True, description="Type of contact for user B"),
+        "user_b_contact": fields.String(required=True, description="Contact information for user B"),
     },
 )
 

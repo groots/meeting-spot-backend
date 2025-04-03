@@ -16,9 +16,7 @@ def test_send_email_development():
     mock_app.config.get.return_value = "development"
     mock_logger = MagicMock()
 
-    with patch("app.utils.notifications.current_app", mock_app), patch(
-        "app.utils.notifications.logger", mock_logger
-    ):
+    with patch("app.utils.notifications.current_app", mock_app), patch("app.utils.notifications.logger", mock_logger):
         result = send_email("test@example.com", "Test Subject", "Test Body")
         assert result is True
         mock_logger.info.assert_has_calls(
@@ -58,9 +56,7 @@ def test_send_email_missing_config():
     }.get(key, default)
     mock_logger = MagicMock()
 
-    with patch("app.utils.notifications.current_app", mock_app), patch(
-        "app.utils.notifications.logger", mock_logger
-    ):
+    with patch("app.utils.notifications.current_app", mock_app), patch("app.utils.notifications.logger", mock_logger):
         result = send_email("test@example.com", "Test Subject", "Test Body")
         assert result is False
         mock_logger.error.assert_called_once_with(
@@ -74,9 +70,7 @@ def test_send_sms():
     mock_app.config.get.return_value = "development"
     mock_logger = MagicMock()
 
-    with patch("app.utils.notifications.current_app", mock_app), patch(
-        "app.utils.notifications.logger", mock_logger
-    ):
+    with patch("app.utils.notifications.current_app", mock_app), patch("app.utils.notifications.logger", mock_logger):
         result = send_sms("+1234567890", "Test Message")
         assert result is True
         mock_logger.info.assert_has_calls(

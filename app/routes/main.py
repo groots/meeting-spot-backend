@@ -41,9 +41,7 @@ def validate_request_data(data: Dict[str, Any]) -> Tuple[bool, str, int]:
     return True, "", 200
 
 
-def validate_meeting_request(
-    meeting_request: Optional[MeetingRequest], token: str
-) -> Tuple[bool, str, int]:
+def validate_meeting_request(meeting_request: Optional[MeetingRequest], token: str) -> Tuple[bool, str, int]:
     """Validate the meeting request and token."""
     if not meeting_request:
         return False, "Request not found", 404

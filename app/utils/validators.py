@@ -245,9 +245,7 @@ def validate_availability(start_time: str, end_time: str, existing_bookings: lis
         return False
 
 
-def validate_pagination_params(
-    page: int, per_page: int, max_per_page: int = 100
-) -> tuple[bool, Optional[str]]:
+def validate_pagination_params(page: int, per_page: int, max_per_page: int = 100) -> tuple[bool, Optional[str]]:
     """
     Validate pagination parameters.
     Returns a tuple of (is_valid, error_message).

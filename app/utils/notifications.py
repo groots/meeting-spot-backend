@@ -29,9 +29,7 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
 
         # In production, check for required config
         if not api_key or not domain:
-            logger.error(
-                "Missing Mailgun configuration. " "Please set MAILGUN_API_KEY and MAILGUN_DOMAIN."
-            )
+            logger.error("Missing Mailgun configuration. " "Please set MAILGUN_API_KEY and MAILGUN_DOMAIN.")
             return False
 
         # Mailgun API endpoint

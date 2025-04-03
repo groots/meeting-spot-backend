@@ -54,9 +54,7 @@ class MetricsCollector:
 
         # Calculate average response time
         if self.response_times[endpoint]:
-            avg_response_time = sum(self.response_times[endpoint]) / len(
-                self.response_times[endpoint]
-            )
+            avg_response_time = sum(self.response_times[endpoint]) / len(self.response_times[endpoint])
             if avg_response_time > self.alert_thresholds["response_time"]:
                 self._send_alert(endpoint, "response_time", avg_response_time)
 

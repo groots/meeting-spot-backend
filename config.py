@@ -10,10 +10,7 @@ def get_secret(secret_id) -> None:
     """Retrieve a secret from Secret Manager."""
     try:
         client = secretmanager.SecretManagerServiceClient()
-        name = (
-            f"projects/{os.environ.get('GOOGLE_CLOUD_PROJECT')}/secrets/"
-            f"{secret_id}/versions/latest"
-        )
+        name = f"projects/{os.environ.get('GOOGLE_CLOUD_PROJECT')}/secrets/" f"{secret_id}/versions/latest"
         response = client.access_secret_version(request={"name": name})
         return response.payload.data.decode("UTF-8")
     except Exception as e:
@@ -56,9 +53,7 @@ class Config:
     CLOUD_TASKS_LOCATION = os.environ.get("CLOUD_TASKS_LOCATION")  # e.g., 'us-central1'
     CLOUD_TASKS_QUEUE = os.environ.get("CLOUD_TASKS_QUEUE", "meeting-spot-queue")
     # Service account email for Cloud Tasks HTTP targets (if applicable)
-    CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL = os.environ.get(
-        "CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL"
-    )
+    CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL = os.environ.get("CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL")
 
     # Encryption Key (Store securely, maybe KMS)
     ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY")

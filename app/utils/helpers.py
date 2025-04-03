@@ -8,13 +8,7 @@ from sqlalchemy import Query
 from sqlalchemy.orm import Query as SQLAlchemyQuery
 from werkzeug.exceptions import HTTPException
 
-from app.utils.constants import (
-    DEFAULT_PAGE,
-    DEFAULT_PER_PAGE,
-    DEFAULT_SORT_BY,
-    DEFAULT_SORT_ORDER,
-    MAX_PER_PAGE,
-)
+from app.utils.constants import DEFAULT_PAGE, DEFAULT_PER_PAGE, DEFAULT_SORT_BY, DEFAULT_SORT_ORDER, MAX_PER_PAGE
 
 # Configure logger
 logger = logging.getLogger(__name__)
