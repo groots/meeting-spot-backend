@@ -53,10 +53,8 @@ class Config:
     TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER")
 
     # Cloud Tasks Configuration
-    CLOUD_TASKS_LOCATION = os.environ.get(
-        "CLOUD_TASKS_LOCATION")  # e.g., 'us-central1'
-    CLOUD_TASKS_QUEUE = os.environ.get(
-        "CLOUD_TASKS_QUEUE", "meeting-spot-queue")
+    CLOUD_TASKS_LOCATION = os.environ.get("CLOUD_TASKS_LOCATION")  # e.g., 'us-central1'
+    CLOUD_TASKS_QUEUE = os.environ.get("CLOUD_TASKS_QUEUE", "meeting-spot-queue")
     # Service account email for Cloud Tasks HTTP targets (if applicable)
     CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL = os.environ.get(
         "CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL"
@@ -66,9 +64,7 @@ class Config:
     ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY")
 
     # JWT Configuration (for authentication)
-    JWT_SECRET_KEY = os.environ.get(
-        "JWT_SECRET_KEY",
-        "another_dev_secret_jwt_key")
+    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "another_dev_secret_jwt_key")
     # Add other JWT settings like algorithm, expiry time etc. as needed
 
     # Frontend URL (for generating links)

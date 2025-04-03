@@ -15,18 +15,9 @@ class User(db.Model):
 
     id = db.Column(UUIDType(), primary_key=True, default=uuid.uuid4)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
-    password_hash = db.Column(db.String(128),
-                              nullable=False)  # Store hashed passwords
-    google_oauth_id = db.Column(
-        db.String(255),
-        unique=True,
-        nullable=True,
-        index=True)
-    created_at = db.Column(
-        db.DateTime,
-        nullable=False,
-        default=lambda: datetime.now(
-            timezone.utc))
+    password_hash = db.Column(db.String(128), nullable=False)  # Store hashed passwords
+    google_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
         db.DateTime,
         nullable=False,
@@ -35,8 +26,7 @@ class User(db.Model):
     )
 
     # Relationship to requests initiated by this user
-    requests_initiated = db.relationship(
-        "MeetingRequest", back_populates="user_a", lazy=True)
+    requests_initiated = db.relationship("MeetingRequest", back_populates="user_a", lazy=True)
 
     def __repr__(self) -> None:
         return f"<User {self.email}>"

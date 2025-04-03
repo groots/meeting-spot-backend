@@ -24,7 +24,7 @@ def create_app(config_name="default") -> None:
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
-    
+
     # Configure CORS
     if app.debug:
         CORS(app, resources={r"/*": {"origins": "*"}})
@@ -37,11 +37,13 @@ def create_app(config_name="default") -> None:
     # Register API blueprints
     from .routes import api_bp as api_v2_bp
     from .api import api_bp as api_v1_bp
+
     app.register_blueprint(api_v2_bp, url_prefix="/api", name="api_v2")
     app.register_blueprint(api_v1_bp, url_prefix="/api/v1", name="api_v1")
 
     # Register error handlers
     from .errors import register_error_handlers
+
     register_error_handlers(app)
 
     return app

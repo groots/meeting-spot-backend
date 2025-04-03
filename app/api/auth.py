@@ -44,8 +44,7 @@ class Login(Resource):
             return {"error": "Missing required fields"}, 400
 
         user = User.query.filter_by(email=data["email"]).first()
-        if not user or not check_password_hash(
-                user.password_hash, data["password"]):
+        if not user or not check_password_hash(user.password_hash, data["password"]):
             return {"error": "Invalid credentials"}, 401
 
         access_token = create_access_token(identity=str(user.id))
@@ -57,9 +56,7 @@ class Register(Resource):
     @api.expect(register_model)
     @api.doc(
         "register_user",
-        responses={
-            201: "User created successfully",
-            400: "Email already exists"},
+        responses={201: "User created successfully", 400: "Email already exists"},
     )
     def post(self) -> None:
         """Register a new user"""

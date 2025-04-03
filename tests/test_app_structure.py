@@ -6,22 +6,24 @@ from app import create_app
 from app.routes.main import api_bp
 from app.api import api_bp as api_v1_bp
 
+
 def test_app_structure():
     """Test that all required files and directories exist."""
     required_files = [
-        'app/__init__.py',
-        'app/routes/__init__.py',
-        'app/routes/main.py',
-        'app/api/__init__.py',
-        'app/models/__init__.py',
-        'app/models/meeting_request.py',
-        'app/models/user.py',
-        'app/models/types.py',
-        'app/models/enums.py',
+        "app/__init__.py",
+        "app/routes/__init__.py",
+        "app/routes/main.py",
+        "app/api/__init__.py",
+        "app/models/__init__.py",
+        "app/models/meeting_request.py",
+        "app/models/user.py",
+        "app/models/types.py",
+        "app/models/enums.py",
     ]
 
     for file_path in required_files:
         assert os.path.exists(file_path), f"Required file {file_path} does not exist"
+
 
 def test_app_creation():
     """Test that the Flask app can be created without errors."""
@@ -31,6 +33,7 @@ def test_app_creation():
     # Test that blueprints are registered
     assert app.blueprints.get("api_v2") is not None
     assert app.blueprints.get("api_v1") is not None
+
 
 def test_imports():
     """Test that all required modules can be imported."""
@@ -42,10 +45,11 @@ def test_imports():
     except ImportError as e:
         pytest.fail(f"Failed to import required module: {e}")
 
+
 def test_static_files():
     """Test that static files are accessible."""
     app = create_app()
     with app.test_client() as client:
         # Test API endpoint
-        response = client.get('/api/health')
-        assert response.status_code == 200 
+        response = client.get("/api/health")
+        assert response.status_code == 200

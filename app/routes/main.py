@@ -19,11 +19,7 @@ from app.utils.notifications import send_email, send_sms
 api_bp = Blueprint("api", __name__, static_folder="../static", static_url_path="")
 
 # Initialize rate limiter
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=[
-        "200 per day",
-        "50 per hour"])
+limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day", "50 per hour"])
 
 
 def validate_email(email) -> None:
@@ -79,7 +75,13 @@ def create_request() -> None:
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
-    required_fields = ["address_a_lat", "address_a_lon", "location_type", "user_b_contact_type", "user_b_contact"]
+    required_fields = [
+        "address_a_lat",
+        "address_a_lon",
+        "location_type",
+        "user_b_contact_type",
+        "user_b_contact",
+    ]
     for field in required_fields:
         if field not in data:
             return jsonify({"error": f"Missing required field: {field}"}), 400
@@ -92,15 +94,20 @@ def create_request() -> None:
             user_b_contact_type=ContactType(data["user_b_contact_type"]),
             user_b_contact=data["user_b_contact"],
             token_b=secrets.token_urlsafe(32),
-            expires_at=datetime.now(timezone.utc) + timedelta(days=7)
+            expires_at=datetime.now(timezone.utc) + timedelta(days=7),
         )
         db.session.add(meeting_request)
         db.session.commit()
 
-        return jsonify({
-            "request_id": str(meeting_request.request_id),
-            "token": meeting_request.token_b,
-        }), 201
+        return (
+            jsonify(
+                {
+                    "request_id": str(meeting_request.request_id),
+                    "token": meeting_request.token_b,
+                }
+            ),
+            201,
+        )
 
     except Exception as e:
         db.session.rollback()
@@ -123,10 +130,15 @@ def get_request_status(request_id) -> None:
     if meeting_request.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         return jsonify({"error": "Request has expired"}), 400
 
-    return jsonify({
-        "status": meeting_request.status.value,
-        "expires_at": meeting_request.expires_at.isoformat(),
-    }), 200
+    return (
+        jsonify(
+            {
+                "status": meeting_request.status.value,
+                "expires_at": meeting_request.expires_at.isoformat(),
+            }
+        ),
+        200,
+    )
 
 
 @api_bp.route("/meeting-requests/<request_id>/respond", methods=["POST"])
@@ -161,9 +173,14 @@ def respond_to_request(request_id) -> None:
         meeting_request.status = MeetingRequestStatus.CALCULATING
         db.session.commit()
 
-        return jsonify({
-            "status": meeting_request.status.value,
-        }), 200
+        return (
+            jsonify(
+                {
+                    "status": meeting_request.status.value,
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         db.session.rollback()
@@ -186,14 +203,24 @@ def get_request_results(request_id) -> None:
         return jsonify({"error": "Request has expired"}), 400
 
     if meeting_request.status != MeetingRequestStatus.COMPLETED:
-        return jsonify({
-            "status": meeting_request.status.value,
-        }), 200
+        return (
+            jsonify(
+                {
+                    "status": meeting_request.status.value,
+                }
+            ),
+            200,
+        )
 
-    return jsonify({
-        "status": meeting_request.status.value,
-        "meeting_spots": meeting_request.meeting_spots,
-    }), 200
+    return (
+        jsonify(
+            {
+                "status": meeting_request.status.value,
+                "meeting_spots": meeting_request.meeting_spots,
+            }
+        ),
+        200,
+    )
 
 
 # Test endpoint to verify encryption/decryption
@@ -220,16 +247,13 @@ def select_meeting_spot(request_id) -> None:
     data = request.get_json()
 
     if not data or "place_id" not in data:
-        return jsonify(
-            {"error": "Bad Request", "message": "No place_id provided"}), 400
+        return jsonify({"error": "Bad Request", "message": "No place_id provided"}), 400
 
-    meeting_request = db.session.query(
-        MeetingRequest).filter_by(request_id=request_id).first()
+    meeting_request = db.session.query(MeetingRequest).filter_by(request_id=request_id).first()
 
     if not meeting_request:
         return (
-            jsonify({"error": "Not Found",
-                     "message": "Meeting request not found"}),
+            jsonify({"error": "Not Found", "message": "Meeting request not found"}),
             404,
         )
 
@@ -246,8 +270,7 @@ def select_meeting_spot(request_id) -> None:
 
     try:
         # Get place details from Google Places API
-        gmaps = googlemaps.Client(
-            key=current_app.config.get("GOOGLE_MAPS_API_KEY"))
+        gmaps = googlemaps.Client(key=current_app.config.get("GOOGLE_MAPS_API_KEY"))
         place_details = gmaps.place(
             data["place_id"],
             fields=[
@@ -292,8 +315,7 @@ def select_meeting_spot(request_id) -> None:
     except Exception as e:
         current_app.logger.error(f"Error selecting meeting spot: {e}")
         db.session.rollback()
-        return jsonify(
-            {"error": "Internal Server Error", "message": str(e)}), 500
+        return jsonify({"error": "Internal Server Error", "message": str(e)}), 500
 
 
 # Add other routes for authentication, user profiles etc. later

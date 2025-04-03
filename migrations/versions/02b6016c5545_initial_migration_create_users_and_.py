@@ -30,10 +30,7 @@ def upgrade():
         sa.PrimaryKeyConstraint("id"),
     )
     with op.batch_alter_table("users", schema=None) as batch_op:
-        batch_op.create_index(
-            batch_op.f("ix_users_email"),
-            ["email"],
-            unique=True)
+        batch_op.create_index(batch_op.f("ix_users_email"), ["email"], unique=True)
         batch_op.create_index(
             batch_op.f("ix_users_google_oauth_id"), ["google_oauth_id"], unique=True
         )
@@ -49,30 +46,10 @@ def upgrade():
         ),
         sa.Column("user_b_contact_encrypted", sa.Text(), nullable=False),
         sa.Column("location_type", sa.String(length=100), nullable=False),
-        sa.Column(
-            "address_a_lat",
-            sa.DECIMAL(
-                precision=9,
-                scale=6),
-            nullable=False),
-        sa.Column(
-            "address_a_lon",
-            sa.DECIMAL(
-                precision=9,
-                scale=6),
-            nullable=False),
-        sa.Column(
-            "address_b_lat",
-            sa.DECIMAL(
-                precision=9,
-                scale=6),
-            nullable=True),
-        sa.Column(
-            "address_b_lon",
-            sa.DECIMAL(
-                precision=9,
-                scale=6),
-            nullable=True),
+        sa.Column("address_a_lat", sa.DECIMAL(precision=9, scale=6), nullable=False),
+        sa.Column("address_a_lon", sa.DECIMAL(precision=9, scale=6), nullable=False),
+        sa.Column("address_b_lat", sa.DECIMAL(precision=9, scale=6), nullable=True),
+        sa.Column("address_b_lon", sa.DECIMAL(precision=9, scale=6), nullable=True),
         sa.Column(
             "status",
             sa.Enum(
@@ -93,21 +70,13 @@ def upgrade():
             nullable=False,
         ),
         sa.Column("token_b", sa.String(length=64), nullable=False),
-        sa.Column(
-            "selected_place_google_id",
-            sa.String(
-                length=255),
-            nullable=True),
+        sa.Column("selected_place_google_id", sa.String(length=255), nullable=True),
         sa.Column(
             "selected_place_details",
             postgresql.JSONB(astext_type=sa.Text()),
             nullable=True,
         ),
-        sa.Column(
-            "suggested_options",
-            postgresql.JSONB(
-                astext_type=sa.Text()),
-            nullable=True),
+        sa.Column("suggested_options", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("session_identifier_a", sa.String(length=64), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
@@ -123,18 +92,9 @@ def upgrade():
             ["session_identifier_a"],
             unique=False,
         )
-        batch_op.create_index(
-            batch_op.f("ix_meeting_requests_status"),
-            ["status"],
-            unique=False)
-        batch_op.create_index(
-            batch_op.f("ix_meeting_requests_token_b"),
-            ["token_b"],
-            unique=True)
-        batch_op.create_index(
-            "ix_meeting_requests_user_a_id",
-            ["user_a_id"],
-            unique=False)
+        batch_op.create_index(batch_op.f("ix_meeting_requests_status"), ["status"], unique=False)
+        batch_op.create_index(batch_op.f("ix_meeting_requests_token_b"), ["token_b"], unique=True)
+        batch_op.create_index("ix_meeting_requests_user_a_id", ["user_a_id"], unique=False)
 
     # ### end Alembic commands ###
 
@@ -145,8 +105,7 @@ def downgrade():
         batch_op.drop_index("ix_meeting_requests_user_a_id")
         batch_op.drop_index(batch_op.f("ix_meeting_requests_token_b"))
         batch_op.drop_index(batch_op.f("ix_meeting_requests_status"))
-        batch_op.drop_index(
-            batch_op.f("ix_meeting_requests_session_identifier_a"))
+        batch_op.drop_index(batch_op.f("ix_meeting_requests_session_identifier_a"))
 
     op.drop_table("meeting_requests")
     with op.batch_alter_table("users", schema=None) as batch_op:

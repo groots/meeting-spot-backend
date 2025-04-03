@@ -19,11 +19,7 @@ depends_on = None
 def upgrade():
     # Add expires_at column as nullable first
     with op.batch_alter_table("meeting_requests", schema=None) as batch_op:
-        batch_op.add_column(
-            sa.Column(
-                "expires_at",
-                sa.DateTime(),
-                nullable=True))
+        batch_op.add_column(sa.Column("expires_at", sa.DateTime(), nullable=True))
 
     # Get bind and update existing rows
     connection = op.get_bind()

@@ -23,12 +23,10 @@ class MetricsCollector:
         self.monitor_logger = logging.getLogger("monitoring")
         self.monitor_logger.setLevel(logging.INFO)
         fh = logging.FileHandler("logs/monitoring.log")
-        fh.setFormatter(logging.Formatter(
-            "%(asctime)s - %(levelname)s - %(message)s"))
+        fh.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
         self.monitor_logger.addHandler(fh)
 
-    def record_request(self, endpoint: str,
-                       response_time: float, status_code: int):
+    def record_request(self, endpoint: str, response_time: float, status_code: int):
         """Record metrics for a request."""
         if endpoint not in self.response_times:
             self.response_times[endpoint] = []
@@ -69,9 +67,7 @@ class MetricsCollector:
                 self._send_alert(endpoint, "error_rate", error_rate)
 
         # Calculate request rate (requests per minute)
-        time_diff = (
-            current_time
-            - self.last_alert_time[endpoint]).total_seconds()
+        time_diff = (current_time - self.last_alert_time[endpoint]).total_seconds()
         if time_diff > 0:  # Prevent division by zero
             requests_per_minute = (total_requests / time_diff) * 60
             if requests_per_minute > self.alert_thresholds["request_rate"]:
@@ -104,8 +100,7 @@ class MetricsCollector:
         for endpoint in self.response_times:
             metrics[endpoint] = {
                 "avg_response_time": (
-                    sum(self.response_times[endpoint])
-                    / len(self.response_times[endpoint])
+                    sum(self.response_times[endpoint]) / len(self.response_times[endpoint])
                     if self.response_times[endpoint]
                     else 0
                 ),

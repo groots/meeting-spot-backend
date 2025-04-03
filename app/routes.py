@@ -92,8 +92,7 @@ def create_request() -> None:
         address_a_lon=address_a_lon,
         location_type=data["location_type"],
         user_b_contact_type=ContactType(data["user_b_contact_type"]),
-        user_b_contact_encrypted=encrypt_sensitive_data(
-            data["user_b_contact"]),  # Encrypt directly
+        user_b_contact_encrypted=encrypt_sensitive_data(data["user_b_contact"]),  # Encrypt directly
         token_b=uuid.uuid4().hex,  # Generate a secure token
         status=MeetingRequestStatus.PENDING_B_ADDRESS,
         created_at=datetime.now(timezone.utc),
@@ -176,8 +175,7 @@ def respond_to_request(request_id) -> None:
     # This would typically involve creating a Cloud Task or using another
     # async processing method
 
-    return jsonify({"request_id": str(request_id),
-                   "status": meeting_request.status.value})
+    return jsonify({"request_id": str(request_id), "status": meeting_request.status.value})
 
 
 @api_bp.route("/meeting-requests/<request_id>/results/", methods=["GET"])
@@ -196,8 +194,7 @@ def get_request_results(request_id) -> None:
         return jsonify({"error": "Waiting for user B to respond"}), 400
 
     if meeting_request.status == MeetingRequestStatus.CALCULATING:
-        return jsonify({"request_id": str(request_id),
-                       "status": meeting_request.status.value})
+        return jsonify({"request_id": str(request_id), "status": meeting_request.status.value})
 
     if meeting_request.status == MeetingRequestStatus.COMPLETED:
         return jsonify(
@@ -238,25 +235,25 @@ def select_spot(request_id) -> None:
 
     # TODO: Update the selected spot in the database
     # For now, return a mock response
-    return jsonify({
-        "request_id": str(request_id),
-        "selected_spot": {
-            "name": "Selected Meeting Spot",
-            "address": "123 Main St",
-            "place_id": data["place_id"]
+    return jsonify(
+        {
+            "request_id": str(request_id),
+            "selected_spot": {
+                "name": "Selected Meeting Spot",
+                "address": "123 Main St",
+                "place_id": data["place_id"],
+            },
         }
-    })
+    )
 
 
 @api_bp.route("/monitoring/metrics")
 def metrics() -> None:
     """Endpoint for monitoring metrics."""
-    return jsonify(
-        {"status": "healthy", "timestamp": datetime.utcnow().isoformat()})
+    return jsonify({"status": "healthy", "timestamp": datetime.utcnow().isoformat()})
 
 
 @api_bp.route("/health")
 def health_check() -> None:
     """Health check endpoint."""
-    return jsonify(
-        {"status": "healthy", "timestamp": datetime.utcnow().isoformat()})
+    return jsonify({"status": "healthy", "timestamp": datetime.utcnow().isoformat()})

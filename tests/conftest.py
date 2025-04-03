@@ -52,7 +52,7 @@ def app(test_key) -> None:
 
     # Drop all tables first to ensure a clean state
     db.drop_all()
-    
+
     # Create all tables
     db.create_all()
 

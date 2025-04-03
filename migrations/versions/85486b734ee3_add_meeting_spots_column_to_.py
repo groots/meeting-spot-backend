@@ -18,10 +18,7 @@ depends_on = None
 
 def upgrade():
     # Drop the foreign key constraint first
-    op.drop_constraint(
-        "meeting_requests_user_a_id_fkey",
-        "meeting_requests",
-        type_="foreignkey")
+    op.drop_constraint("meeting_requests_user_a_id_fkey", "meeting_requests", type_="foreignkey")
 
     # Create a temporary table to store the mapping of old IDs to new UUIDs
     op.create_table(
@@ -31,8 +28,7 @@ def upgrade():
     )
 
     # Insert current user IDs into the mapping table
-    op.execute(
-        "INSERT INTO id_mapping (old_id, new_id) SELECT id, gen_random_uuid() FROM users")
+    op.execute("INSERT INTO id_mapping (old_id, new_id) SELECT id, gen_random_uuid() FROM users")
 
     # Add a temporary UUID column to users
     op.add_column("users", sa.Column("uuid_id", sa.UUID(), nullable=True))
@@ -63,12 +59,7 @@ def upgrade():
     op.execute("ALTER TABLE users ALTER COLUMN id SET DEFAULT gen_random_uuid()")
 
     # Add a temporary UUID column to meeting_requests
-    op.add_column(
-        "meeting_requests",
-        sa.Column(
-            "uuid_user_a_id",
-            sa.UUID(),
-            nullable=True))
+    op.add_column("meeting_requests", sa.Column("uuid_user_a_id", sa.UUID(), nullable=True))
 
     # Update the temporary column with mapped values
     op.execute(
@@ -82,16 +73,10 @@ def upgrade():
 
     # Drop the old user_a_id column and rename the temporary column
     op.drop_column("meeting_requests", "user_a_id")
-    op.execute(
-        "ALTER TABLE meeting_requests RENAME COLUMN uuid_user_a_id TO user_a_id")
+    op.execute("ALTER TABLE meeting_requests RENAME COLUMN uuid_user_a_id TO user_a_id")
 
     # Add the meeting_spots column
-    op.add_column(
-        "meeting_requests",
-        sa.Column(
-            "meeting_spots",
-            sa.JSON(),
-            nullable=True))
+    op.add_column("meeting_requests", sa.Column("meeting_spots", sa.JSON(), nullable=True))
 
     # Recreate the foreign key constraint
     op.create_foreign_key(
@@ -108,10 +93,7 @@ def upgrade():
 
 def downgrade():
     # Drop the foreign key constraint first
-    op.drop_constraint(
-        "meeting_requests_user_a_id_fkey",
-        "meeting_requests",
-        type_="foreignkey")
+    op.drop_constraint("meeting_requests_user_a_id_fkey", "meeting_requests", type_="foreignkey")
 
     # Create a temporary table to store the mapping of UUIDs to integers
     op.create_table(
@@ -155,16 +137,10 @@ def downgrade():
 
     # Create a new sequence for users.id
     op.execute("CREATE SEQUENCE users_id_seq")
-    op.execute(
-        "ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq')")
+    op.execute("ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq')")
 
     # Add a temporary integer column to meeting_requests
-    op.add_column(
-        "meeting_requests",
-        sa.Column(
-            "int_user_a_id",
-            sa.Integer(),
-            nullable=True))
+    op.add_column("meeting_requests", sa.Column("int_user_a_id", sa.Integer(), nullable=True))
 
     # Update the temporary column with mapped values
     op.execute(
@@ -178,8 +154,7 @@ def downgrade():
 
     # Drop the UUID user_a_id column and rename the temporary column
     op.drop_column("meeting_requests", "user_a_id")
-    op.execute(
-        "ALTER TABLE meeting_requests RENAME COLUMN int_user_a_id TO user_a_id")
+    op.execute("ALTER TABLE meeting_requests RENAME COLUMN int_user_a_id TO user_a_id")
 
     # Drop the meeting_spots column
     op.drop_column("meeting_requests", "meeting_spots")

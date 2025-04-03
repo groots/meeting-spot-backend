@@ -21,30 +21,26 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         # Get Mailgun configuration
         api_key = current_app.config.get("MAILGUN_API_KEY")
         domain = current_app.config.get("MAILGUN_DOMAIN")
-        
+
         if not api_key or not domain:
             current_app.logger.error("Mailgun configuration missing")
             return False
 
         # Mailgun API endpoint
         url = f"https://api.mailgun.net/v3/{domain}/messages"
-        
+
         # Prepare the email data
         data = {
             "from": f"Find A Meeting Spot <noreply@{domain}>",
             "to": to_email,
             "subject": subject,
             "text": body,
-            "html": body.replace("\n", "<br>")  # Basic HTML conversion
+            "html": body.replace("\n", "<br>"),  # Basic HTML conversion
         }
 
         # Send the email
-        response = requests.post(
-            url,
-            auth=("api", api_key),
-            data=data
-        )
-        
+        response = requests.post(url, auth=("api", api_key), data=data)
+
         if response.status_code != 200:
             current_app.logger.error(f"Mailgun API error: {response.text}")
             return False
@@ -70,4 +66,4 @@ def send_sms(to_number: str, message: str) -> bool:
         return True
     except Exception as e:
         current_app.logger.error(f"Error sending SMS: {e}")
-        return False 
+        return False

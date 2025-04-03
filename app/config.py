@@ -16,9 +16,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Google Cloud Project
-    GOOGLE_CLOUD_PROJECT = os.getenv(
-        "GOOGLE_CLOUD_PROJECT",
-        "find-a-meeting-spot")
+    GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "find-a-meeting-spot")
 
     # Google Maps API Key
     GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
@@ -43,7 +41,7 @@ class Config:
         "https://find-a-meeting-spot.web.app",  # Production frontend
         "https://find-a-meeting-spot.ue.r.appspot.com",  # App Engine URL
         "https://findameetingspot.com",  # Custom domain
-        "https://www.findameetingspot.com"  # www subdomain
+        "https://www.findameetingspot.com",  # www subdomain
     ]
 
 
@@ -93,7 +91,7 @@ class ProductionConfig(Config):
     # Database configuration
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "DATABASE_URL",
-        "postgresql+pg8000:///findameetingspot?host=/cloudsql/find-a-meeting-spot:us-east1:findameetingspot"
+        "postgresql+pg8000:///findameetingspot?host=/cloudsql/find-a-meeting-spot:us-east1:findameetingspot",
     )
 
     # Set up SQLAlchemy with connection pool
