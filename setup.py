@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 setup(
     name="find_a_meeting_spot",
     version="0.1.0",
-    packages=find_packages(),
+    packages=find_packages(include=["app", "app.*", "tests", "tests.*"]),
     install_requires=[
         "Flask==2.0.1",
         "Flask-SQLAlchemy==2.5.1",
