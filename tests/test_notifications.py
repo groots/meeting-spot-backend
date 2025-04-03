@@ -18,9 +18,9 @@ def test_send_email_development():
         assert result is True
         mock_logger.info.assert_has_calls(
             [
-                patch.call("Development mode: Would send email to test@example.com"),
-                patch.call("Subject: Test Subject"),
-                patch.call("Body: Test Body"),
+                MagicMock.call("Development mode: Would send email to test@example.com"),
+                MagicMock.call("Subject: Test Subject"),
+                MagicMock.call("Body: Test Body"),
             ]
         )
 
@@ -78,7 +78,7 @@ def test_send_sms():
         assert result is True
         mock_logger.info.assert_has_calls(
             [
-                patch.call("Development mode: Would send SMS to +1234567890"),
-                patch.call("Message: Test Message"),
+                MagicMock.call("Development mode: Would send SMS to +1234567890"),
+                MagicMock.call("Message: Test Message"),
             ]
         ) 
