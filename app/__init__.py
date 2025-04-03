@@ -29,8 +29,11 @@ def create_app(config_name="default"):
     CORS(app, resources={r"/*": {"origins": "*"}})
 
     # Import and register blueprints
+    from .api import api_v1_bp, api_v2_bp
     from .routes import api_bp
 
+    app.register_blueprint(api_v1_bp)
+    app.register_blueprint(api_v2_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
 
     return app

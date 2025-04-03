@@ -8,8 +8,7 @@ from app.models import MeetingRequestStatus
 def test_create_request(client) -> None:
     """Test creating a new meeting request."""
     data = {
-        "address_a_lat": 37.7749,
-        "address_a_lon": -122.4194,
+        "address_a": "123 Test St, San Francisco, CA 94105",
         "location_type": "cafe",
         "user_b_contact_type": "email",
         "user_b_contact": "test@example.com",
