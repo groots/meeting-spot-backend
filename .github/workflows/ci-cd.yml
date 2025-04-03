@@ -1,0 +1,59 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm install
+          
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Google Auth
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        
+      - name: Configure Docker
+        run: gcloud auth configure-docker
+        
+      - name: Build and Push Backend Container
+        run: |
+          cd backend
+          docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/meeting-spot-backend:${{ github.sha }} .
+          docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/meeting-spot-backend:${{ github.sha }}
+          
+      - name: Deploy Backend to Cloud Run
+        run: |
+          gcloud run deploy meeting-spot-backend \
+            --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/meeting-spot-backend:${{ github.sha }} \
+            --platform managed \
+            --region us-east1 \
+            --allow-unauthenticated \
+            --set-env-vars="FLASK_ENV=production"
+          
+      - name: Deploy Frontend to App Engine
+        run: |
+          cd frontend
+          gcloud app deploy app.yaml 
