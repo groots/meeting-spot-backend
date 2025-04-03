@@ -1,0 +1,37 @@
+runtime: python39
+
+service: backend
+
+instance_class: F1
+
+env_variables:
+  FLASK_APP: "wsgi.py"
+  FLASK_ENV: "production"
+  GOOGLE_CLOUD_PROJECT: "find-a-meeting-spot"
+  FRONTEND_URL: "https://find-a-meeting-spot.ue.r.appspot.com"
+  LOG_LEVEL: "INFO"
+
+entrypoint: gunicorn -b :$PORT wsgi:app
+
+beta_settings:
+  cloud_sql_instances: find-a-meeting-spot:us-east1:findameetingspot
+
+vpc_access_connector:
+  name: "projects/find-a-meeting-spot/locations/us-east1/connectors/meeting-spot-connector"
+
+automatic_scaling:
+  target_cpu_utilization: 0.65
+  min_instances: 1
+  max_instances: 10
+  target_throughput_utilization: 0.6
+
+handlers:
+- url: /api/v1/swagger/swaggerui/.*
+  static_dir: static/swaggerui
+  secure: always
+- url: /.*
+  script: auto
+  secure: always
+
+includes:
+- secret_settings.yaml

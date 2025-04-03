@@ -1,0 +1,30 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/meeting-spot-backend', '.']
+
+  # Push the container image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/meeting-spot-backend']
+
+  # Deploy container image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'meeting-spot-backend'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/meeting-spot-backend'
+      - '--region'
+      - 'us-east1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--add-cloudsql-instances'
+      - '$PROJECT_ID:us-east1:findameetingspot'
+      - '--set-env-vars'
+      - 'DATABASE_URL=postgresql+pg8000:///findameetingspot?host=/cloudsql/$PROJECT_ID:us-east1:findameetingspot'
+
+images:
+  - 'gcr.io/$PROJECT_ID/meeting-spot-backend'
