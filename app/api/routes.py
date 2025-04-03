@@ -10,4 +10,5 @@ def health_check():
     """Health check endpoint."""
     return jsonify({"status": "healthy"}), 200
 
+
 # Test deployment change - can be removed after verification

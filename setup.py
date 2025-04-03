@@ -28,4 +28,4 @@ setup(
         "types-PyMySQL==1.0.19.7",
         "types-cryptography==3.3.23.2",
     ],
-) 
+)
