@@ -24,7 +24,7 @@ steps:
       - '--add-cloudsql-instances'
       - '$PROJECT_ID:us-east1:findameetingspot'
       - '--set-env-vars'
-      - 'DATABASE_URL=postgresql+pg8000:///findameetingspot?host=/cloudsql/$PROJECT_ID:us-east1:findameetingspot'
+      - 'FLASK_ENV=production,DATABASE_URL=postgresql+pg8000:///findameetingspot?host=/cloudsql/$PROJECT_ID:us-east1:findameetingspot'
 
 images:
   - 'gcr.io/$PROJECT_ID/meeting-spot-backend'
