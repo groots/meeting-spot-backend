@@ -27,4 +27,4 @@ steps:
       - 'DATABASE_URL=postgresql+pg8000:///findameetingspot?host=/cloudsql/$PROJECT_ID:us-east1:findameetingspot'
 
 images:
-  - 'gcr.io/$PROJECT_ID/meeting-spot-backend' 
+  - 'gcr.io/$PROJECT_ID/meeting-spot-backend'

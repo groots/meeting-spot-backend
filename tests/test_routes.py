@@ -16,7 +16,9 @@ def test_create_request(client) -> None:
     }
 
     response = client.post(
-        "/api/v2/meeting-requests/", data=json.dumps(data), content_type="application/json"
+        "/api/v2/meeting-requests/",
+        data=json.dumps(data),
+        content_type="application/json",
     )
 
     print(f"Response status: {response.status_code}")

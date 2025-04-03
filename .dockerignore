@@ -45,4 +45,4 @@ htmlcov/
 .env
 *.log
 cloud_sql_proxy
-service-account-key.json 
+service-account-key.json

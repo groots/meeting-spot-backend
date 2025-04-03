@@ -11,4 +11,4 @@ sleep 2
 python development.py
 
 # Kill the Cloud SQL proxy when the Flask server exits
-kill $PROXY_PID 
+kill $PROXY_PID

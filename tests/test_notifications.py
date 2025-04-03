@@ -5,8 +5,8 @@ with black's internal formatter. A bug report will be filed at:
 https://github.com/psf/black/issues
 """
 
-import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import MagicMock, call, patch
+
 from app.utils.notifications import send_email, send_sms
 
 
@@ -42,9 +42,7 @@ def test_send_email_production():
     mock_response.status_code = 200
     mock_post = MagicMock(return_value=mock_response)
 
-    with patch("app.utils.notifications.current_app", mock_app), patch(
-        "requests.post", mock_post
-    ):
+    with patch("app.utils.notifications.current_app", mock_app), patch("requests.post", mock_post):
         result = send_email("test@example.com", "Test Subject", "Test Body")
         assert result is True
         mock_post.assert_called_once()
@@ -66,7 +64,7 @@ def test_send_email_missing_config():
         result = send_email("test@example.com", "Test Subject", "Test Body")
         assert result is False
         mock_logger.error.assert_called_once_with(
-            "Missing Mailgun configuration. Please set MAILGUN_API_KEY and MAILGUN_DOMAIN."
+            "Missing Mailgun configuration. " "Please set MAILGUN_API_KEY and MAILGUN_DOMAIN."
         )
 
 
@@ -86,4 +84,4 @@ def test_send_sms():
                 call("Development mode: Would send SMS to +1234567890"),
                 call("Message: Test Message"),
             ]
-        ) 
+        )

@@ -34,4 +34,4 @@ echo "🚀 Deploying to App Engine..."
 gcloud app deploy app.yaml
 
 echo "✅ Deployment complete!"
-echo "🌐 Your app is now live at: https://find-a-meeting-spot.appspot.com" 
+echo "🌐 Your app is now live at: https://find-a-meeting-spot.appspot.com"

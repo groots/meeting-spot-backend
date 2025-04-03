@@ -4,11 +4,11 @@
 add_return_types() {
     local file=$1
     echo "Adding return type annotations to $file..."
-    
+
     # Add return type annotations to functions
     sed -i '' 's/def \([^(]*\)(\([^)]*\)):/def \1(\2) -> None:/g' "$file"
     sed -i '' 's/def \([^(]*\)(\([^)]*\)):/def \1(\2) -> Any:/g' "$file"
-    
+
     # Add type annotations to function parameters
     sed -i '' 's/(\([^)]*\)):/(\1) -> None:/g' "$file"
     sed -i '' 's/(\([^)]*\)):/(\1) -> Any:/g' "$file"
@@ -18,7 +18,7 @@ add_return_types() {
 add_typing_imports() {
     local file=$1
     echo "Adding typing imports to $file..."
-    
+
     # Add typing imports if they don't exist
     if ! grep -q "from typing import" "$file"; then
         sed -i '' '1i\
@@ -43,4 +43,4 @@ black .
 echo "Running isort..."
 isort .
 
-echo "Done fixing type annotations!" 
+echo "Done fixing type annotations!"

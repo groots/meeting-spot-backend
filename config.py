@@ -11,8 +11,8 @@ def get_secret(secret_id) -> None:
     try:
         client = secretmanager.SecretManagerServiceClient()
         name = (
-            f"projects/{os.environ.get('GOOGLE_CLOUD_PROJECT')}/secrets/{secret_id}/versions/"
-            "latest"
+            f"projects/{os.environ.get('GOOGLE_CLOUD_PROJECT')}/secrets/"
+            f"{secret_id}/versions/latest"
         )
         response = client.access_secret_version(request={"name": name})
         return response.payload.data.decode("UTF-8")

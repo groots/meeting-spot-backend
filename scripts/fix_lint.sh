@@ -21,4 +21,4 @@ autopep8 --in-place --recursive --max-line-length 79 --aggressive .
 # flake8 .
 
 # echo "Running mypy..."
-# mypy . 
+# mypy .

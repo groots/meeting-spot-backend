@@ -23,4 +23,4 @@ ENV PORT=8080
 EXPOSE 8080
 
 # Start the application
-CMD exec gunicorn --bind :$PORT wsgi:app 
+CMD exec gunicorn --bind :$PORT wsgi:app

@@ -4,7 +4,7 @@
 fix_unused_imports() {
     local file=$1
     echo "Fixing unused imports in $file..."
-    
+
     # Remove unused typing imports
     sed -i '' '/^from typing import Any, Optional, List, Dict, Union$/d' "$file"
 }
@@ -24,4 +24,4 @@ black .
 echo "Running isort..."
 isort .
 
-echo "Done fixing imports!" 
+echo "Done fixing imports!"

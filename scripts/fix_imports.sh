@@ -15,4 +15,4 @@ black .
 echo "Running isort..."
 isort .
 
-echo "Done fixing imports!" 
+echo "Done fixing imports!"

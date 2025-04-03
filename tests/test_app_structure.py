@@ -1,8 +1,10 @@
 """Test the application structure."""
 
 import os
+
 import pytest
 from flask import Flask
+
 from app import create_app
 
 
@@ -38,9 +40,9 @@ def test_imports():
     """Test that all required modules can be imported."""
     try:
         # Import statements are used for testing importability
-        from app.routes.main import api_bp  # noqa: F401
         from app.api import api_bp as api_v1_bp  # noqa: F401
-        from app.models import MeetingRequest, ContactType, MeetingRequestStatus  # noqa: F401
+        from app.models import ContactType, MeetingRequest, MeetingRequestStatus  # noqa: F401
+        from app.routes.main import api_bp  # noqa: F401
         from app.utils.notifications import send_email, send_sms  # noqa: F401
     except ImportError as e:
         pytest.fail(f"Failed to import required module: {e}")

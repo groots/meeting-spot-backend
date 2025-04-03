@@ -96,4 +96,4 @@ fi
 # Cleanup
 kill $FLASK_PID
 
-echo "✅ All tests passed!" 
+echo "✅ All tests passed!"

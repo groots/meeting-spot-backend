@@ -15,4 +15,4 @@ services:
       - DATABASE_URL=postgresql+psycopg2://postgres:ggSO12ro9u5N1VxANoQOlyGDuOzsHyv3Su7t9LO9IiQ@localhost:5433/findameetingspot_dev
     network_mode: host  # Use host networking to access Cloud SQL proxy
     extra_hosts:
-      - "host.docker.internal:host-gateway" 
+      - "host.docker.internal:host-gateway"

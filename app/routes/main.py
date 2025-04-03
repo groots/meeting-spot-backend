@@ -3,15 +3,14 @@
 import os
 import secrets
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 
-from flask import Blueprint, current_app, jsonify, request, send_from_directory
+from flask import Blueprint, jsonify, request, send_from_directory
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 from app.models import ContactType, MeetingRequest, MeetingRequestStatus, db
-
 
 # Create a Blueprint for the v2 API functionality
 api_bp = Blueprint("api_v2", __name__, static_folder="../static", static_url_path="")

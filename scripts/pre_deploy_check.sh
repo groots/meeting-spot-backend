@@ -47,4 +47,4 @@ done
 echo "Running test script..."
 ./scripts/test_deploy.sh
 
-echo "✅ All pre-deploy checks passed!" 
+echo "✅ All pre-deploy checks passed!"

@@ -1,7 +1,9 @@
 """Test encryption utilities."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+
 from app.utils.encryption import decrypt_data, encrypt_data, get_encryption_key
 
 

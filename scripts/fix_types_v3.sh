@@ -4,7 +4,7 @@
 fix_double_return_types() {
     local file=$1
     echo "Fixing double return type annotations in $file..."
-    
+
     # Fix functions with double return type annotations
     sed -i '' 's/\(def [^(]*([^)]*)\) -> None -> None:/\1 -> None:/g' "$file"
     sed -i '' 's/\(def [^(]*([^)]*)\) -> Any -> None:/\1 -> None:/g' "$file"
@@ -27,4 +27,4 @@ black .
 echo "Running isort..."
 isort .
 
-echo "Done fixing type annotations!" 
+echo "Done fixing type annotations!"

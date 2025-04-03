@@ -20,4 +20,4 @@ black .
 echo "Running isort..."
 isort .
 
-echo "Done fixing line length issues!" 
+echo "Done fixing line length issues!"

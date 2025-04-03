@@ -19,4 +19,4 @@ echo "PYTHONPATH: $PYTHONPATH"
 # Run pytest with coverage
 pytest --cov=app --cov-report=term-missing tests/
 
-echo "✅ Tests completed!" 
+echo "✅ Tests completed!"

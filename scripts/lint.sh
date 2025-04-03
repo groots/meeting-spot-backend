@@ -15,4 +15,4 @@ mypy .
 echo "Running pytest..."
 pytest
 
-# If any of the above commands fail, the script will exit with a non-zero status 
+# If any of the above commands fail, the script will exit with a non-zero status

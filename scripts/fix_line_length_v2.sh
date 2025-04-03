@@ -4,7 +4,7 @@
 fix_line_length() {
     local file=$1
     echo "Fixing line length issues in $file..."
-    
+
     # Use autopep8 to fix line length issues
     autopep8 --in-place --max-line-length 100 --aggressive "$file"
 }
@@ -21,4 +21,4 @@ black .
 echo "Running isort..."
 isort .
 
-echo "Done fixing line length issues!" 
+echo "Done fixing line length issues!"

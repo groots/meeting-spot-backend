@@ -40,4 +40,4 @@ if [ ! -d "../frontend/public" ]; then
     exit 1
 fi
 
-echo "✅ Next.js build verification passed!" 
+echo "✅ Next.js build verification passed!"

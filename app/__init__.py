@@ -30,11 +30,11 @@ def create_app(config_name="default") -> None:
         CORS(app, resources={r"/*": {"origins": app.config["CORS_ORIGINS"]}})
 
     # Import models to register them with SQLAlchemy
-    from .models import MeetingRequest, MeetingRequestStatus, ContactType  # noqa: F401
+    from .api import api_bp as api_v1_bp
+    from .models import ContactType, MeetingRequest, MeetingRequestStatus  # noqa: F401
 
     # Register API blueprints
     from .routes import api_bp as api_v2_bp
-    from .api import api_bp as api_v1_bp
 
     app.register_blueprint(api_v2_bp, url_prefix="/api/v2", name="api_v2")
     app.register_blueprint(api_v1_bp, url_prefix="/api/v1", name="api_v1")

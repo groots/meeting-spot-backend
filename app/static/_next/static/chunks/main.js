@@ -9,4 +9,4 @@
 
     // Run initialization when the DOM is ready
     document.addEventListener('DOMContentLoaded', init);
-})(); 
+})();
