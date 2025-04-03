@@ -42,7 +42,9 @@ def validate_request_data(data: Dict[str, Any]) -> Tuple[bool, str, int]:
     return True, "", 200
 
 
-def validate_meeting_request(meeting_request: Optional[MeetingRequest], token: str) -> Tuple[bool, str, int]:
+def validate_meeting_request(
+    meeting_request: Optional[MeetingRequest], token: str
+) -> Tuple[bool, str, int]:
     """Validate the meeting request and token."""
     if not meeting_request:
         return False, "Request not found", 404
@@ -105,12 +107,15 @@ def create_request() -> None:
         db.session.add(meeting_request)
         db.session.commit()
 
-        return jsonify(
-            {
-                "request_id": str(meeting_request.request_id),
-                "token": meeting_request.token_b,
-            }
-        ), 201
+        return (
+            jsonify(
+                {
+                    "request_id": str(meeting_request.request_id),
+                    "token": meeting_request.token_b,
+                }
+            ),
+            201,
+        )
 
     except Exception as e:
         db.session.rollback()
@@ -133,12 +138,15 @@ def get_request_status(request_id) -> None:
     if meeting_request.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
         return jsonify({"error": "Request has expired"}), 400
 
-    return jsonify(
-        {
-            "status": meeting_request.status.value,
-            "expires_at": meeting_request.expires_at.isoformat(),
-        }
-    ), 200
+    return (
+        jsonify(
+            {
+                "status": meeting_request.status.value,
+                "expires_at": meeting_request.expires_at.isoformat(),
+            }
+        ),
+        200,
+    )
 
 
 @api_bp.route("/meeting-requests/<request_id>/respond", methods=["POST"])
@@ -191,12 +199,15 @@ def get_request_results(request_id) -> None:
     if meeting_request.status != MeetingRequestStatus.COMPLETED:
         return jsonify({"status": meeting_request.status.value}), 200
 
-    return jsonify(
-        {
-            "status": meeting_request.status.value,
-            "meeting_spots": meeting_request.meeting_spots,
-        }
-    ), 200
+    return (
+        jsonify(
+            {
+                "status": meeting_request.status.value,
+                "meeting_spots": meeting_request.meeting_spots,
+            }
+        ),
+        200,
+    )
 
 
 @api_bp.route("/requests/<uuid:request_id>/contact", methods=["GET"])

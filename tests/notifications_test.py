@@ -1,10 +1,4 @@
-"""Test notification utilities.
-
-Note: Black formatting is temporarily disabled for this file due to a known issue
-with black's internal formatter. A bug report will be filed at:
-https://github.com/psf/black/issues
-"""
-
+"""Test notification utilities."""
 import pytest
 from unittest.mock import patch, MagicMock, call
 from app.utils.notifications import send_email, send_sms

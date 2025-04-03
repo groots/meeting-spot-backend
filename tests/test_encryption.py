@@ -51,4 +51,4 @@ def test_encrypt_decrypt_data():
 
     # Test invalid data
     with pytest.raises(ValueError):
-        decrypt_data("invalid_data", secret_key) 
+        decrypt_data("invalid_data", secret_key)
