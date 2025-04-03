@@ -51,5 +51,5 @@ def test_static_files():
     app = create_app()
     with app.test_client() as client:
         # Test API endpoint
-        response = client.get("/api/health")
+        response = client.get("/api/v2/health")
         assert response.status_code == 200

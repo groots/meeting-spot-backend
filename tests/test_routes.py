@@ -16,18 +16,18 @@ def test_create_request(client) -> None:
     }
 
     response = client.post(
-        "/api/meeting-requests/", data=json.dumps(data), content_type="application/json"
+        "/api/v2/meeting-requests/", data=json.dumps(data), content_type="application/json"
     )
 
     print(f"Response status: {response.status_code}")
     print(f"Response data: {response.data}")
 
-    assert response.status_code == 201  # Changed from 200 to 201 to match API spec
+    assert response.status_code == 201
 
 
 def test_get_request_status(client, test_meeting_request) -> None:
     """Test getting the status of a meeting request."""
-    response = client.get(f"/api/meeting-requests/{test_meeting_request.request_id}/status")
+    response = client.get(f"/api/v2/meeting-requests/{test_meeting_request.request_id}/status")
 
     assert response.status_code == 200
     result = json.loads(response.data)
@@ -38,7 +38,7 @@ def test_get_request_status(client, test_meeting_request) -> None:
 def test_respond_to_request(client, test_meeting_request) -> None:
     """Test responding to a meeting request."""
     # First, get the token from the request creation
-    response = client.get(f"/api/meeting-requests/{test_meeting_request.request_id}/status")
+    response = client.get(f"/api/v2/meeting-requests/{test_meeting_request.request_id}/status")
     assert response.status_code == 200
     result = json.loads(response.data)
     assert "status" in result
@@ -49,7 +49,7 @@ def test_respond_to_request(client, test_meeting_request) -> None:
         "token": test_meeting_request.token_b,
     }
     response = client.post(
-        f"/api/meeting-requests/{test_meeting_request.request_id}/respond",
+        f"/api/v2/meeting-requests/{test_meeting_request.request_id}/respond",
         data=json.dumps(data),
         content_type="application/json",
     )
@@ -58,7 +58,7 @@ def test_respond_to_request(client, test_meeting_request) -> None:
 
 def test_get_request_results(client, test_meeting_request) -> None:
     """Test getting the results of a meeting request."""
-    response = client.get(f"/api/meeting-requests/{test_meeting_request.request_id}/results")
+    response = client.get(f"/api/v2/meeting-requests/{test_meeting_request.request_id}/results")
 
     assert response.status_code == 200
     result = json.loads(response.data)

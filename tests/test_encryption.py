@@ -1,6 +1,7 @@
 """Test encryption utilities."""
 
 import pytest
+from unittest.mock import patch, MagicMock
 from app.utils.encryption import decrypt_data, encrypt_data, get_encryption_key
 
 
@@ -17,8 +18,11 @@ def test_get_encryption_key():
     assert len(key2) > 0
 
     # Test with None key (should use config)
-    with pytest.raises(ValueError):
-        get_encryption_key(None)
+    mock_app = MagicMock()
+    mock_app.config.get.return_value = None
+    with patch("app.utils.encryption.current_app", mock_app):
+        with pytest.raises(ValueError, match="ENCRYPTION_KEY not found in config"):
+            get_encryption_key(None)
 
 
 def test_encrypt_decrypt_data():
