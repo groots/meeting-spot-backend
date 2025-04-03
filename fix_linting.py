@@ -77,14 +77,14 @@ def fix_meeting_request_dict_any(file_path):
             content = re.sub(
                 r"from typing import (.*?)\n",
                 r"from typing import \1, Dict\n",
-                content
+                content,
             )
 
         if "Any" in content and "from typing import Any" not in content:
             content = re.sub(
                 r"from typing import (.*?)\n",
                 r"from typing import \1, Any\n",
-                content
+                content,
             )
 
         with open(file_path, "w") as f:
@@ -102,7 +102,6 @@ def main():
 
     # Fix each file
     for file_path in python_files:
-        print(f"Fixing {file_path}...")
         fix_unused_typing_imports(file_path)
         fix_unused_os_imports(file_path)
         fix_long_lines(file_path)

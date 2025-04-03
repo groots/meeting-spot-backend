@@ -11,14 +11,17 @@ import googlemaps
 from flask import Blueprint, current_app, jsonify, request, send_from_directory
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from app.models import ContactType, MeetingRequest, MeetingRequestStatus, db
 from flask_login import login_required, current_user
+
+from app.models import ContactType, MeetingRequest, MeetingRequestStatus, db
 from app.models.meeting_request import MeetingRequest
 from app.models.user import User
+
 
 # Create a Blueprint for the main API functionality
 # We'll add routes to this blueprint
 api_bp = Blueprint("api", __name__, static_folder="../static", static_url_path="")
+
 
 # Initialize rate limiter
 limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day", "50 per hour"])
@@ -337,13 +340,14 @@ def create_meeting_request():
         location=data["location"],
         date=data["date"],
         time=data["time"],
-        user_id=current_user.id
+        user_id=current_user.id,
     )
 
     db.session.add(meeting_request)
     db.session.commit()
 
     return jsonify(meeting_request.to_dict()), 201
+
 
 @api_bp.route("/meeting-requests", methods=["GET"])
 @login_required
@@ -352,12 +356,14 @@ def get_meeting_requests():
     meeting_requests = MeetingRequest.query.all()
     return jsonify([request.to_dict() for request in meeting_requests])
 
+
 @api_bp.route("/meeting-requests/<int:request_id>", methods=["GET"])
 @login_required
 def get_meeting_request(request_id):
     """Get a specific meeting request."""
     meeting_request = MeetingRequest.query.get_or_404(request_id)
     return jsonify(meeting_request.to_dict())
+
 
 @api_bp.route("/meeting-requests/<int:request_id>", methods=["PUT"])
 @login_required
@@ -379,6 +385,7 @@ def update_meeting_request(request_id):
     db.session.commit()
     return jsonify(meeting_request.to_dict())
 
+
 @api_bp.route("/meeting-requests/<int:request_id>", methods=["DELETE"])
 @login_required
 def delete_meeting_request(request_id):
@@ -390,6 +397,7 @@ def delete_meeting_request(request_id):
     db.session.delete(meeting_request)
     db.session.commit()
     return "", 204
+
 
 @api_bp.route("/meeting-spots", methods=["POST"])
 @login_required
@@ -410,13 +418,14 @@ def create_meeting_spot():
         name=data["name"],
         address=data["address"],
         latitude=data["latitude"],
-        longitude=data["longitude"]
+        longitude=data["longitude"],
     )
 
     db.session.add(meeting_spot)
     db.session.commit()
 
     return jsonify(meeting_spot.to_dict()), 201
+
 
 @api_bp.route("/meeting-spots", methods=["GET"])
 @login_required
@@ -425,12 +434,14 @@ def get_meeting_spots():
     meeting_spots = MeetingSpot.query.all()
     return jsonify([spot.to_dict() for spot in meeting_spots])
 
+
 @api_bp.route("/meeting-spots/<int:spot_id>", methods=["GET"])
 @login_required
 def get_meeting_spot(spot_id):
     """Get a specific meeting spot."""
     meeting_spot = MeetingSpot.query.get_or_404(spot_id)
     return jsonify(meeting_spot.to_dict())
+
 
 @api_bp.route("/meeting-spots/<int:spot_id>", methods=["PUT"])
 @login_required
@@ -449,6 +460,7 @@ def update_meeting_spot(spot_id):
     db.session.commit()
     return jsonify(meeting_spot.to_dict())
 
+
 @api_bp.route("/meeting-spots/<int:spot_id>", methods=["DELETE"])
 @login_required
 def delete_meeting_spot(spot_id):
@@ -457,6 +469,7 @@ def delete_meeting_spot(spot_id):
     db.session.delete(meeting_spot)
     db.session.commit()
     return "", 204
+
 
 @api_bp.route("/meeting-requests/<int:request_id>/accept-or-decline", methods=["POST"])
 @login_required
