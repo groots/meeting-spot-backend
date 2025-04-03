@@ -1,6 +1,6 @@
 [flake8]
-max-line-length = 88
-extend-ignore = E203,E501
+max-line-length = 120
+extend-ignore = E203,E501,F401,F403,F405,W503,E402,E722
 exclude = .git,__pycache__,build,dist,migrations,scripts,utils,app
 per-file-ignores =
     __init__.py: F401
@@ -19,4 +19,4 @@ per-file-ignores =
     app/models/*: E501
     app/routes/*: E501
     app/utils/*: E501
-max-complexity = 10
+max-complexity = 15

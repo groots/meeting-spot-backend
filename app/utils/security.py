@@ -55,13 +55,9 @@ def generate_token(
     """
     if expires_in is None:
         if token_type == "refresh":
-            expires_in = current_app.config.get(
-                "REFRESH_TOKEN_EXPIRY_DAYS", 30
-            ) * 24 * 60 * 60
+            expires_in = current_app.config.get("REFRESH_TOKEN_EXPIRY_DAYS", 30) * 24 * 60 * 60
         else:
-            expires_in = current_app.config.get(
-                "TOKEN_EXPIRY_HOURS", 24
-            ) * 60 * 60
+            expires_in = current_app.config.get("TOKEN_EXPIRY_HOURS", 24) * 60 * 60
 
     payload = {
         "user_id": user_id,
@@ -121,9 +117,7 @@ def generate_verification_token(user_id: str) -> str:
     Returns:
         Verification token
     """
-    expires_in = current_app.config.get(
-        "VERIFICATION_TOKEN_EXPIRY_HOURS", 24
-    ) * 60 * 60
+    expires_in = current_app.config.get("VERIFICATION_TOKEN_EXPIRY_HOURS", 24) * 60 * 60
     return generate_token(user_id, expires_in, "verification")
 
 
@@ -195,9 +189,7 @@ def hash_password(password: str, salt: Optional[str] = None) -> tuple[str, str]:
     return generate_password_hash(password + salt), salt
 
 
-def verify_password_with_salt(
-    password: str, password_hash: str, salt: str
-) -> bool:
+def verify_password_with_salt(password: str, password_hash: str, salt: str) -> bool:
     """
     Verify a password against its hash and salt.
 
@@ -249,9 +241,7 @@ def sanitize_filename(filename: str) -> str:
     # Remove any path components
     filename = os.path.basename(filename)
     # Replace any non-alphanumeric characters with underscores
-    filename = "".join(
-        c if c.isalnum() or c in "._-" else "_" for c in filename
-    )
+    filename = "".join(c if c.isalnum() or c in "._-" else "_" for c in filename)
     return filename
 
 
@@ -277,9 +267,7 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
     if not any(c.isdigit() for c in password):
         return False, "Password must contain at least one number"
 
-    if not any(
-        c in "!@#$%^&*(),.?\":{}|<>" for c in password
-    ):
+    if not any(c in '!@#$%^&*(),.?":{}|<>' for c in password):
         return False, "Password must contain at least one special character"
 
-    return True, "Password is strong" 
+    return True, "Password is strong"

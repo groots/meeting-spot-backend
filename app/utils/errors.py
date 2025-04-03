@@ -278,4 +278,4 @@ class PaymentError(AppError):
             message: Error message
             details: Additional error details
         """
-        super().__init__(message, 400, details) 
+        super().__init__(message, 400, details)

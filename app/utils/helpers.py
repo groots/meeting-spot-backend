@@ -1,12 +1,20 @@
 """Helper functions for the application."""
 
-import json
-import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
 
 from flask import current_app, jsonify, request
+from sqlalchemy import Query
+from sqlalchemy.orm import Query as SQLAlchemyQuery
 from werkzeug.exceptions import HTTPException
+
+from app.utils.constants import (
+    DEFAULT_PAGE,
+    DEFAULT_PER_PAGE,
+    DEFAULT_SORT_BY,
+    DEFAULT_SORT_ORDER,
+    MAX_PER_PAGE,
+)
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -133,16 +141,12 @@ def format_error_response(
     return response, status_code
 
 
-def validate_required_fields(
-    data: Dict[str, Any], required_fields: List[str]
-) -> None:
+def validate_required_fields(data: Dict[str, Any], required_fields: List[str]) -> None:
     """
     Validate required fields in request data.
     Raises HTTPException if any required field is missing.
     """
-    missing_fields = [
-        field for field in required_fields if field not in data
-    ]
+    missing_fields = [field for field in required_fields if field not in data]
     if missing_fields:
         raise HTTPException(
             description=f"Missing required fields: {', '.join(missing_fields)}",
@@ -155,9 +159,7 @@ def validate_required_fields(
         )
 
 
-def validate_field_types(
-    data: Dict[str, Any], field_types: Dict[str, type]
-) -> None:
+def validate_field_types(data: Dict[str, Any], field_types: Dict[str, type]) -> None:
     """
     Validate field types in request data.
     Raises HTTPException if any field has incorrect type.
@@ -767,4 +769,4 @@ def handle_error(error: Exception) -> tuple[Dict[str, Any], int]:
         "Internal server error",
         500,
         format_error_details(error),
-    ) 
+    )

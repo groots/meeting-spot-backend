@@ -151,13 +151,10 @@ ERROR_MESSAGES = {
     "legal_reasons": "Unavailable for legal reasons",
     "internal_server_error": "Internal server error",
     "not_implemented": "Not implemented",
-    "bad_gateway": "Bad gateway",
-    "service_unavailable": "Service unavailable",
-    "gateway_timeout": "Gateway timeout",
     "http_version_not_supported": "HTTP version not supported",
     "variant_also_negotiates": "Variant also negotiates",
     "insufficient_storage": "Insufficient storage",
     "loop_detected": "Loop detected",
     "not_extended": "Not extended",
     "network_authentication_required": "Network authentication required",
-} 
+}

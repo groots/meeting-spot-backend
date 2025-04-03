@@ -107,7 +107,7 @@ class ProductionConfig(Config):
 # Configuration dictionary
 config = {
     "development": DevelopmentConfig,
-    "production": ProductionConfig(),
+    "production": ProductionConfig,
     "testing": TestingConfig,
     "default": DevelopmentConfig,
 }

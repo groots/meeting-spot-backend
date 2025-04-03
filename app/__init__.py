@@ -1,3 +1,5 @@
+"""Core application factory."""
+
 from flask import Flask
 from flask_cors import CORS
 from flask_migrate import Migrate
@@ -12,7 +14,7 @@ db = SQLAlchemy()
 migrate = Migrate()
 
 
-def create_app(config_name="default") -> None:
+def create_app(config_name="default"):
     """Create and configure the Flask application."""
     app = Flask(__name__)
 
@@ -24,24 +26,11 @@ def create_app(config_name="default") -> None:
     migrate.init_app(app, db)
 
     # Configure CORS
-    if app.debug:
-        CORS(app, resources={r"/*": {"origins": "*"}})
-    else:
-        CORS(app, resources={r"/*": {"origins": app.config["CORS_ORIGINS"]}})
+    CORS(app, resources={r"/*": {"origins": "*"}})
 
-    # Import models to register them with SQLAlchemy
-    from .api import api_bp as api_v1_bp
-    from .models import ContactType, MeetingRequest, MeetingRequestStatus  # noqa: F401
+    # Import and register blueprints
+    from .routes import api_bp
 
-    # Register API blueprints
-    from .routes import api_bp as api_v2_bp
-
-    app.register_blueprint(api_v2_bp, url_prefix="/api/v2", name="api_v2")
-    app.register_blueprint(api_v1_bp, url_prefix="/api/v1", name="api_v1")
-
-    # Register error handlers
-    from .errors import register_error_handlers
-
-    register_error_handlers(app)
+    app.register_blueprint(api_bp, url_prefix="/api")
 
     return app

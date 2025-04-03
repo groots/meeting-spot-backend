@@ -223,9 +223,7 @@ def validate_duration(duration: int) -> bool:
     return 0 < duration <= 480  # Max 8 hours
 
 
-def validate_availability(
-    start_time: str, end_time: str, existing_bookings: list[dict]
-) -> bool:
+def validate_availability(start_time: str, end_time: str, existing_bookings: list[dict]) -> bool:
     """
     Validate if a time slot is available.
     Returns True if available, False otherwise.
@@ -235,15 +233,11 @@ def validate_availability(
         new_end = datetime.strptime(end_time, "%Y-%m-%d %H:%M")
 
         for booking in existing_bookings:
-            existing_start = datetime.strptime(
-                booking["start_time"], "%Y-%m-%d %H:%M"
-            )
+            existing_start = datetime.strptime(booking["start_time"], "%Y-%m-%d %H:%M")
             existing_end = datetime.strptime(booking["end_time"], "%Y-%m-%d %H:%M")
 
             # Check for overlap
-            if (
-                new_start < existing_end and new_end > existing_start
-            ):
+            if new_start < existing_end and new_end > existing_start:
                 return False
 
         return True
@@ -267,4 +261,4 @@ def validate_pagination_params(
     if per_page > max_per_page:
         return False, f"Items per page cannot exceed {max_per_page}"
 
-    return True, None 
+    return True, None
