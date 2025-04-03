@@ -36,7 +36,7 @@ def create_app(config_name="default") -> None:
     from .routes import api_bp as api_v2_bp
     from .api import api_bp as api_v1_bp
 
-    app.register_blueprint(api_v2_bp, url_prefix="/api", name="api_v2")
+    app.register_blueprint(api_v2_bp, url_prefix="/api/v2", name="api_v2")
     app.register_blueprint(api_v1_bp, url_prefix="/api/v1", name="api_v1")
 
     # Register error handlers

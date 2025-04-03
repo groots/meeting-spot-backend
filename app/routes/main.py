@@ -15,7 +15,6 @@ from app.models import ContactType, MeetingRequest, MeetingRequestStatus, db
 from flask_login import login_required, current_user
 from app.models.meeting_request import MeetingRequest
 from app.models.user import User
-from app.models.meeting_spot import MeetingSpot
 
 # Create a Blueprint for the main API functionality
 # We'll add routes to this blueprint
@@ -317,7 +316,7 @@ def select_meeting_spot(request_id) -> None:
 
 # Add other routes for authentication, user profiles etc. later
 
-@api_bp.route("/api/meeting-requests", methods=["POST"])
+@api_bp.route("/meeting-requests", methods=["POST"])
 @login_required
 def create_meeting_request():
     """Create a new meeting request."""
@@ -346,21 +345,21 @@ def create_meeting_request():
 
     return jsonify(meeting_request.to_dict()), 201
 
-@api_bp.route("/api/meeting-requests", methods=["GET"])
+@api_bp.route("/meeting-requests", methods=["GET"])
 @login_required
 def get_meeting_requests():
     """Get all meeting requests."""
     meeting_requests = MeetingRequest.query.all()
     return jsonify([request.to_dict() for request in meeting_requests])
 
-@api_bp.route("/api/meeting-requests/<int:request_id>", methods=["GET"])
+@api_bp.route("/meeting-requests/<int:request_id>", methods=["GET"])
 @login_required
 def get_meeting_request(request_id):
     """Get a specific meeting request."""
     meeting_request = MeetingRequest.query.get_or_404(request_id)
     return jsonify(meeting_request.to_dict())
 
-@api_bp.route("/api/meeting-requests/<int:request_id>", methods=["PUT"])
+@api_bp.route("/meeting-requests/<int:request_id>", methods=["PUT"])
 @login_required
 def update_meeting_request(request_id):
     """Update a meeting request."""
@@ -380,7 +379,7 @@ def update_meeting_request(request_id):
     db.session.commit()
     return jsonify(meeting_request.to_dict())
 
-@api_bp.route("/api/meeting-requests/<int:request_id>", methods=["DELETE"])
+@api_bp.route("/meeting-requests/<int:request_id>", methods=["DELETE"])
 @login_required
 def delete_meeting_request(request_id):
     """Delete a meeting request."""
@@ -392,7 +391,7 @@ def delete_meeting_request(request_id):
     db.session.commit()
     return "", 204
 
-@api_bp.route("/api/meeting-spots", methods=["POST"])
+@api_bp.route("/meeting-spots", methods=["POST"])
 @login_required
 def create_meeting_spot():
     """Create a new meeting spot."""
@@ -419,21 +418,21 @@ def create_meeting_spot():
 
     return jsonify(meeting_spot.to_dict()), 201
 
-@api_bp.route("/api/meeting-spots", methods=["GET"])
+@api_bp.route("/meeting-spots", methods=["GET"])
 @login_required
 def get_meeting_spots():
     """Get all meeting spots."""
     meeting_spots = MeetingSpot.query.all()
     return jsonify([spot.to_dict() for spot in meeting_spots])
 
-@api_bp.route("/api/meeting-spots/<int:spot_id>", methods=["GET"])
+@api_bp.route("/meeting-spots/<int:spot_id>", methods=["GET"])
 @login_required
 def get_meeting_spot(spot_id):
     """Get a specific meeting spot."""
     meeting_spot = MeetingSpot.query.get_or_404(spot_id)
     return jsonify(meeting_spot.to_dict())
 
-@api_bp.route("/api/meeting-spots/<int:spot_id>", methods=["PUT"])
+@api_bp.route("/meeting-spots/<int:spot_id>", methods=["PUT"])
 @login_required
 def update_meeting_spot(spot_id):
     """Update a meeting spot."""
@@ -450,7 +449,7 @@ def update_meeting_spot(spot_id):
     db.session.commit()
     return jsonify(meeting_spot.to_dict())
 
-@api_bp.route("/api/meeting-spots/<int:spot_id>", methods=["DELETE"])
+@api_bp.route("/meeting-spots/<int:spot_id>", methods=["DELETE"])
 @login_required
 def delete_meeting_spot(spot_id):
     """Delete a meeting spot."""
@@ -459,10 +458,10 @@ def delete_meeting_spot(spot_id):
     db.session.commit()
     return "", 204
 
-@api_bp.route("/api/meeting-requests/<int:request_id>/respond", methods=["POST"])
+@api_bp.route("/meeting-requests/<int:request_id>/accept-or-decline", methods=["POST"])
 @login_required
-def respond_to_request(request_id):
-    """Respond to a meeting request."""
+def accept_or_decline_request(request_id):
+    """Accept or decline a meeting request."""
     meeting_request = MeetingRequest.query.get_or_404(request_id)
     data = request.get_json()
     if not data:

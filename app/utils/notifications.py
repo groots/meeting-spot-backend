@@ -9,17 +9,19 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
     Falls back to logging in development environment.
     """
     try:
-        if current_app.config["FLASK_ENV"] == "development":
-            # In development, just log the email
+        # Get Mailgun configuration
+        api_key = current_app.config.get("MAILGUN_API_KEY")
+        domain = current_app.config.get("MAILGUN_DOMAIN")
+        env = current_app.config.get("FLASK_ENV", "development")  # Default to development
+
+        # In development, just log the email
+        if env == "development":
             current_app.logger.info(f"Would send email to {to_email}")
             current_app.logger.info(f"Subject: {subject}")
             current_app.logger.info(f"Body: {body}")
             return True
 
-        # Get Mailgun configuration
-        api_key = current_app.config.get("MAILGUN_API_KEY")
-        domain = current_app.config.get("MAILGUN_DOMAIN")
-
+        # In production, check for required config
         if not api_key or not domain:
             current_app.logger.error("Mailgun configuration missing")
             return False
@@ -55,9 +57,13 @@ def send_sms(to_number: str, message: str) -> bool:
     For development, just log the SMS content.
     """
     try:
+        env = current_app.config.get("FLASK_ENV", "development")  # Default to development
+
         # In development, just log the SMS
-        current_app.logger.info(f"Would send SMS to {to_number}")
-        current_app.logger.info(f"Message: {message}")
+        if env == "development":
+            current_app.logger.info(f"Would send SMS to {to_number}")
+            current_app.logger.info(f"Message: {message}")
+            return True
 
         # TODO: Implement actual SMS sending using Twilio or similar
         # For now, return True to indicate success
