@@ -18,9 +18,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Expose port
+# Set environment variables
+ENV FLASK_APP=app
+ENV FLASK_ENV=production
 ENV PORT=8080
+
+# Expose the port the app runs on
 EXPOSE 8080
 
-# Start the application
-CMD exec gunicorn --bind :$PORT wsgi:app
+# Command to run the application
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:create_app()"] 
