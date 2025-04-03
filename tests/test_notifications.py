@@ -1,7 +1,7 @@
 """Test notification utilities."""
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 from app.utils.notifications import send_email, send_sms
 
 
@@ -18,9 +18,9 @@ def test_send_email_development():
         assert result is True
         mock_logger.info.assert_has_calls(
             [
-                MagicMock.call("Development mode: Would send email to test@example.com"),
-                MagicMock.call("Subject: Test Subject"),
-                MagicMock.call("Body: Test Body"),
+                call("Development mode: Would send email to test@example.com"),
+                call("Subject: Test Subject"),
+                call("Body: Test Body"),
             ]
         )
 
@@ -78,7 +78,7 @@ def test_send_sms():
         assert result is True
         mock_logger.info.assert_has_calls(
             [
-                MagicMock.call("Development mode: Would send SMS to +1234567890"),
-                MagicMock.call("Message: Test Message"),
+                call("Development mode: Would send SMS to +1234567890"),
+                call("Message: Test Message"),
             ]
         ) 
