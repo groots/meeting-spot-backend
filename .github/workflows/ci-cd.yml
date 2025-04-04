@@ -5,11 +5,35 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-deploy:
+  quality-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       
+      # Code Quality Steps
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install black==22.3.0 isort flake8==5.0.4 flake8-docstrings==1.7.0 pytest pytest-cov
+
+      - name: Run black
+        run: black --check .
+
+      - name: Run isort
+        run: isort --check-only .
+
+      - name: Run flake8
+        run: flake8 .
+
+      - name: Run tests
+        run: pytest --cov=app tests/
+      
+      # Deployment Steps
       - name: Google Auth
         uses: google-github-actions/auth@v1
         with:
@@ -33,4 +57,5 @@ jobs:
             --platform managed \
             --region us-east1 \
             --allow-unauthenticated \
-            --set-env-vars="FLASK_ENV=production" 
+            --set-env-vars="FLASK_ENV=production" \
+            --set-secrets="ENCRYPTION_KEY=encryption-key:latest" 
