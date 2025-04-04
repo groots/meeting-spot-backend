@@ -41,7 +41,7 @@ def test_imports():
     from app import create_app  # noqa: F401
     from app.models import MeetingRequest, MeetingRequestStatus  # noqa: F401
     from app.routes import main  # noqa: F401
-    from app.utils import helpers, validators  # noqa: F401
+    from app.utils import encrypt_data, decrypt_data, get_encryption_key  # noqa: F401
 
 
 def test_static_files():
