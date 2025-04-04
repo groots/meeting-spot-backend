@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       # Code Quality Steps
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -34,24 +34,24 @@ jobs:
 
       - name: Run tests
         run: pytest --cov=app tests/
-      
+
       # Deployment Steps
       - name: Google Auth
         uses: google-github-actions/auth@v1
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
-          
+
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
-        
+
       - name: Configure Docker
         run: gcloud auth configure-docker
-        
+
       - name: Build and Push Backend Container
         run: |
           docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/meeting-spot-backend:${{ github.sha }} .
           docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/meeting-spot-backend:${{ github.sha }}
-          
+
       - name: Deploy Backend to Cloud Run
         run: |
           gcloud run deploy meeting-spot-backend \
@@ -60,4 +60,4 @@ jobs:
             --region us-east1 \
             --allow-unauthenticated \
             --set-env-vars="FLASK_ENV=production" \
-            --set-secrets="ENCRYPTION_KEY=encryption-key:latest,JWT_SECRET_KEY=jwt-secret-key:latest,GOOGLE_MAPS_API_KEY=google-maps-api-key:latest,MAILGUN_API_KEY=mailgun-api-key:latest,MAILGUN_DOMAIN=mailgun-domain:latest" 
+            --set-secrets="ENCRYPTION_KEY=encryption-key:latest,JWT_SECRET_KEY=jwt-secret-key:latest,GOOGLE_MAPS_API_KEY=google-maps-api-key:latest,MAILGUN_API_KEY=mailgun-api-key:latest,MAILGUN_DOMAIN=mailgun-domain:latest"

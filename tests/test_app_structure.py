@@ -42,6 +42,7 @@ def test_imports():
         # Import statements are used for testing importability
         from app.api import api_bp as api_v1_bp  # noqa: F401
         from app.models import ContactType, MeetingRequest, MeetingRequestStatus  # noqa: F401
+
         # Import the module but not the specific variable
         from app.routes import main  # noqa: F401
         from app.utils.notifications import send_email, send_sms  # noqa: F401

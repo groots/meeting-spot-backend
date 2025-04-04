@@ -28,4 +28,4 @@ flask run
 
 The application is deployed using GitHub Actions and Google Cloud Run.
 
-# Test deployment with updated Cloud Run permissions 
+# Test deployment with updated Cloud Run permissions

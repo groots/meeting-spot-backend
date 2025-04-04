@@ -31,4 +31,4 @@ print('All imports successful!')
 echo "Running tests..."
 pytest --cov=app tests/ -v
 
-echo "All tests passed!" 
+echo "All tests passed!"
