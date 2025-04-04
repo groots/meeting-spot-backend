@@ -6,6 +6,9 @@ import pytest
 from flask import Flask
 
 from app import create_app
+from app.models import MeetingRequest, MeetingRequestStatus
+from app.routes import main
+from app.utils import decrypt_data, encrypt_data, get_encryption_key
 
 
 def test_app_structure():
@@ -38,10 +41,11 @@ def test_app_creation():
 
 def test_imports():
     """Test that all required modules can be imported."""
+    # Import statements are used for testing importability
     from app import create_app  # noqa: F401
     from app.models import MeetingRequest, MeetingRequestStatus  # noqa: F401
     from app.routes import main  # noqa: F401
-    from app.utils import encrypt_data, decrypt_data, get_encryption_key  # noqa: F401
+    from app.utils import decrypt_data, encrypt_data, get_encryption_key  # noqa: F401
 
 
 def test_static_files():
