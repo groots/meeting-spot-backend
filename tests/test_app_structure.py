@@ -7,7 +7,7 @@ from flask import Flask
 
 from app import create_app
 from app.models import MeetingRequest, MeetingRequestStatus
-from app.routes import main
+from app.routes import api_bp
 from app.utils import decrypt_data, encrypt_data, get_encryption_key
 
 
@@ -37,6 +37,7 @@ def test_app_creation():
     # Test that blueprints are registered
     assert app.blueprints.get("api_v2") is not None
     assert app.blueprints.get("api_v1") is not None
+    assert app.blueprints.get("api") is not None
 
 
 def test_imports():
@@ -44,7 +45,7 @@ def test_imports():
     # Import statements are used for testing importability
     from app import create_app  # noqa: F401
     from app.models import MeetingRequest, MeetingRequestStatus  # noqa: F401
-    from app.routes import main  # noqa: F401
+    from app.routes import api_bp  # noqa: F401
     from app.utils import decrypt_data, encrypt_data, get_encryption_key  # noqa: F401
 
 
@@ -53,5 +54,5 @@ def test_static_files():
     app = create_app()
     with app.test_client() as client:
         # Test API endpoint
-        response = client.get("/api/v2/health")
+        response = client.get("/api/health")
         assert response.status_code == 200
