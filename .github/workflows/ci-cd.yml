@@ -19,7 +19,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install black==22.3.0 isort flake8==5.0.4 flake8-docstrings==1.7.0 pytest pytest-cov cryptography sqlalchemy flask-sqlalchemy psycopg2-binary
+          pip install -r requirements.txt
+          pip install black==22.3.0 isort flake8==5.0.4 flake8-docstrings==1.7.0 pytest pytest-cov
 
       - name: Run black
         run: black --check .
