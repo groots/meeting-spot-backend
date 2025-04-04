@@ -58,4 +58,4 @@ jobs:
             --region us-east1 \
             --allow-unauthenticated \
             --set-env-vars="FLASK_ENV=production" \
-            --set-secrets="ENCRYPTION_KEY=encryption-key:latest" 
+            --set-secrets="ENCRYPTION_KEY=encryption-key:latest,JWT_SECRET_KEY=jwt-secret-key:latest,GOOGLE_MAPS_API_KEY=google-maps-api-key:latest,MAILGUN_API_KEY=mailgun-api-key:latest,MAILGUN_DOMAIN=mailgun-domain:latest" 
