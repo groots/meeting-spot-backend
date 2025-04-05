@@ -82,6 +82,7 @@ class MeetingRequestList(Resource):
         db.session.commit()
 
         response_data = new_request.to_dict()
+        # Add request_id to the response for backward compatibility
         response_data["request_id"] = str(new_request.request_id)
         return response_data, 201
 

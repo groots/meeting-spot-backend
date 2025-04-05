@@ -16,7 +16,15 @@ class UUIDType(TypeDecorator):
     def process_result_value(self, value, dialect) -> None:
         if value is None:
             return None
-        return uuid.UUID(value)
+        if isinstance(value, uuid.UUID):
+            return value
+        try:
+            # Handle string values that might contain 'urn:' or 'uuid:' prefixes
+            if isinstance(value, str):
+                value = value.replace('urn:', '').replace('uuid:', '')
+            return uuid.UUID(str(value))
+        except (ValueError, AttributeError):
+            return None
 
     def process_literal_param(self, value, dialect) -> None:
         if value is None:
