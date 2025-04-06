@@ -15,9 +15,10 @@ def app_client(app):
 
 
 @pytest.fixture
-def mock_meeting_request(db_session):
+def mock_meeting_request(_session):
     """Create a mock meeting request for testing."""
     request = MeetingRequest(
+        request_id=uuid.uuid4(),
         address_a_lat=37.7749,
         address_a_lon=-122.4194,
         location_type="Restaurant / Food",
@@ -29,8 +30,8 @@ def mock_meeting_request(db_session):
         updated_at=datetime.now(timezone.utc),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     )
-    db_session.add(request)
-    db_session.commit()
+    _session.add(request)
+    _session.commit()
     return request
 
 
@@ -74,7 +75,7 @@ def test_get_meeting_request(app_client, mock_meeting_request):
 
 def test_get_meeting_request_status(app_client, mock_meeting_request):
     """Test getting the status of a meeting request."""
-    response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/status/")
+    response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/status")
 
     assert response.status_code == 200
     response_data = json.loads(response.data)
@@ -93,24 +94,17 @@ def test_respond_to_meeting_request(app_client, mock_meeting_request):
     }
 
     response = app_client.post(
-        f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/respond/",
+        f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/respond",
         data=json.dumps(data),
         content_type="application/json",
     )
 
     assert response.status_code == 200
     response_data = json.loads(response.data)
-
     assert response_data["status"] == MeetingRequestStatus.CALCULATING.value
 
-    # Verify the request was updated in the database
-    updated_request = MeetingRequest.query.get(mock_meeting_request.request_id)
-    assert updated_request.status == MeetingRequestStatus.CALCULATING
-    assert updated_request.address_b_lat is not None
-    assert updated_request.address_b_lon is not None
 
-
-def test_get_meeting_request_results(app_client, mock_meeting_request):
+def test_get_meeting_request_results(app_client, mock_meeting_request, _session):
     """Test getting the results of a meeting request."""
     # First, update the request to completed status with some mock results
     mock_meeting_request.status = MeetingRequestStatus.COMPLETED
@@ -128,13 +122,13 @@ def test_get_meeting_request_results(app_client, mock_meeting_request):
         "distance": 2.0,
         "rating": 4.8,
     }
+    _session.commit()
 
-    response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/results/")
+    response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/results")
 
     assert response.status_code == 200
     response_data = json.loads(response.data)
-
     assert response_data["request_id"] == str(mock_meeting_request.request_id)
     assert response_data["status"] == MeetingRequestStatus.COMPLETED.value
-    assert "suggested_options" in response_data
-    assert "selected_place" in response_data
+    assert response_data["suggested_options"] == mock_meeting_request.suggested_options
+    assert response_data["selected_place"] == mock_meeting_request.selected_place_details

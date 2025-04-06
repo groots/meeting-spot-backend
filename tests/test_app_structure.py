@@ -16,13 +16,15 @@ def test_app_structure():
     required_files = [
         "app/__init__.py",
         "app/routes/__init__.py",
-        "app/routes/main.py",
         "app/api/__init__.py",
         "app/models/__init__.py",
         "app/models/meeting_request.py",
         "app/models/user.py",
         "app/models/types.py",
         "app/models/enums.py",
+        "app/utils/__init__.py",
+        "app/utils/encryption.py",
+        "app/utils/helpers.py",
     ]
 
     for file_path in required_files:
