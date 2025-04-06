@@ -42,16 +42,16 @@ def test_create_meeting_request(app_client):
         "user_b_contact_type": "email",
         "user_b_contact": "test@example.com",
     }
-    
+
     response = app_client.post(
         "/api/v1/meeting-requests/",
         data=json.dumps(data),
         content_type="application/json",
     )
-    
+
     assert response.status_code == 201
     response_data = json.loads(response.data)
-    
+
     assert "request_id" in response_data
     assert response_data["location_type"] == data["location_type"]
     assert response_data["user_b_contact_type"] == data["user_b_contact_type"]
@@ -62,10 +62,10 @@ def test_create_meeting_request(app_client):
 def test_get_meeting_request(app_client, mock_meeting_request):
     """Test getting a meeting request by ID."""
     response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}")
-    
+
     assert response.status_code == 200
     response_data = json.loads(response.data)
-    
+
     assert response_data["id"] == str(mock_meeting_request.request_id)
     assert response_data["location_type"] == mock_meeting_request.location_type
     assert response_data["user_b_contact_type"] == mock_meeting_request.user_b_contact_type.value
@@ -75,10 +75,10 @@ def test_get_meeting_request(app_client, mock_meeting_request):
 def test_get_meeting_request_status(app_client, mock_meeting_request):
     """Test getting the status of a meeting request."""
     response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/status/")
-    
+
     assert response.status_code == 200
     response_data = json.loads(response.data)
-    
+
     assert response_data["request_id"] == str(mock_meeting_request.request_id)
     assert response_data["status"] == mock_meeting_request.status.value
     assert "created_at" in response_data
@@ -91,18 +91,18 @@ def test_respond_to_meeting_request(app_client, mock_meeting_request):
         "address_b": "456 Market St, San Francisco, CA",
         "token": mock_meeting_request.token_b,
     }
-    
+
     response = app_client.post(
         f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/respond/",
         data=json.dumps(data),
         content_type="application/json",
     )
-    
+
     assert response.status_code == 200
     response_data = json.loads(response.data)
-    
+
     assert response_data["status"] == MeetingRequestStatus.CALCULATING.value
-    
+
     # Verify the request was updated in the database
     updated_request = MeetingRequest.query.get(mock_meeting_request.request_id)
     assert updated_request.status == MeetingRequestStatus.CALCULATING
@@ -128,13 +128,13 @@ def test_get_meeting_request_results(app_client, mock_meeting_request):
         "distance": 2.0,
         "rating": 4.8,
     }
-    
+
     response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/results/")
-    
+
     assert response.status_code == 200
     response_data = json.loads(response.data)
-    
+
     assert response_data["request_id"] == str(mock_meeting_request.request_id)
     assert response_data["status"] == MeetingRequestStatus.COMPLETED.value
     assert "suggested_options" in response_data
-    assert "selected_place" in response_data 
+    assert "selected_place" in response_data
