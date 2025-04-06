@@ -23,10 +23,12 @@ api_v2_bp = Blueprint("api_v2", __name__, url_prefix="/api/v2")
 # Create a limiter instance
 limiter = Limiter(key_func=get_remote_address)
 
+
 # Add a test route directly to the blueprint
 @api_v1_bp.route("/test/")
 def test_route():
     return jsonify({"message": "API v1 test route working"})
+
 
 # Create API v1 instance
 api_v1 = Api(

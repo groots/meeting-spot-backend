@@ -12,19 +12,17 @@ repos:
     -   id: detect-private-key
 
 -   repo: https://github.com/psf/black
-    rev: 22.3.0
+    rev: 23.12.1
     hooks:
     -   id: black
         language_version: python3.8
-        args: ["--line-length=120"]
-        stages: [commit]
+        args: ["--check"]
 
 -   repo: https://github.com/pycqa/isort
-    rev: 5.12.0
+    rev: 5.13.2
     hooks:
     -   id: isort
-        args: ["--profile", "black", "--line-length=120"]
-        stages: [commit]
+        args: ["--profile", "black"]
 
 # Temporarily disable flake8 and mypy for deployment
 #-   repo: https://github.com/pycqa/flake8
@@ -56,3 +54,17 @@ repos:
         pass_filenames: false
         stages: [push]
         types: [python]
+
+    -   id: black-check
+        name: black-check
+        entry: black --check .
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [push]
+
+    -   id: stage-black-changes
+        name: stage-black-changes
+        entry: git add $(git diff --name-only --cached)
+        language: system
+        stages: [post-commit]
