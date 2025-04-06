@@ -35,6 +35,9 @@ jobs:
       - name: Run tests
         run: pytest --cov=app tests/
 
+      - name: Run integration tests
+        run: pytest --cov=app tests/integration/
+
       # Deployment Steps
       - name: Google Auth
         uses: google-github-actions/auth@v1

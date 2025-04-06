@@ -21,7 +21,7 @@ class UUIDType(TypeDecorator):
         try:
             # Handle string values that might contain 'urn:' or 'uuid:' prefixes
             if isinstance(value, str):
-                value = value.replace('urn:', '').replace('uuid:', '')
+                value = value.replace("urn:", "").replace("uuid:", "")
             return uuid.UUID(str(value))
         except (ValueError, AttributeError):
             return None

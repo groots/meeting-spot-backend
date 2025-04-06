@@ -45,3 +45,14 @@ repos:
 #        -   types-PyYAML
 #        -   types-PyMySQL
 #        -   types-cryptography
+
+# Add a pre-push hook to run tests
+-   repo: local
+    hooks:
+    -   id: pytest
+        name: pytest
+        entry: pytest
+        language: system
+        pass_filenames: false
+        stages: [push]
+        types: [python]
