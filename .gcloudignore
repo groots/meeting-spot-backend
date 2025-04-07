@@ -17,3 +17,46 @@
 __pycache__/
 # Ignored by the build system
 /setup.cfg
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python distribution / packaging
+*.egg-info/
+dist/
+build/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# GitHub workflows
+.github/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Other
+README.md
+.env
+.env.development
+.env.test
