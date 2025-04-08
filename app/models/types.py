@@ -24,10 +24,8 @@ class UUIDType(TypeDecorator):
     def process_bind_param(self, value, dialect):
         if value is None:
             return None
-        elif dialect.name == "postgresql":
-            return value
-        else:
-            return str(value)
+        # Convert to string for all dialects to ensure compatibility
+        return str(value)
 
     def process_result_value(self, value, dialect):
         if value is None:
