@@ -1,4 +1,5 @@
 from .. import db
+from .contact import Contact
 from .enums import ContactType, MeetingRequestStatus
 from .meeting_request import MeetingRequest
 from .types import JSONType, UUIDType
@@ -12,4 +13,5 @@ __all__ = [
     "UUIDType",
     "JSONType",
     "db",
+    "Contact",
 ]

@@ -1,4 +1,5 @@
 import uuid
+from typing import Any, Dict, List, Optional, Union
 
 from flask import request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
@@ -88,3 +89,51 @@ class UserProfile(Resource):
             return {"error": "User not found"}, 404
 
         return user.to_dict()
+
+
+@api.route("/verify-email")
+class EmailVerification(Resource):
+    @api.doc("verify_email")
+    @api.response(200, "Email verified successfully")
+    @api.response(400, "Invalid verification token")
+    def post(self) -> None:
+        """Verify user's email address"""
+        data = request.get_json()
+        token = data.get("token")
+
+        if not token:
+            return {"error": "Verification token is required"}, 400
+
+        user = User.verify_email_token(token)
+        if not user:
+            return {"error": "Invalid or expired verification token"}, 400
+
+        user.email_verified = True
+        db.session.commit()
+
+        return {"message": "Email verified successfully"}
+
+
+@api.route("/resend-verification")
+class ResendVerification(Resource):
+    @api.doc("resend_verification")
+    @api.response(200, "Verification email sent")
+    @api.response(400, "Email already verified")
+    @api.response(404, "User not found")
+    @jwt_required()
+    def post(self) -> None:
+        """Resend email verification link"""
+        current_user_id = get_jwt_identity()
+        user = User.query.get(uuid.UUID(current_user_id))
+
+        if not user:
+            return {"error": "User not found"}, 404
+
+        if user.email_verified:
+            return {"error": "Email already verified"}, 400
+
+        # Generate and send verification email
+        token = user.generate_email_verification_token()
+        user.send_verification_email(token)
+
+        return {"message": "Verification email sent"}

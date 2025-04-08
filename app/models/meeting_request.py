@@ -1,15 +1,25 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from flask import current_app
-from sqlalchemy import Index
+from sqlalchemy import Index, Table
 
 from utils.encryption import decrypt_data, encrypt_data
 
 from .. import db
 from .enums import ContactType, MeetingRequestStatus
+from .place import Place
 from .types import JSONType, UUIDType
+
+# Association table for meeting request suggested places
+meeting_request_suggested_places = Table(
+    "meeting_request_suggested_places",
+    db.metadata,
+    db.Column("meeting_request_id", UUIDType(), db.ForeignKey("meeting_requests.request_id"), primary_key=True),
+    db.Column("place_id", UUIDType(), db.ForeignKey("places.id"), primary_key=True),
+    db.Column("created_at", db.DateTime, server_default=db.func.now()),
+)
 
 
 class MeetingRequest(db.Model):
@@ -56,6 +66,14 @@ class MeetingRequest(db.Model):
 
     # Identifier for anonymous User A sessions
     session_identifier_a = db.Column(db.String(255), nullable=True)
+
+    # Place relationships
+    selected_place_id = db.Column(UUIDType(), db.ForeignKey("places.id"), nullable=True)
+    selected_place = db.relationship("Place", foreign_keys=[selected_place_id], back_populates="selected_by_meetings")
+
+    suggested_places = db.relationship(
+        "Place", secondary=meeting_request_suggested_places, back_populates="suggested_for_meetings"
+    )
 
     # Timestamps
     created_at = db.Column(
@@ -112,7 +130,7 @@ class MeetingRequest(db.Model):
     def to_dict(self) -> Dict[str, Any]:
         """Convert meeting request to dictionary."""
         return {
-            "id": str(self.__dict__.get("request_id", "")),
+            "id": str(self.request_id),
             "user_a_id": str(self.user_a_id) if self.user_a_id else None,
             "user_b_contact_type": self.user_b_contact_type.value,
             "user_b_contact_encrypted": self.user_b_contact_encrypted,
@@ -123,6 +141,9 @@ class MeetingRequest(db.Model):
             "address_b_lon": self.address_b_lon,
             "status": self.status.value,
             "token_b": self.token_b,
+            "selected_place_id": str(self.selected_place_id) if self.selected_place_id else None,
+            "selected_place": self.selected_place.to_dict() if self.selected_place else None,
+            "suggested_places": [place.to_dict() for place in self.suggested_places] if self.suggested_places else [],
             "selected_place_google_id": self.selected_place_google_id,
             "selected_place_details": self.selected_place_details,
             "suggested_options": self.suggested_options,

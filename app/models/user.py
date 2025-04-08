@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Union
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -16,22 +17,26 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(128), nullable=False)  # Store hashed passwords
     google_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
-    created_at = db.Column(
-        db.DateTime,
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = db.Column(
         db.DateTime,
-        nullable=False,
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
     # Relationship to requests initiated by this user
     requests_initiated = db.relationship("MeetingRequest", back_populates="user_a", lazy=True)
 
-    def __repr__(self) -> None:
+    # Relationship to places suggested by this user
+    suggested_places = db.relationship("Place", back_populates="suggested_by", lazy=True)
+
+    # Relationship to places selected by this user
+    selected_places = db.relationship(
+        "Place", secondary="meeting_request_selected_places", back_populates="selected_by", lazy=True
+    )
+
+    def __repr__(self) -> str:
         return f"<User {self.email}>"
 
     def set_password(self, password) -> None:
