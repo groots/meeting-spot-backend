@@ -63,7 +63,8 @@ class DevelopmentConfig(Config):
     DEBUG = True
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "DATABASE_URL",
-        "postgresql+psycopg2://postgres:password@localhost:5433/findameetingspot_dev",
+        "postgresql+psycopg2://postgres:ggSO12ro9u5N1VxANoQOlyGDuOzsHyv3Su7t9LO9IiQ@"
+        "localhost:5433/findameetingspot_dev",
     )
 
 
@@ -84,6 +85,7 @@ class ProductionConfig(Config):
     CORS_ORIGINS = [
         "https://find-a-meeting-spot.ue.r.appspot.com",
         "https://find-a-meeting-spot.web.app",
+        "https://meeting-spot-frontend-270814322595.us-east1.run.app",
     ]
 
     # Database configuration
