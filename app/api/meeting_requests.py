@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from flask import request
+from flask import current_app, request
 from flask_restx import Namespace, Resource, fields
 
 from .. import db
 from ..models import ContactType, MeetingRequest, MeetingRequestStatus
+from ..utils.notifications import send_email
 
 api = Namespace("meeting-requests", description="Meeting request operations")
 
@@ -46,7 +47,7 @@ class MeetingRequestList(Resource):
     @api.response(201, "Request created successfully")
     @api.response(400, "Invalid input")
     def post(self) -> None:
-        """Create a new meeting request"""
+        """Create a new meeting request and notify User B."""
         data = request.get_json()
 
         # Validate required fields
@@ -60,16 +61,17 @@ class MeetingRequestList(Resource):
             return {"error": "Missing required fields"}, 400
 
         # TODO: Geocode address_a to get lat/lon
-        # For now, using dummy coordinates
         address_a_lat = 37.7749
         address_a_lon = -122.4194
+
+        user_b_contact_type_enum = ContactType(data["user_b_contact_type"])
 
         # Create new request
         new_request = MeetingRequest(
             address_a_lat=address_a_lat,
             address_a_lon=address_a_lon,
             location_type=data["location_type"],
-            user_b_contact_type=ContactType(data["user_b_contact_type"]),
+            user_b_contact_type=user_b_contact_type_enum,
             user_b_contact=data["user_b_contact"],
             token_b=uuid.uuid4().hex,
             status=MeetingRequestStatus.PENDING_B_ADDRESS,
@@ -78,13 +80,41 @@ class MeetingRequestList(Resource):
             expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         )
 
-        db.session.add(new_request)
-        db.session.commit()
+        try:
+            db.session.add(new_request)
+            db.session.flush()
 
-        response_data = new_request.to_dict()
-        # Add request_id to the response for backward compatibility
-        response_data["request_id"] = str(new_request.request_id)
-        return response_data, 201
+            # --- Send Notification ---
+            if user_b_contact_type_enum == ContactType.EMAIL:
+                frontend_url = current_app.config.get("FRONTEND_URL")
+                user_b_link = f"{frontend_url}/request/{new_request.request_id}?token={new_request.token_b}"
+
+                subject = "You're invited to find a meeting spot!"
+                body = (
+                    f"Someone has invited you to find a meeting spot for {new_request.location_type}.\n\n"
+                    f"Please provide your address by visiting this link:\n{user_b_link}\n\n"
+                    f"This link will expire in 24 hours."
+                )
+
+                email_sent = send_email(to_email=data["user_b_contact"], subject=subject, body=body)
+                if not email_sent:
+                    # Log error but don't fail the request entirely
+                    current_app.logger.error(f"Failed to send notification email for request {new_request.request_id}")
+            # TODO: Add SMS logic here if needed using send_sms
+            elif user_b_contact_type_enum == ContactType.SMS:
+                current_app.logger.warning(
+                    f"SMS notification requested for {new_request.request_id} but not yet implemented."
+                )
+
+            db.session.commit()
+
+            response_data = new_request.to_dict()
+            response_data["request_id"] = str(new_request.request_id)
+            return response_data, 201
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error creating meeting request: {e}")
+            return {"message": "Internal Server Error"}, 500
 
 
 @api.route("/<string:request_id>")
@@ -134,7 +164,8 @@ class MeetingRequestStatusResource(Resource):
 
 @api.route("/<string:request_id>/respond")
 @api.route("/<string:request_id>/respond/")
-class MeetingRequestRespond(Resource):
+@api.param("request_id", "The request identifier")
+class MeetingRequestResponseResource(Resource):
     @api.doc("respond_to_request")
     @api.response(200, "Response submitted successfully")
     @api.response(400, "Invalid input")
@@ -174,7 +205,8 @@ class MeetingRequestRespond(Resource):
 
 @api.route("/<string:request_id>/results")
 @api.route("/<string:request_id>/results/")
-class MeetingRequestResults(Resource):
+@api.param("request_id", "The request identifier")
+class MeetingRequestResultsResource(Resource):
     @api.doc("get_request_results")
     @api.response(200, "Results retrieved successfully")
     @api.response(404, "Request not found")
