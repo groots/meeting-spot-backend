@@ -133,8 +133,8 @@ class MeetingRequestStatusResource(Resource):
 
 
 @api.route("/<string:request_id>/respond")
-@api.param("request_id", "The request identifier")
-class MeetingRequestResponseResource(Resource):
+@api.route("/<string:request_id>/respond/")
+class MeetingRequestRespond(Resource):
     @api.doc("respond_to_request")
     @api.response(200, "Response submitted successfully")
     @api.response(400, "Invalid input")
@@ -173,8 +173,8 @@ class MeetingRequestResponseResource(Resource):
 
 
 @api.route("/<string:request_id>/results")
-@api.param("request_id", "The request identifier")
-class MeetingRequestResultsResource(Resource):
+@api.route("/<string:request_id>/results/")
+class MeetingRequestResults(Resource):
     @api.doc("get_request_results")
     @api.response(200, "Results retrieved successfully")
     @api.response(404, "Request not found")
