@@ -1,8 +1,8 @@
 import json
 import uuid
 
-from sqlalchemy import CHAR, TypeDecorator
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import CHAR, JSON, TypeDecorator
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 
 class UUIDType(TypeDecorator):
@@ -42,17 +42,33 @@ class UUIDType(TypeDecorator):
 
 
 class JSONType(TypeDecorator):
-    impl = CHAR
+    """Platform-independent JSON type.
+
+    Uses PostgreSQL's JSONB type when available, otherwise
+    uses the SQL JSON type.
+    """
+
+    impl = JSON
     cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(JSONB())
+        else:
+            return dialect.type_descriptor(JSON())
 
     def process_bind_param(self, value, dialect):
         if value is None:
             return None
+        # For PostgreSQL, pg8000 needs the JSON as a string
         return json.dumps(value)
 
     def process_result_value(self, value, dialect):
         if value is None:
             return None
+        # PostgreSQL may return the JSON already parsed
+        if isinstance(value, dict) or isinstance(value, list):
+            return value
         return json.loads(value)
 
     def process_literal_param(self, value, dialect):
