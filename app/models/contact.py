@@ -1,6 +1,9 @@
+import uuid
 from datetime import datetime
 
 from app import db
+
+from .types import UUIDType
 
 
 class Contact(db.Model):
@@ -8,8 +11,8 @@ class Contact(db.Model):
 
     __tablename__ = "contacts"
 
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    id = db.Column(UUIDType(), primary_key=True, default=uuid.uuid4)
+    user_id = db.Column(UUIDType(), db.ForeignKey("users.id"), nullable=False)
     contact_email = db.Column(db.String(120), nullable=False)
     nickname = db.Column(db.String(80))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -18,7 +21,7 @@ class Contact(db.Model):
     def to_dict(self):
         """Convert contact object to dictionary."""
         return {
-            "id": self.id,
+            "id": str(self.id),
             "contact_email": self.contact_email,
             "nickname": self.nickname,
             "created_at": self.created_at.isoformat(),

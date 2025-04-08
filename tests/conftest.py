@@ -81,27 +81,24 @@ def app(test_key) -> None:
 @pytest.fixture(autouse=True)
 def _session(app) -> None:
     """Create a new database session for a test."""
-    # Connect to the database and begin a transaction
     connection = db.engine.connect()
     transaction = connection.begin()
 
-    # Begin a nested transaction (using SAVEPOINT)
-    session = db.session
-    session.begin_nested()
+    # Create a session bound to this connection
+    session = db.create_scoped_session(options={"bind": connection, "binds": {}})
 
-    # Patch the commit method to use flush instead
-    old_commit = session.commit
-    session.commit = session.flush
+    # Make this session the current one
+    db.session = session
 
     yield session
 
-    # Restore commit method
-    session.commit = old_commit
-
-    # Rollback the transaction and close the connection
+    # Clean up
     session.close()
     transaction.rollback()
     connection.close()
+
+    # Restore the original session
+    db.session = db.create_scoped_session()
 
 
 @pytest.fixture

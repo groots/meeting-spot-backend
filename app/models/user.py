@@ -31,11 +31,6 @@ class User(db.Model):
     # Relationship to places suggested by this user
     suggested_places = db.relationship("Place", back_populates="suggested_by", lazy=True)
 
-    # Relationship to places selected by this user
-    selected_places = db.relationship(
-        "Place", secondary="meeting_request_selected_places", back_populates="selected_by", lazy=True
-    )
-
     def __repr__(self) -> str:
         return f"<User {self.email}>"
 
@@ -43,14 +38,14 @@ class User(db.Model):
         """Set hashed password."""
         self.password_hash = generate_password_hash(password)
 
-    def check_password(self, password) -> None:
+    def check_password(self, password) -> bool:
         """Check if password matches hash."""
         return check_password_hash(self.password_hash, password)
 
-    def to_dict(self) -> None:
+    def to_dict(self) -> Dict[str, Any]:
         """Convert user to dictionary."""
         return {
-            "id": self.id,
+            "id": str(self.id),
             "email": self.email,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),

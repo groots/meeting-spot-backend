@@ -28,6 +28,12 @@ class Config:
     # Frontend URL
     FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
+    # LinkedIn OAuth Configuration
+    LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
+    LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
+    LINKEDIN_CALLBACK_URL = os.getenv("LINKEDIN_CALLBACK_URL", "http://localhost:8000/api/v1/auth/linkedin/callback")
+    LINKEDIN_SCOPE = ["r_liteprofile", "r_emailaddress"]
+
     # Mailgun Configuration
     MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
     MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN")

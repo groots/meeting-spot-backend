@@ -6,7 +6,6 @@ from flask_restx import Namespace, Resource, fields
 
 from .. import db
 from ..models import ContactType, MeetingRequest, MeetingRequestStatus
-from ..utils.notifications import send_email
 
 api = Namespace("meeting-requests", description="Meeting request operations")
 
@@ -47,7 +46,7 @@ class MeetingRequestList(Resource):
     @api.response(201, "Request created successfully")
     @api.response(400, "Invalid input")
     def post(self) -> None:
-        """Create a new meeting request and notify User B."""
+        """Create a new meeting request"""
         data = request.get_json()
 
         # Validate required fields
@@ -61,17 +60,16 @@ class MeetingRequestList(Resource):
             return {"error": "Missing required fields"}, 400
 
         # TODO: Geocode address_a to get lat/lon
+        # For now, using dummy coordinates
         address_a_lat = 37.7749
         address_a_lon = -122.4194
-
-        user_b_contact_type_enum = ContactType(data["user_b_contact_type"])
 
         # Create new request
         new_request = MeetingRequest(
             address_a_lat=address_a_lat,
             address_a_lon=address_a_lon,
             location_type=data["location_type"],
-            user_b_contact_type=user_b_contact_type_enum,
+            user_b_contact_type=ContactType(data["user_b_contact_type"]),
             user_b_contact=data["user_b_contact"],
             token_b=uuid.uuid4().hex,
             status=MeetingRequestStatus.PENDING_B_ADDRESS,
@@ -80,61 +78,43 @@ class MeetingRequestList(Resource):
             expires_at=datetime.now(timezone.utc) + timedelta(days=1),
         )
 
-        try:
-            db.session.add(new_request)
-            db.session.flush()
+        db.session.add(new_request)
+        db.session.commit()
 
-            # --- Send Notification ---
-            if user_b_contact_type_enum == ContactType.EMAIL:
-                frontend_url = current_app.config.get("FRONTEND_URL")
-                user_b_link = f"{frontend_url}/request/{new_request.request_id}?token={new_request.token_b}"
-
-                subject = "You're invited to find a meeting spot!"
-                body = (
-                    f"Someone has invited you to find a meeting spot for {new_request.location_type}.\n\n"
-                    f"Please provide your address by visiting this link:\n{user_b_link}\n\n"
-                    f"This link will expire in 24 hours."
-                )
-
-                email_sent = send_email(to_email=data["user_b_contact"], subject=subject, body=body)
-                if not email_sent:
-                    # Log error but don't fail the request entirely
-                    current_app.logger.error(f"Failed to send notification email for request {new_request.request_id}")
-            # TODO: Add SMS logic here if needed using send_sms
-            elif user_b_contact_type_enum == ContactType.SMS:
-                current_app.logger.warning(
-                    f"SMS notification requested for {new_request.request_id} but not yet implemented."
-                )
-
-            db.session.commit()
-
-            response_data = new_request.to_dict()
-            response_data["request_id"] = str(new_request.request_id)
-            return response_data, 201
-        except Exception as e:
-            db.session.rollback()
-            current_app.logger.error(f"Error creating meeting request: {e}")
-            return {"message": "Internal Server Error"}, 500
+        response_data = new_request.to_dict()
+        # Add request_id to the response for backward compatibility
+        response_data["request_id"] = str(new_request.request_id)
+        return response_data, 201
 
 
 @api.route("/<string:request_id>")
 @api.param("request_id", "The request identifier")
 class MeetingRequestResource(Resource):
-    @api.doc("get_request")
-    @api.response(200, "Request found")
-    @api.response(404, "Request not found")
-    def get(self, request_id) -> None:
-        """Get a meeting request by ID"""
+    @api.doc(responses={200: "Success", 404: "Meeting request not found"})
+    @api.param("request_id", "The ID of the meeting request")
+    def get(self, request_id):
+        """Get a meeting request by ID."""
         try:
-            request_id = uuid.UUID(request_id)
-        except ValueError:
-            return {"error": "Invalid request ID format"}, 400
+            request_id_uuid = uuid.UUID(request_id)
+            current_app.logger.debug(f"Looking up meeting request with ID: {request_id_uuid}")
 
-        meeting_request = MeetingRequest.query.get(request_id)
-        if not meeting_request:
-            return {"error": "Request not found"}, 404
+            # Debug: Print all meeting requests in the database
+            all_requests = MeetingRequest.query.all()
+            current_app.logger.debug(f"All meeting requests in DB: {[str(r.request_id) for r in all_requests]}")
 
-        return meeting_request.to_dict()
+            # Use get() instead of filter_by() for primary key lookup
+            meeting_request = MeetingRequest.query.get(request_id_uuid)
+
+            if not meeting_request:
+                current_app.logger.error(f"Meeting request not found with ID: {request_id_uuid}")
+                return {"message": "Meeting request not found"}, 404
+
+            current_app.logger.debug(f"Found meeting request: {meeting_request.to_dict()}")
+            return meeting_request.to_dict()
+
+        except ValueError as e:
+            current_app.logger.error(f"Invalid UUID format: {request_id}")
+            return {"message": "Invalid meeting request ID format"}, 400
 
 
 @api.route("/<string:request_id>/status")
@@ -163,7 +143,6 @@ class MeetingRequestStatusResource(Resource):
 
 
 @api.route("/<string:request_id>/respond")
-@api.route("/<string:request_id>/respond/")
 @api.param("request_id", "The request identifier")
 class MeetingRequestResponseResource(Resource):
     @api.doc("respond_to_request")
@@ -204,7 +183,6 @@ class MeetingRequestResponseResource(Resource):
 
 
 @api.route("/<string:request_id>/results")
-@api.route("/<string:request_id>/results/")
 @api.param("request_id", "The request identifier")
 class MeetingRequestResultsResource(Resource):
     @api.doc("get_request_results")

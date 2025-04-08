@@ -19,9 +19,8 @@ def mock_user(_session):
     """Create a mock user for testing."""
     user = User(
         email="test@example.com",
-        username="testuser",
     )
-    user.set_password("password123")
+    user.set_password("testpassword")
     _session.add(user)
     _session.commit()
     return user
@@ -57,7 +56,12 @@ def mock_meeting_request(_session):
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
     )
     _session.add(request)
-    _session.commit()
+    _session.flush()  # Ensure the object is persisted without committing transaction
+
+    # Verify the request exists in the database
+    queried_request = MeetingRequest.query.get(request.request_id)
+    assert queried_request is not None, "Meeting request was not persisted to database"
+
     return request
 
 
@@ -80,7 +84,8 @@ def test_create_meeting_request(app_client):
     response_data = json.loads(response.data)
     assert "id" in response_data
     assert response_data["location_type"] == data["location_type"]
-    assert response_data["user_b_contact"] == data["user_b_contact"]
+    assert "user_b_contact_encrypted" in response_data
+    assert response_data["user_b_contact_type"] == data["user_b_contact_type"]
 
 
 def test_create_meeting_request_with_contact(app_client, mock_user, mock_contact):
@@ -88,13 +93,14 @@ def test_create_meeting_request_with_contact(app_client, mock_user, mock_contact
     data = {
         "address_a": "123 Main St, San Francisco, CA",
         "location_type": "Restaurant / Food",
-        "user_b_contact_id": str(mock_contact.id),
+        "user_b_contact_type": "email",
+        "user_b_contact": mock_contact.contact_email,
     }
 
     # Login as the user
     auth_response = app_client.post(
-        "/api/v1/auth/login/",
-        data=json.dumps({"email": "test@example.com", "password": "password123"}),
+        "/api/v1/auth/login",
+        data=json.dumps({"email": "test@example.com", "password": "testpassword"}),
         content_type="application/json",
     )
     assert auth_response.status_code == 200
@@ -110,15 +116,24 @@ def test_create_meeting_request_with_contact(app_client, mock_user, mock_contact
 
     assert response.status_code == 201
     response_data = json.loads(response.data)
-    assert "id" in response_data
+    assert "request_id" in response_data
     assert response_data["location_type"] == data["location_type"]
-    assert response_data["user_b_contact_id"] == data["user_b_contact_id"]
-    assert response_data["user_b_contact"] == mock_contact.contact_email
+    assert response_data["user_b_contact_type"] == data["user_b_contact_type"]
 
 
-def test_get_meeting_request(app_client, mock_meeting_request):
+def test_get_meeting_request(app_client, mock_meeting_request, _session):
     """Test retrieving a meeting request by ID."""
-    response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/")
+    # Debug: Verify the meeting request exists in the database
+    queried_request = MeetingRequest.query.get(mock_meeting_request.request_id)
+    print(f"\nMeeting request in database: {queried_request}")
+    print(f"Meeting request ID: {mock_meeting_request.request_id}")
+    print(f"All meeting requests: {[str(r.request_id) for r in MeetingRequest.query.all()]}")
+
+    # Make the request
+    response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}")
+    print(f"Response status: {response.status_code}")
+    print(f"Response data: {response.data.decode()}")
+
     assert response.status_code == 200
     response_data = json.loads(response.data)
     assert response_data["id"] == str(mock_meeting_request.request_id)
@@ -132,7 +147,8 @@ def test_get_meeting_request_with_contact(app_client, mock_user, mock_contact, _
         address_a_lat=37.7749,
         address_a_lon=-122.4194,
         location_type="Restaurant / Food",
-        user_b_contact_id=mock_contact.id,
+        user_b_contact_type=ContactType.EMAIL,
+        user_b_contact=mock_contact.contact_email,
         token_b=uuid.uuid4().hex,
         status=MeetingRequestStatus.PENDING_B_ADDRESS,
         created_at=datetime.now(timezone.utc),
@@ -142,19 +158,23 @@ def test_get_meeting_request_with_contact(app_client, mock_user, mock_contact, _
     _session.add(request)
     _session.commit()
 
-    response = app_client.get(f"/api/v1/meeting-requests/{request.request_id}/")
+    response = app_client.get(f"/api/v1/meeting-requests/{request.request_id}")
     assert response.status_code == 200
     response_data = json.loads(response.data)
     assert response_data["id"] == str(request.request_id)
-    assert response_data["user_b_contact_id"] == str(mock_contact.id)
-    assert response_data["user_b_contact"] == mock_contact.contact_email
+    assert response_data["user_b_contact_type"] == ContactType.EMAIL.value
 
 
-def test_get_meeting_request_status(app_client, mock_meeting_request):
+def test_get_meeting_request_status(app_client, mock_meeting_request, _session):
     """Test getting the status of a meeting request."""
-    response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/status/")
+    # Ensure the meeting request is committed
+    _session.add(mock_meeting_request)
+    _session.commit()
+
+    response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/status")
     assert response.status_code == 200
     response_data = json.loads(response.data)
+    assert response_data["request_id"] == str(mock_meeting_request.request_id)
     assert response_data["status"] == mock_meeting_request.status.value
 
 
@@ -166,7 +186,7 @@ def test_respond_to_meeting_request(app_client, mock_meeting_request):
     }
 
     response = app_client.post(
-        f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/respond/",
+        f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/respond",
         data=json.dumps(data),
         content_type="application/json",
     )
@@ -187,7 +207,7 @@ def test_get_meeting_request_results(app_client, mock_meeting_request):
         "address": "456 Selected St",
     }
 
-    response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/results/")
+    response = app_client.get(f"/api/v1/meeting-requests/{mock_meeting_request.request_id}/results")
     assert response.status_code == 200
     response_data = json.loads(response.data)
     assert response_data["status"] == MeetingRequestStatus.COMPLETED.value
