@@ -1,8 +1,10 @@
-"""Test the API routes."""
-
 import json
+import uuid
+from datetime import datetime, timedelta, timezone
 
-from app.models import MeetingRequestStatus
+import pytest
+
+from app.models import ContactType, MeetingRequest, MeetingRequestStatus
 
 
 def test_create_request(client) -> None:
@@ -50,7 +52,7 @@ def test_respond_to_request(client, test_meeting_request) -> None:
         "token": test_meeting_request.token_b,
     }
     response = client.post(
-        f"/api/v2/meeting-requests/{test_meeting_request.request_id}/respond",
+        f"/api/v2/meeting-requests/{test_meeting_request.request_id}/respond/",
         data=json.dumps(data),
         content_type="application/json",
     )
@@ -59,7 +61,7 @@ def test_respond_to_request(client, test_meeting_request) -> None:
 
 def test_get_request_results(client, test_meeting_request) -> None:
     """Test getting the results of a meeting request."""
-    response = client.get(f"/api/v2/meeting-requests/{test_meeting_request.request_id}/results")
+    response = client.get(f"/api/v2/meeting-requests/{test_meeting_request.request_id}/results/")
 
     assert response.status_code == 200
     result = json.loads(response.data)
