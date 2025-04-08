@@ -5,7 +5,7 @@
 
 # Replace these values with your actual database credentials
 DB_USER="postgres"
-DB_PASS="your-database-password"  # Replace with the actual password
+DB_PASS="password"  # Using the same password as development for simplicity
 INSTANCE_CONNECTION_NAME="find-a-meeting-spot:us-east1:findameetingspot"
 DB_NAME="findameetingspot"
 
@@ -21,12 +21,22 @@ echo "Creating/updating database-url secret..."
 echo -n "$DB_CONNECTION_STRING" | gcloud secrets create database-url --data-file=- --replication-policy="automatic" || \
 echo -n "$DB_CONNECTION_STRING" | gcloud secrets versions add database-url --data-file=-
 
-# Grant the Cloud Run service account access to the secret
-echo "Granting service account access to the secret..."
-SERVICE_ACCOUNT="$(gcloud run services describe meeting-spot-backend --region us-east1 --format='value(serviceAccountEmail)')"
+# Use the default compute service account for the project
+PROJECT_ID=$(gcloud config get-value project)
+SERVICE_ACCOUNT="${PROJECT_ID}@appspot.gserviceaccount.com"
+echo "Using service account: $SERVICE_ACCOUNT"
 
+# Grant the service account access to the secret
+echo "Granting service account access to the secret..."
 gcloud secrets add-iam-policy-binding database-url \
     --member="serviceAccount:$SERVICE_ACCOUNT" \
     --role="roles/secretmanager.secretAccessor"
 
-echo "Done! The database-url secret is now available to the Cloud Run service."
+# Also grant access to the Cloud Run default service account
+CLOUD_RUN_SA="${PROJECT_ID}.a.run.app"
+echo "Also granting access to Cloud Run service account: $CLOUD_RUN_SA"
+gcloud secrets add-iam-policy-binding database-url \
+    --member="serviceAccount:$CLOUD_RUN_SA" \
+    --role="roles/secretmanager.secretAccessor"
+
+echo "Done! The database-url secret is now available to the service accounts."
