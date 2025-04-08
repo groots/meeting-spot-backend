@@ -78,13 +78,17 @@ def app(test_key) -> None:
     ctx.pop()
 
 
-@pytest.fixture(autouse=True)
-def _session(app) -> None:
+@pytest.fixture(scope="function")
+def _session():
     """Create a new database session for a test."""
+    # Store the original session
+    original_session = db.session
+
+    # Connect to the database and begin a transaction
     connection = db.engine.connect()
     transaction = connection.begin()
 
-    # Create a session bound to this connection
+    # Create a session bound to the connection
     session = db.create_scoped_session(options={"bind": connection, "binds": {}})
 
     # Make this session the current one
@@ -92,13 +96,13 @@ def _session(app) -> None:
 
     yield session
 
-    # Clean up
+    # Roll back the transaction and close the connection
     session.close()
     transaction.rollback()
     connection.close()
 
     # Restore the original session
-    db.session = db.create_scoped_session()
+    db.session = original_session
 
 
 @pytest.fixture

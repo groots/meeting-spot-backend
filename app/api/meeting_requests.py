@@ -142,7 +142,7 @@ class MeetingRequestStatusResource(Resource):
         }
 
 
-@api.route("/<string:request_id>/respond")
+@api.route("/<string:request_id>/respond/")
 @api.param("request_id", "The request identifier")
 class MeetingRequestResponseResource(Resource):
     @api.doc("respond_to_request")
@@ -182,7 +182,7 @@ class MeetingRequestResponseResource(Resource):
         return {"status": meeting_request.status.value}
 
 
-@api.route("/<string:request_id>/results")
+@api.route("/<string:request_id>/results/")
 @api.param("request_id", "The request identifier")
 class MeetingRequestResultsResource(Resource):
     @api.doc("get_request_results")

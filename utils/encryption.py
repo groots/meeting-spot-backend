@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from flask import current_app
 
 
-def get_encryption_key(secret_key) -> None:
+def get_encryption_key(secret_key: str) -> bytes:
     """Generate a Fernet key from a secret key using PBKDF2."""
     # Use PBKDF2 to derive a key from the secret
     kdf = PBKDF2HMAC(
@@ -44,12 +44,17 @@ def encrypt_data(data: str, key: Optional[str] = None) -> str:
     if not key:
         raise ValueError("Encryption key is required")
 
-    # Ensure the key is 32 bytes and base64-encoded
-    key_bytes = key.encode()
-    if len(key_bytes) != 32:
-        key_bytes = base64.urlsafe_b64encode(key_bytes.ljust(32)[:32])
+    try:
+        # Try to use the key directly first (it might already be a valid Fernet key)
+        f = Fernet(key.encode())
+    except Exception:
+        # If that fails, try to convert it to a valid Fernet key
+        try:
+            key_bytes = base64.urlsafe_b64encode(key.encode().ljust(32)[:32])
+            f = Fernet(key_bytes)
+        except Exception as e:
+            raise ValueError(f"Invalid encryption key: {str(e)}")
 
-    f = Fernet(key_bytes)
     encrypted_data = f.encrypt(data.encode())
     return encrypted_data.decode()
 
@@ -72,11 +77,16 @@ def decrypt_data(encrypted_data: str, key: Optional[str] = None) -> str:
     if not key:
         raise ValueError("Encryption key is required")
 
-    # Ensure the key is 32 bytes and base64-encoded
-    key_bytes = key.encode()
-    if len(key_bytes) != 32:
-        key_bytes = base64.urlsafe_b64encode(key_bytes.ljust(32)[:32])
+    try:
+        # Try to use the key directly first (it might already be a valid Fernet key)
+        f = Fernet(key.encode())
+    except Exception:
+        # If that fails, try to convert it to a valid Fernet key
+        try:
+            key_bytes = base64.urlsafe_b64encode(key.encode().ljust(32)[:32])
+            f = Fernet(key_bytes)
+        except Exception as e:
+            raise ValueError(f"Invalid encryption key: {str(e)}")
 
-    f = Fernet(key_bytes)
     decrypted_data = f.decrypt(encrypted_data.encode())
     return decrypted_data.decode()
