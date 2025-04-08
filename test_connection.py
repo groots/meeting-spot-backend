@@ -18,7 +18,7 @@ def test_connection():
             port=5433,
             database="findameetingspot_dev",
             user="postgres",
-            password="ggSO12ro9u5N1VxANoQOlyGDuOzsHyv3Su7t9LO9IiQ",
+            password="password",
         )
 
         # Create a cursor
