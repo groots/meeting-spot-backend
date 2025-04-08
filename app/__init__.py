@@ -47,12 +47,13 @@ def create_app(config_name="default"):
     register_error_handlers(app)
 
     # Import and register blueprints
-    from .api import api_v1_bp, api_v2_bp
+    from .api import api_v1_bp, api_v2_bp, debug_bp
     from .routes import api_bp
 
     # Register blueprints with correct prefixes
     app.register_blueprint(api_bp)  # This has the /api prefix
     app.register_blueprint(api_v1_bp)  # This has the /api/v1 prefix
     app.register_blueprint(api_v2_bp)  # This has the /api/v2 prefix
+    app.register_blueprint(debug_bp)  # Register debug endpoints
 
     return app
