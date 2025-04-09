@@ -32,6 +32,71 @@ register_model = api.model(
     },
 )
 
+google_callback_model = api.model(
+    "GoogleCallback",
+    {
+        "token": fields.String(required=True, description="Google ID token"),
+    },
+)
+
+
+@api.route("/google/callback")
+class GoogleCallback(Resource):
+    @api.expect(google_callback_model)
+    @api.doc(
+        "google_callback",
+        responses={200: "Login successful", 400: "Invalid token", 500: "Server error"},
+    )
+    def post(self) -> None:
+        """Handle Google OAuth callback"""
+        try:
+            data = request.get_json()
+            if not data or "token" not in data:
+                return {"error": "Missing token"}, 400
+
+            # Verify the token
+            request_session = google_requests.Request()
+            id_info = google.oauth2.id_token.verify_oauth2_token(
+                data["token"], request_session, current_app.config["GOOGLE_CLIENT_ID"]
+            )
+
+            if not id_info:
+                return {"error": "Invalid token"}, 400
+
+            # Get user info from token
+            google_id = id_info["sub"]
+            email = id_info["email"]
+
+            # Find or create user
+            user = User.query.filter_by(google_oauth_id=google_id).first()
+            if not user:
+                # Check if user exists with this email
+                user = User.query.filter_by(email=email).first()
+                if user:
+                    # Update existing user with Google ID
+                    user.google_oauth_id = google_id
+                else:
+                    # Create new user
+                    user = User(
+                        id=uuid.uuid4(),
+                        email=email,
+                        google_oauth_id=google_id,
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
+                    )
+                    db.session.add(user)
+
+            db.session.commit()
+
+            # Create access token
+            access_token = create_access_token(identity=str(user.id))
+            return {"access_token": access_token, "user": user.to_dict()}
+
+        except ValueError as e:
+            return {"error": f"Invalid token: {str(e)}"}, 400
+        except Exception as e:
+            return {"error": f"Server error: {str(e)}"}, 500
+
 
 @api.route("/login")
 class Login(Resource):
