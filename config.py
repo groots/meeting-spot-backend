@@ -2,6 +2,7 @@ import os
 
 from dotenv import load_dotenv
 from google.cloud import secretmanager
+from sqlalchemy.pool import StaticPool
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -96,3 +97,62 @@ class DevelopmentConfig(Config):
     GOOGLE_CLIENT_ID = os.environ.get(
         "GOOGLE_CLIENT_ID", "270814322595-hueraif6brli58po5gishfvcmocv6n04.apps.googleusercontent.com"
     )
+
+
+class ProductionConfig(Config):
+    """Production configuration."""
+
+    DEBUG = False
+    TESTING = False
+    ENV = "production"
+
+    # Security settings
+    SESSION_COOKIE_SECURE = True
+    REMEMBER_COOKIE_SECURE = True
+    REMEMBER_COOKIE_HTTPONLY = True
+    REMEMBER_COOKIE_SAMESITE = "Lax"
+
+    # CORS settings
+    CORS_ORIGINS = [
+        "https://find-a-meeting-spot.ue.r.appspot.com",
+        "https://find-a-meeting-spot.web.app",
+    ]
+
+    # Database configuration
+    SQLALCHEMY_DATABASE_URI = os.getenv(
+        "DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/findameetingspot"
+    )
+
+    # Set up SQLAlchemy with connection pool
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_size": 5,
+        "max_overflow": 10,
+        "pool_timeout": 30,
+        "pool_recycle": 1800,
+        "pool_pre_ping": True,
+    }
+
+
+class TestingConfig(Config):
+    """Testing configuration."""
+
+    TESTING = True
+    DEBUG = True
+
+    # Use SQLite for testing
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+
+    # Configure SQLite for testing
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "poolclass": StaticPool,
+        "connect_args": {"check_same_thread": False},
+    }
+
+
+# Configuration dictionary
+config = {
+    "development": DevelopmentConfig,
+    "production": ProductionConfig,
+    "testing": TestingConfig,
+    "default": DevelopmentConfig,
+}
