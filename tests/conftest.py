@@ -48,7 +48,7 @@ def app(test_key) -> None:
         }
     )
 
-    # Push an application context
+    # Push an application context that will be used for the entire test session
     ctx = app.app_context()
     ctx.push()
 
@@ -86,6 +86,13 @@ def app(test_key) -> None:
     ctx.pop()
 
 
+@pytest.fixture(scope="function")
+def app_context(app):
+    """Create a new application context for each test."""
+    with app.app_context():
+        yield
+
+
 @pytest.fixture(autouse=True)
 def _session(app) -> None:
     """Create a new database session for a test."""
@@ -119,7 +126,7 @@ def client(app) -> None:
 
 
 @pytest.fixture
-def test_user(_session) -> None:
+def test_user(app_context, _session) -> None:
     """Create a test user."""
     test_id = uuid.uuid4()
     user = User(
@@ -141,7 +148,7 @@ def test_user(_session) -> None:
 
 
 @pytest.fixture
-def test_meeting_request(_session, test_user) -> None:
+def test_meeting_request(app_context, test_user, _session) -> None:
     """Create a test meeting request."""
     request_id = uuid.uuid4()
     request = MeetingRequest(
@@ -170,38 +177,9 @@ def test_meeting_request(_session, test_user) -> None:
 
 
 @pytest.fixture(scope="function")
-def auth_headers(test_user, app):
+def auth_headers(app_context, test_user, app):
     """Create authentication headers with JWT token."""
     from flask_jwt_extended import create_access_token
 
     access_token = create_access_token(identity=test_user.id)
     return {"Authorization": f"Bearer {access_token}"}
-
-
-@pytest.fixture(scope="function")
-def test_meeting_request(test_user, _session) -> None:
-    """Create a test meeting request."""
-    request_id = uuid.uuid4()
-    request = MeetingRequest(
-        request_id=request_id,
-        user_a_id=test_user.id,
-        address_a_lat=37.7749,
-        address_a_lon=-122.4194,
-        location_type="cafe",
-        user_b_contact_type=ContactType.EMAIL,
-        user_b_contact="test@example.com",  # Use the property to handle encryption
-        token_b=uuid.uuid4().hex,
-        status=MeetingRequestStatus.PENDING_B_ADDRESS,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
-    )
-    _session.add(request)
-    _session.commit()
-
-    # Verify the request was created correctly
-    queried_request = MeetingRequest.query.get(request_id)
-    assert queried_request is not None
-    assert queried_request.request_id == request_id
-
-    return request
