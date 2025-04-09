@@ -182,11 +182,18 @@ class MeetingRequestResource(Resource):
             if meeting_request.user_a_id != user.id:
                 return {"message": "Unauthorized"}, 403
 
-            if "status" in data:
+            # Handle address_b coordinates
+            if "address_b_lat" in data and "address_b_lon" in data:
+                meeting_request.address_b_lat = data["address_b_lat"]
+                meeting_request.address_b_lon = data["address_b_lon"]
+                # When address_b is provided, automatically set status to CALCULATING
+                meeting_request.status = MeetingRequestStatus.CALCULATING
+            elif "status" in data:
                 try:
                     meeting_request.status = MeetingRequestStatus(data["status"])
                 except ValueError:
                     return {"message": "Invalid status value"}, 400
+
             if "meeting_location" in data:
                 # TODO: Geocode meeting_location to get lat/lon
                 meeting_request.selected_place_details = data["meeting_location"]
