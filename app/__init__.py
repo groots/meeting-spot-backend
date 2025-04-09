@@ -42,12 +42,23 @@ def create_app(config_name="development"):
         app,
         resources={
             r"/api/*": {
-                "origins": app.config.get("CORS_ORIGINS", ["http://localhost:3000"])
-                + ["https://findameetingspot.com", "https://www.findameetingspot.com"],
+                "origins": app.config.get("CORS_ORIGINS", ["http://localhost:3000"]),
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": ["Content-Type", "Authorization", "Accept"],
+                "allow_headers": [
+                    "Content-Type",
+                    "Authorization",
+                    "Accept",
+                    "X-Requested-With",
+                    "Origin",
+                    "Access-Control-Request-Method",
+                    "Access-Control-Request-Headers",
+                ],
                 "expose_headers": ["Content-Type", "Authorization"],
                 "supports_credentials": True,
+                "max_age": 3600,
+                "send_wildcard": False,
+                "automatic_options": True,
+                "vary_header": True,
             }
         },
     )

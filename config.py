@@ -116,6 +116,9 @@ class ProductionConfig(Config):
     CORS_ORIGINS = [
         "https://find-a-meeting-spot.ue.r.appspot.com",
         "https://find-a-meeting-spot.web.app",
+        "https://findameetingspot.com",
+        "https://www.findameetingspot.com",
+        "https://meeting-spot-backend-270814322595.us-east1.run.app",
     ]
 
     # Database configuration
