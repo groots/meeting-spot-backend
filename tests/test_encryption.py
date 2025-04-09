@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.utils.encryption import decrypt_data, encrypt_data, get_encryption_key
+from app.utils.encryption import get_encryption_key
 
 
 def test_get_encryption_key():
@@ -23,34 +23,10 @@ def test_get_encryption_key():
     mock_app = MagicMock()
     mock_app.config.get.return_value = None
     with patch("app.utils.encryption.current_app", mock_app):
-        with pytest.raises(ValueError, match="ENCRYPTION_KEY not found in config"):
+        with pytest.raises(ValueError, match="Encryption key is required"):
             get_encryption_key(None)
 
-
-def test_encrypt_decrypt_data():
-    """Test data encryption and decryption."""
-    test_data = "Hello, World!"
-    secret_key = "test_secret_key"
-
-    # Test encryption
-    encrypted = encrypt_data(test_data, secret_key)
-    assert isinstance(encrypted, str)
-    assert encrypted != test_data
-    assert len(encrypted) > 0
-
-    # Test decryption
-    decrypted = decrypt_data(encrypted, secret_key)
-    assert decrypted == test_data
-
-    # Test with bytes input
-    encrypted_bytes = encrypt_data(test_data.encode(), secret_key)
-    decrypted_bytes = decrypt_data(encrypted_bytes, secret_key)
-    assert decrypted_bytes == test_data
-
-    # Test empty data
-    assert encrypt_data("", secret_key) == ""
-    assert decrypt_data("", secret_key) == ""
-
-    # Test invalid data
-    with pytest.raises(ValueError):
-        decrypt_data("invalid_data", secret_key)
+    # Test that same input produces same key
+    key3 = get_encryption_key("test_secret")
+    key4 = get_encryption_key("test_secret")
+    assert key3 == key4

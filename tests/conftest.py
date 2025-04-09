@@ -52,6 +52,10 @@ def app(test_key) -> None:
     ctx = app.app_context()
     ctx.push()
 
+    # Verify encryption key is set
+    if not app.config.get("ENCRYPTION_KEY"):
+        raise ValueError("Encryption key not set in app config")
+
     # Drop all tables first to ensure a clean state
     db.drop_all()
 
