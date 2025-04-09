@@ -10,8 +10,7 @@ from app.models import ContactType, MeetingRequest, MeetingRequestStatus
 def test_create_request(client, auth_headers) -> None:
     """Test creating a new meeting request."""
     data = {
-        "address_a_lat": 37.7749,
-        "address_a_lon": -122.4194,
+        "address_a": "123 Test St, San Francisco, CA 94105",  # API expects address string
         "location_type": "cafe",
         "user_b_contact_type": "email",
         "user_b_contact": "test@example.com",
@@ -60,7 +59,7 @@ def test_respond_to_request(client, test_meeting_request, auth_headers) -> None:
         "token": test_meeting_request.token_b,
     }
     response = client.post(
-        f"/api/v1/meeting-requests/{test_meeting_request.request_id}/respond/",
+        f"/api/v1/meeting-requests/{test_meeting_request.request_id}/respond",  # Remove trailing slash
         data=json.dumps(data),
         content_type="application/json",
         headers=auth_headers,
@@ -71,7 +70,7 @@ def test_respond_to_request(client, test_meeting_request, auth_headers) -> None:
 def test_get_request_results(client, test_meeting_request, auth_headers) -> None:
     """Test getting the results of a meeting request."""
     response = client.get(
-        f"/api/v1/meeting-requests/{test_meeting_request.request_id}/results/",
+        f"/api/v1/meeting-requests/{test_meeting_request.request_id}/results",  # Remove trailing slash
         headers=auth_headers,
     )
 

@@ -1,5 +1,6 @@
 """Tests for MeetingRequest model."""
 
+import uuid
 from datetime import datetime, timezone
 
 import pytest
@@ -17,6 +18,7 @@ def test_meeting_request_encryption(app, _session):
         status=MeetingRequestStatus.PENDING_B_ADDRESS,
         address_a_lat=37.7749,
         address_a_lon=-122.4194,
+        token_b=uuid.uuid4().hex,
     )
 
     # Verify encryption happened
@@ -45,4 +47,5 @@ def test_meeting_request_missing_encryption_key(app):
             status=MeetingRequestStatus.PENDING_B_ADDRESS,
             address_a_lat=37.7749,
             address_a_lon=-122.4194,
+            token_b=uuid.uuid4().hex,
         )
