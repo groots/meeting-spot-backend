@@ -48,13 +48,26 @@ class TestingConfig(Config):
 
     TESTING = True
     DEBUG = True
+
+    # Server configuration for URL building
+    SERVER_NAME = "localhost:5000"
+    APPLICATION_ROOT = "/"
+    PREFERRED_URL_SCHEME = "http"
+
     # Use SQLite for testing
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+
     # Configure SQLite for testing
     SQLALCHEMY_ENGINE_OPTIONS = {
         "poolclass": StaticPool,
         "connect_args": {"check_same_thread": False},
     }
+
+    # Set a default encryption key for testing
+    ENCRYPTION_KEY = "test-encryption-key-for-testing-only"
+
+    # Set a default JWT secret key for testing
+    JWT_SECRET_KEY = "test-jwt-secret-key"
 
 
 class DevelopmentConfig(Config):

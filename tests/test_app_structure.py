@@ -39,7 +39,7 @@ def test_app_creation():
     # Test that blueprints are registered
     assert app.blueprints.get("api_v2") is not None
     assert app.blueprints.get("api_v1") is not None
-    assert app.blueprints.get("api") is not None
+    assert app.blueprints.get("debug") is not None
 
 
 def test_imports():
@@ -55,6 +55,6 @@ def test_static_files():
     """Test that static files are accessible."""
     app = create_app()
     with app.test_client() as client:
-        # Test API health endpoint
-        response = client.get("/api/v1/health")
+        # Test API test route
+        response = client.get("/api/v1/test/")
         assert response.status_code == 200
