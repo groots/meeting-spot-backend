@@ -6,8 +6,11 @@ from flask import current_app
 from app.utils.encryption import decrypt_data, encrypt_data, get_encryption_key
 
 
-def test_encryption_key_required():
+def test_encryption_key_required(app):
     """Test that encryption fails gracefully when key is missing."""
+    # Ensure no encryption key in config
+    app.config["ENCRYPTION_KEY"] = None
+
     with pytest.raises(ValueError, match="Encryption key is required"):
         get_encryption_key(None)
 
