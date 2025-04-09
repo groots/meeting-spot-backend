@@ -41,6 +41,10 @@ def app(test_key) -> None:
                 "connect_args": {"check_same_thread": False},
             },
             "TESTING": True,
+            "JWT_SECRET_KEY": "test-jwt-secret-key",
+            "SERVER_NAME": "localhost:5000",
+            "APPLICATION_ROOT": "/",
+            "PREFERRED_URL_SCHEME": "http",
         }
     )
 

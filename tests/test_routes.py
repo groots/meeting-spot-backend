@@ -27,6 +27,8 @@ def test_create_request(client, auth_headers) -> None:
     print(f"Response data: {response.data}")
 
     assert response.status_code == 201
+    result = json.loads(response.data)
+    assert result["status"] == MeetingRequestStatus.PENDING_B_ADDRESS.value
 
 
 def test_get_request_status(client, test_meeting_request, auth_headers) -> None:
@@ -59,18 +61,20 @@ def test_respond_to_request(client, test_meeting_request, auth_headers) -> None:
         "token": test_meeting_request.token_b,
     }
     response = client.post(
-        f"/api/v1/meeting-requests/{test_meeting_request.request_id}/respond",  # Remove trailing slash
+        f"/api/v1/meeting-requests/{test_meeting_request.request_id}/respond",
         data=json.dumps(data),
         content_type="application/json",
         headers=auth_headers,
     )
     assert response.status_code == 200
+    result = json.loads(response.data)
+    assert result["status"] == MeetingRequestStatus.CALCULATING.value
 
 
 def test_get_request_results(client, test_meeting_request, auth_headers) -> None:
     """Test getting the results of a meeting request."""
     response = client.get(
-        f"/api/v1/meeting-requests/{test_meeting_request.request_id}/results",  # Remove trailing slash
+        f"/api/v1/meeting-requests/{test_meeting_request.request_id}/results",
         headers=auth_headers,
     )
 

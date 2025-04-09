@@ -60,7 +60,7 @@ def test_update_meeting_request(client, test_meeting_request, auth_headers):
         headers=auth_headers,
     )
     assert response.status_code == 200
-    assert response.json["status"] == MeetingRequestStatus.PROCESSING.value
+    assert response.json["status"] == MeetingRequestStatus.CALCULATING.value
 
 
 def test_delete_meeting_request(client, test_meeting_request, auth_headers):
