@@ -20,10 +20,14 @@ def test_key() -> bytes:
 
 
 @pytest.fixture(scope="session")
-def app(test_key) -> None:
+def app() -> None:
     """Create and configure a new app instance for each test."""
+    # Generate a test encryption key and store it as a string
+    encryption_key = Fernet.generate_key()
+    encryption_key_str = encryption_key.decode()
+
     # Set up test environment variables
-    os.environ["ENCRYPTION_KEY"] = test_key.decode()
+    os.environ["ENCRYPTION_KEY"] = encryption_key_str
     os.environ["JWT_SECRET_KEY"] = "test-jwt-secret-key"
     # Force SQLite for testing
     os.environ["DATABASE_URL"] = "sqlite:///:memory:"
@@ -33,7 +37,7 @@ def app(test_key) -> None:
     # Configure SQLite to use in-memory database
     app.config.update(
         {
-            "ENCRYPTION_KEY": test_key.decode(),  # Store as string in config
+            "ENCRYPTION_KEY": encryption_key_str,  # Store as string in config
             "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
             "SQLALCHEMY_TRACK_MODIFICATIONS": False,
             "SQLALCHEMY_ENGINE_OPTIONS": {
@@ -55,6 +59,7 @@ def app(test_key) -> None:
     # Verify encryption key is set
     if not app.config.get("ENCRYPTION_KEY"):
         raise ValueError("Encryption key not set in app config")
+    print(f"\nEncryption key is set: {bool(app.config['ENCRYPTION_KEY'])}")  # Debug print
 
     # Drop all tables first to ensure a clean state
     db.drop_all()
@@ -90,6 +95,11 @@ def app(test_key) -> None:
 def app_context(app):
     """Create a new application context for each test."""
     with app.app_context():
+        # Ensure encryption key is set in current app context
+        from flask import current_app
+
+        if not current_app.config.get("ENCRYPTION_KEY"):
+            current_app.config["ENCRYPTION_KEY"] = os.environ["ENCRYPTION_KEY"]
         yield
 
 
