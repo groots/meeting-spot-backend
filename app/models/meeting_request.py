@@ -130,7 +130,7 @@ class MeetingRequest(db.Model):
     def to_dict(self) -> Dict[str, Any]:
         """Convert meeting request to dictionary."""
         return {
-            "id": str(self.request_id),
+            "request_id": str(self.request_id),
             "user_a_id": str(self.user_a_id) if self.user_a_id else None,
             "user_b_contact_type": self.user_b_contact_type.value,
             "user_b_contact_encrypted": self.user_b_contact_encrypted,

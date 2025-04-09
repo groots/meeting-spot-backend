@@ -6,11 +6,14 @@ from google.cloud import secretmanager
 load_dotenv()  # Load environment variables from .env file
 
 
-def get_secret(secret_id) -> None:
+def get_secret(secret_id, ignore_in_dev=False) -> None:
     """Retrieve a secret from Secret Manager."""
+    if os.environ.get("FLASK_ENV") == "development" and ignore_in_dev:
+        return None
+
     try:
         client = secretmanager.SecretManagerServiceClient()
-        name = f"projects/{os.environ.get('GOOGLE_CLOUD_PROJECT')}/secrets/" f"{secret_id}/versions/latest"
+        name = f"projects/{os.environ.get('GOOGLE_CLOUD_PROJECT')}/secrets/{secret_id}/versions/l" + "atest"
         response = client.access_secret_version(request={"name": name})
         return response.payload.data.decode("UTF-8")
     except Exception as e:
@@ -38,7 +41,7 @@ class Config:
         "SERVICE_ACCOUNT_EMAIL",
         "meeting-spot-app@find-a-meeting-spot.iam.gserviceaccount.com",
     )
-    SERVICE_ACCOUNT_CREDENTIALS = get_secret("meeting-spot-service-account")
+    SERVICE_ACCOUNT_CREDENTIALS = get_secret("meeting-spot-service-account", ignore_in_dev=True)
 
     # Google Maps API Key (Store securely in Secret Manager)
     GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
@@ -66,3 +69,30 @@ class Config:
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
     # Add other configurations as needed
+
+
+class DevelopmentConfig(Config):
+    """Development configuration."""
+
+    DEBUG = True
+    TESTING = False
+
+    # Override service account to avoid Secret Manager in development
+    SERVICE_ACCOUNT_CREDENTIALS = None
+
+    # Use environment variables for development
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///dev.db")
+
+    # Use environment variables for encryption key
+    ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "lpCxwLkoWlix-nm4VtLRkbtuy_Yx9pb5mhZjYvJuRGA=")
+
+    # Frontend URL for development
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+    # JWT settings
+    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-jwt-secret-key")
+
+    # Google OAuth settings
+    GOOGLE_CLIENT_ID = os.environ.get(
+        "GOOGLE_CLIENT_ID", "270814322595-hueraif6brli58po5gishfvcmocv6n04.apps.googleusercontent.com"
+    )

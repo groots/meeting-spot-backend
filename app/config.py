@@ -28,12 +28,6 @@ class Config:
     # Frontend URL
     FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
-    # LinkedIn OAuth Configuration
-    LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
-    LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
-    LINKEDIN_CALLBACK_URL = os.getenv("LINKEDIN_CALLBACK_URL", "http://localhost:8000/api/v1/auth/linkedin/callback")
-    LINKEDIN_SCOPE = ["r_liteprofile", "r_emailaddress"]
-
     # Mailgun Configuration
     MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
     MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN")
@@ -91,13 +85,11 @@ class ProductionConfig(Config):
     CORS_ORIGINS = [
         "https://find-a-meeting-spot.ue.r.appspot.com",
         "https://find-a-meeting-spot.web.app",
-        "https://meeting-spot-frontend-270814322595.us-east1.run.app",
     ]
 
     # Database configuration
     SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DATABASE_URL",
-        "postgresql+pg8000:///findameetingspot?host=/cloudsql/" "find-a-meeting-spot:us-east1:findameetingspot",
+        "DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/findameetingspot"
     )
 
     # Set up SQLAlchemy with connection pool

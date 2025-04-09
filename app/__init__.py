@@ -1,59 +1,67 @@
-"""Core application factory."""
+"""Flask application factory."""
+import os
 
 from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 
-from .config import config
-from .errors import register_error_handlers
-
-# This file makes the app directory a Python package
-
-
 db = SQLAlchemy()
-migrate = Migrate()
 jwt = JWTManager()
+migrate = Migrate()
 
 
-def create_app(config_name="default"):
-    """Create and configure the Flask application."""
+def create_app(config_name="development"):
+    """Create and configure the Flask application.
+
+    Args:
+        config_name: The name of the configuration to use.
+
+    Returns:
+        The configured Flask application.
+    """
     app = Flask(__name__)
 
-    # Load configuration
-    app.config.from_object(config[config_name])
+    # Load configuration based on environment
+    if config_name == "testing":
+        app.config.from_object("config.TestingConfig")
+    elif config_name == "development":
+        # Use our development config that doesn't require Google Cloud
+        from development_config import DevelopmentConfig
 
-    # Initialize extensions
-    db.init_app(app)
-    migrate.init_app(app, db)
-    jwt.init_app(app)
+        app.config.from_object(DevelopmentConfig)
+    else:
+        app.config.from_object("config.Config")
 
-    # Configure rate limiter with more lenient limits
-    limiter = Limiter(
-        app=app,
-        key_func=get_remote_address,
-        default_limits=["1000 per day", "100 per hour"],
-        storage_uri="memory://",
-        strategy="fixed-window",  # Use fixed window strategy for more predictable behavior
+    # Override config with environment variables
+    app.config.from_envvar("APP_CONFIG", silent=True)
+
+    # Initialize extensions with CORS configuration
+    CORS(
+        app,
+        resources={
+            r"/api/*": {
+                "origins": app.config.get("CORS_ORIGINS", ["http://localhost:3000"])
+                + ["https://findameetingspot.com", "https://www.findameetingspot.com"],
+                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                "allow_headers": ["Content-Type", "Authorization", "Accept"],
+                "expose_headers": ["Content-Type", "Authorization"],
+                "supports_credentials": True,
+            }
+        },
     )
+    db.init_app(app)
+    jwt.init_app(app)
+    migrate.init_app(app, db)
 
-    # Configure CORS
-    CORS(app, resources={r"/*": {"origins": "*"}})
+    with app.app_context():
+        # Register API blueprints
+        from app.api import init_app as init_api
 
-    # Register error handlers
-    register_error_handlers(app)
+        init_api(app)
 
-    # Import and register blueprints
-    from .api import api_v1_bp, api_v2_bp, debug_bp
-    from .routes import api_bp
-
-    # Register blueprints with correct prefixes
-    app.register_blueprint(api_bp)  # This has the /api prefix
-    app.register_blueprint(api_v1_bp)  # This has the /api/v1 prefix
-    app.register_blueprint(api_v2_bp)  # This has the /api/v2 prefix
-    app.register_blueprint(debug_bp)  # Register debug endpoints
+        # Create database tables
+        db.create_all()
 
     return app

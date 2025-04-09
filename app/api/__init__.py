@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from .. import db
 from ..models import ContactType, MeetingRequest, MeetingRequestStatus
+from ..utils.notifications import send_email
 from .auth import api as auth_ns
 from .meeting_requests import api as meeting_requests_ns
 from .users import api as users_ns
@@ -32,6 +33,22 @@ debug_bp = Blueprint("debug", __name__, url_prefix="/debug")
 @api_v1_bp.route("/test/")
 def test_route():
     return jsonify({"message": "API v1 test route working"})
+
+
+# Add an email test route
+@debug_bp.route("/test-email")
+def test_email():
+    try:
+        result = send_email(
+            "squish.roots@gmail.com",
+            "Test Email from Find A Meeting Spot",
+            "This is a test email sent from the development environment using Mailgun with mg.findameetingspot.com domain.",
+        )
+        if result:
+            return jsonify({"message": "Email sent successfully"})
+        return jsonify({"error": "Failed to send email"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # Create API v1 instance

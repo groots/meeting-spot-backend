@@ -1,7 +1,8 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
+from flask_jwt_extended import create_access_token
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .. import db
@@ -15,7 +16,7 @@ class User(db.Model):
 
     id = db.Column(UUIDType(), primary_key=True, default=uuid.uuid4)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
-    password_hash = db.Column(db.String(128), nullable=False)  # Store hashed passwords
+    password_hash = db.Column(db.String(128), nullable=True)  # Allow null for OAuth users
     google_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = db.Column(
@@ -40,7 +41,24 @@ class User(db.Model):
 
     def check_password(self, password) -> bool:
         """Check if password matches hash."""
+        if not self.password_hash:
+            return False
         return check_password_hash(self.password_hash, password)
+
+    def get_token(self) -> str:
+        """Generate a JWT token for this user."""
+        return create_access_token(
+            identity=str(self.id), expires_delta=timedelta(days=1), additional_claims={"email": self.email}
+        )
+
+    @classmethod
+    def get_by_token_identity(cls, identity: str) -> Optional["User"]:
+        """Get a user by their JWT token identity."""
+        try:
+            user_id = uuid.UUID(identity)
+            return cls.query.get(user_id)
+        except ValueError:
+            return None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert user to dictionary."""
@@ -49,4 +67,5 @@ class User(db.Model):
             "email": self.email,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
+            "is_oauth_user": bool(self.google_oauth_id),
         }
