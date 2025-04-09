@@ -139,6 +139,11 @@ class TestingConfig(Config):
     TESTING = True
     DEBUG = True
 
+    # Server configuration for URL building
+    SERVER_NAME = "localhost:5000"
+    APPLICATION_ROOT = "/"
+    PREFERRED_URL_SCHEME = "http"
+
     # Use SQLite for testing
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
 
@@ -147,6 +152,9 @@ class TestingConfig(Config):
         "poolclass": StaticPool,
         "connect_args": {"check_same_thread": False},
     }
+
+    # Ensure encryption key is set for testing
+    ENCRYPTION_KEY = "test_encryption_key_for_testing_only"
 
 
 # Configuration dictionary

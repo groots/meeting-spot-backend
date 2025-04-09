@@ -15,6 +15,8 @@ def test_meeting_request_encryption(app, _session):
         user_b_contact=contact_email,
         location_type="cafe",
         status=MeetingRequestStatus.PENDING_B_ADDRESS,
+        address_a_lat=37.7749,
+        address_a_lon=-122.4194,
     )
 
     # Verify encryption happened
@@ -41,4 +43,6 @@ def test_meeting_request_missing_encryption_key(app):
             user_b_contact="test@example.com",
             location_type="cafe",
             status=MeetingRequestStatus.PENDING_B_ADDRESS,
+            address_a_lat=37.7749,
+            address_a_lon=-122.4194,
         )
