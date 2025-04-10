@@ -1,7 +1,9 @@
 """Flask application factory."""
+import logging
 import os
+from logging.handlers import RotatingFileHandler
 
-from flask import Flask, request
+from flask import Flask, current_app, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
@@ -10,6 +12,33 @@ from flask_sqlalchemy import SQLAlchemy
 db = SQLAlchemy()
 jwt = JWTManager()
 migrate = Migrate()
+
+
+def setup_logging(app):
+    """Set up logging configuration."""
+    # Create logs directory if it doesn't exist
+    if not os.path.exists("logs"):
+        os.makedirs("logs")
+
+    # Set up file handler for CORS logs
+    cors_handler = RotatingFileHandler("logs/cors.log", maxBytes=10000000, backupCount=5)
+    cors_handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s in %(module)s: %(message)s"))
+    cors_handler.setLevel(logging.INFO)
+
+    # Create CORS logger
+    cors_logger = logging.getLogger("cors")
+    cors_logger.setLevel(logging.INFO)
+    cors_logger.addHandler(cors_handler)
+
+    # Set up file handler for general application logs
+    handler = RotatingFileHandler("logs/app.log", maxBytes=10000000, backupCount=5)
+    handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s in %(module)s: %(message)s"))
+    handler.setLevel(logging.INFO)
+
+    # Add handlers to app logger
+    app.logger.addHandler(handler)
+    app.logger.setLevel(logging.INFO)
+    app.logger.info("Application startup")
 
 
 def create_app(config_name="development"):
@@ -36,6 +65,9 @@ def create_app(config_name="development"):
 
     # Override config with environment variables
     app.config.from_envvar("APP_CONFIG", silent=True)
+
+    # Set up logging
+    setup_logging(app)
 
     # Initialize CORS with app-wide settings
     CORS(
@@ -82,6 +114,17 @@ def create_app(config_name="development"):
     @app.after_request
     def add_security_headers(response):
         """Add security headers to all responses."""
+        cors_logger = logging.getLogger("cors")
+
+        # Log request details
+        cors_logger.info(
+            "Request: %s %s\nHeaders: %s\nOrigin: %s\n",
+            request.method,
+            request.path,
+            dict(request.headers),
+            request.headers.get("Origin"),
+        )
+
         # Add security headers
         if app.config.get("SECURITY_HEADERS"):
             for header, value in app.config["SECURITY_HEADERS"].items():
@@ -92,21 +135,45 @@ def create_app(config_name="development"):
             response.status_code = 200
             # Ensure CORS headers are present
             if "Origin" in request.headers:
-                response.headers["Access-Control-Allow-Origin"] = request.headers["Origin"]
-                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-                response.headers[
-                    "Access-Control-Allow-Headers"
-                ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-                response.headers["Access-Control-Allow-Credentials"] = "true"
-                response.headers["Access-Control-Max-Age"] = "3600"
+                origin = request.headers["Origin"]
+                allowed_origins = app.config.get("CORS_ORIGINS", [])
 
-        # Debug: Print headers for all responses
-        print(f"\nRequest Method: {request.method}")
-        print(f"Request Headers: {dict(request.headers)}")
-        print(f"Response Headers: {dict(response.headers)}")
-        print(f"Response Status: {response.status_code}")
+                # Log CORS validation
+                cors_logger.info(
+                    "CORS Validation:\nOrigin: %s\nAllowed Origins: %s\nRequest Headers: %s\n",
+                    origin,
+                    allowed_origins,
+                    request.headers.get("Access-Control-Request-Headers"),
+                )
+
+                if origin in allowed_origins:
+                    response.headers["Access-Control-Allow-Origin"] = origin
+                    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+                    response.headers[
+                        "Access-Control-Allow-Headers"
+                    ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+                    response.headers["Access-Control-Allow-Credentials"] = "true"
+                    response.headers["Access-Control-Max-Age"] = "3600"
+
+                    cors_logger.info("CORS headers set successfully for origin: %s", origin)
+                else:
+                    cors_logger.warning("Invalid origin attempted access: %s", origin)
+
+        # Log response details
+        cors_logger.info("Response:\nStatus: %s\nHeaders: %s\n", response.status_code, dict(response.headers))
 
         return response
+
+    # Add error handlers
+    @app.errorhandler(500)
+    def internal_error(error):
+        app.logger.error("Server Error: %s", error)
+        return jsonify(error="Internal server error"), 500
+
+    @app.errorhandler(503)
+    def service_unavailable(error):
+        app.logger.error("Service Unavailable: %s", error)
+        return jsonify(error="Service temporarily unavailable"), 503
 
     db.init_app(app)
     jwt.init_app(app)

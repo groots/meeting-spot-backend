@@ -1,5 +1,6 @@
 """Tests for CORS configuration."""
 import pytest
+import requests
 
 
 def test_cors_preflight(client):
@@ -107,3 +108,78 @@ def test_cors_expose_headers(client):
     assert response.status_code == 200
     assert "Content-Type" in response.headers["Access-Control-Expose-Headers"]
     assert "Authorization" in response.headers["Access-Control-Expose-Headers"]
+
+
+def test_cors_production_register():
+    """Test CORS configuration for production register endpoint."""
+    headers = {
+        "Origin": "https://findameetingspot.com",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Referer": "https://findameetingspot.com/",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+        "sec-ch-ua": '"Chromium";v="134", "Not:A-Brand";v="24", "Google Chrome";v="134"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
+    }
+
+    # First test OPTIONS (preflight)
+    options_response = requests.options(
+        "https://meeting-spot-backend-270814322595.us-east1.run.app/api/v1/auth/register",
+        headers={
+            **headers,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type,accept",
+        },
+    )
+
+    assert options_response.status_code == 200, "Preflight request failed"
+    assert "access-control-allow-origin" in options_response.headers.keys(), "Missing CORS allow origin header"
+    assert (
+        options_response.headers["access-control-allow-origin"] == "https://findameetingspot.com"
+    ), "Wrong origin allowed"
+    assert "access-control-allow-methods" in options_response.headers.keys(), "Missing allowed methods"
+    assert "POST" in options_response.headers["access-control-allow-methods"], "POST not in allowed methods"
+    assert "access-control-allow-headers" in options_response.headers.keys(), "Missing allowed headers"
+    assert all(
+        header.lower() in options_response.headers["access-control-allow-headers"].lower()
+        for header in ["Content-Type", "Accept"]
+    ), "Required headers not allowed"
+
+    # Print response headers for debugging
+    print("\nPreflight Response Headers:")
+    for key, value in options_response.headers.items():
+        print(f"{key}: {value}")
+
+
+def test_cors_production_origins():
+    """Test CORS with all production origins."""
+    production_origins = [
+        "https://findameetingspot.com",
+        "https://www.findameetingspot.com",
+        "https://find-a-meeting-spot.web.app",
+        "https://find-a-meeting-spot.ue.r.appspot.com",
+    ]
+
+    for origin in production_origins:
+        headers = {"Origin": origin, "Accept": "application/json", "Content-Type": "application/json"}
+
+        # Test preflight
+        options_response = requests.options(
+            "https://meeting-spot-backend-270814322595.us-east1.run.app/api/v1/auth/register",
+            headers={
+                **headers,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type,accept",
+            },
+        )
+
+        assert options_response.status_code == 200, f"Preflight failed for {origin}"
+        assert (
+            options_response.headers.get("access-control-allow-origin") == origin
+        ), f"Wrong origin allowed for {origin}"
+
+        print(f"\nTesting origin: {origin}")
+        print("Response Headers:")
+        for key, value in options_response.headers.items():
+            print(f"{key}: {value}")

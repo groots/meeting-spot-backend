@@ -1,8 +1,10 @@
 """API blueprints for the application."""
 
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import psutil
 from flask import Blueprint, current_app, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -28,6 +30,84 @@ limiter = Limiter(key_func=get_remote_address)
 
 # Create debug blueprint
 debug_bp = Blueprint("debug", __name__, url_prefix="/debug")
+
+
+@debug_bp.route("/health")
+def health_check():
+    """Comprehensive health check endpoint."""
+    health_data = {
+        "status": "initializing",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "environment": current_app.config.get("ENV", "unknown"),
+        "debug_mode": current_app.debug,
+        "components": {},
+    }
+
+    # Check database connectivity
+    try:
+        # Simple query to check database connection
+        db_version = db.session.execute("SELECT version()").scalar()
+        health_data["components"]["database"] = {
+            "status": "healthy",
+            "version": db_version,
+            "uri": current_app.config.get("SQLALCHEMY_DATABASE_URI", "Not set").replace(
+                # Mask password in the returned URL for security
+                ":" + current_app.config.get("SQLALCHEMY_DATABASE_URI", "").split(":")[2].split("@")[0] + "@",
+                ":*****@",
+            )
+            if ":" in current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
+            else "Not set",
+        }
+    except SQLAlchemyError as e:
+        health_data["components"]["database"] = {"status": "unhealthy", "error": str(e)}
+
+    # Check system resources
+    try:
+        health_data["components"]["system"] = {
+            "cpu_usage": psutil.cpu_percent(interval=1),
+            "memory": {
+                "total": psutil.virtual_memory().total,
+                "available": psutil.virtual_memory().available,
+                "percent": psutil.virtual_memory().percent,
+            },
+            "disk": {
+                "total": psutil.disk_usage("/").total,
+                "free": psutil.disk_usage("/").free,
+                "percent": psutil.disk_usage("/").percent,
+            },
+        }
+    except Exception as e:
+        health_data["components"]["system"] = {"status": "error", "error": str(e)}
+
+    # Check configuration
+    health_data["components"]["configuration"] = {
+        "cors_origins": current_app.config.get("CORS_ORIGINS"),
+        "encryption_key_set": bool(current_app.config.get("ENCRYPTION_KEY")),
+        "google_maps_api_key_set": bool(current_app.config.get("GOOGLE_MAPS_API_KEY")),
+        "jwt_secret_key_set": bool(current_app.config.get("JWT_SECRET_KEY")),
+        "security_headers": bool(current_app.config.get("SECURITY_HEADERS")),
+    }
+
+    # Check CORS configuration
+    health_data["components"]["cors"] = {
+        "enabled": True,
+        "allowed_origins": current_app.config.get("CORS_ORIGINS"),
+        "allowed_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_credentials": True,
+        "max_age": 3600,
+    }
+
+    # Determine overall status
+    if all(
+        comp.get("status", "healthy") == "healthy"
+        for comp in health_data["components"].values()
+        if isinstance(comp, dict) and "status" in comp
+    ):
+        health_data["status"] = "healthy"
+    else:
+        health_data["status"] = "degraded"
+
+    return jsonify(health_data)
 
 
 # Add a test route directly to the blueprint

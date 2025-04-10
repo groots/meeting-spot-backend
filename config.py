@@ -64,13 +64,13 @@ class Config:
     # Security Headers
     SECURITY_HEADERS = {
         "Content-Security-Policy": (
-            "default-src 'self' https://accounts.google.com; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com; "
+            "default-src 'self' https://accounts.google.com https://findameetingspot.com https://www.findameetingspot.com; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://findameetingspot.com https://www.findameetingspot.com; "
             "style-src 'self' 'unsafe-inline'; "
             "frame-src 'self' https://accounts.google.com; "
-            "frame-ancestors 'self' https://accounts.google.com; "
-            "connect-src 'self' https://accounts.google.com https://meeting-spot-backend-270814322595.us-east1.run.app; "
-            "form-action 'self' https://accounts.google.com"
+            "frame-ancestors 'self' https://accounts.google.com https://findameetingspot.com https://www.findameetingspot.com; "
+            "connect-src 'self' https://accounts.google.com https://meeting-spot-backend-270814322595.us-east1.run.app https://findameetingspot.com https://www.findameetingspot.com; "
+            "form-action 'self' https://accounts.google.com https://findameetingspot.com https://www.findameetingspot.com"
         ),
         "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
         "Cross-Origin-Embedder-Policy": "require-corp",
