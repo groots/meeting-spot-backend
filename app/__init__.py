@@ -97,7 +97,7 @@ def create_app(config_name="development"):
                 response.headers["Access-Control-Max-Age"] = "3600"
                 # Ensure OPTIONS requests get a 200 response
                 if response.status_code == 503:
-                    return response.status_code == 200
+                    response.status_code = 200
 
         # Add security headers
         if app.config.get("SECURITY_HEADERS"):
