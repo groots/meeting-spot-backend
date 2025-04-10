@@ -37,41 +37,46 @@ def create_app(config_name="development"):
     # Override config with environment variables
     app.config.from_envvar("APP_CONFIG", silent=True)
 
-    # Configure CORS settings directly on the app
-    app.config["CORS_ORIGINS"] = app.config.get("CORS_ORIGINS", ["http://localhost:3000"])
-    app.config["CORS_ALLOW_HEADERS"] = [
-        "Content-Type",
-        "Authorization",
-        "Accept",
-        "X-Requested-With",
-        "Origin",
-        "Access-Control-Request-Method",
-        "Access-Control-Request-Headers",
-        "Referer",
-        "User-Agent",
-        "Sec-Fetch-Mode",
-        "Sec-Fetch-Site",
-        "Sec-Fetch-Dest",
-        "sec-ch-ua",
-        "sec-ch-ua-mobile",
-        "sec-ch-ua-platform",
-    ]
-    app.config["CORS_EXPOSE_HEADERS"] = [
-        "Content-Type",
-        "Authorization",
-        "Access-Control-Allow-Origin",
-        "Access-Control-Allow-Credentials",
-        "Access-Control-Allow-Headers",
-        "Access-Control-Allow-Methods",
-    ]
-    app.config["CORS_SUPPORTS_CREDENTIALS"] = True
-    app.config["CORS_MAX_AGE"] = 3600
-    app.config["CORS_SEND_WILDCARD"] = False
-    app.config["CORS_AUTOMATIC_OPTIONS"] = True
-    app.config["CORS_VARY_HEADER"] = True
-
     # Initialize CORS with app-wide settings
-    CORS(app)
+    CORS(
+        app,
+        resources={
+            r"/*": {
+                "origins": app.config.get("CORS_ORIGINS", ["http://localhost:3000"]),
+                "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
+                "allow_headers": [
+                    "Content-Type",
+                    "Authorization",
+                    "Accept",
+                    "X-Requested-With",
+                    "Origin",
+                    "Access-Control-Request-Method",
+                    "Access-Control-Request-Headers",
+                    "Referer",
+                    "User-Agent",
+                    "Sec-Fetch-Mode",
+                    "Sec-Fetch-Site",
+                    "Sec-Fetch-Dest",
+                    "sec-ch-ua",
+                    "sec-ch-ua-mobile",
+                    "sec-ch-ua-platform",
+                ],
+                "expose_headers": [
+                    "Content-Type",
+                    "Authorization",
+                    "Access-Control-Allow-Origin",
+                    "Access-Control-Allow-Credentials",
+                    "Access-Control-Allow-Headers",
+                    "Access-Control-Allow-Methods",
+                ],
+                "supports_credentials": True,
+                "max_age": 3600,
+                "send_wildcard": False,
+                "automatic_options": True,
+                "vary_header": True,
+            }
+        },
+    )
 
     # Add security headers middleware
     @app.after_request
@@ -82,11 +87,39 @@ def create_app(config_name="development"):
             for header, value in app.config["SECURITY_HEADERS"].items():
                 response.headers[header] = value
 
-        # Ensure OPTIONS requests return 200
+        # For OPTIONS requests, ensure CORS headers are present and return 200
         if request.method == "OPTIONS":
             response.status_code = 200
+            # Ensure CORS headers are present
+            if "Origin" in request.headers:
+                response.headers["Access-Control-Allow-Origin"] = request.headers["Origin"]
+                response.headers["Access-Control-Allow-Methods"] = "GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE"
+                response.headers[
+                    "Access-Control-Allow-Headers"
+                ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Max-Age"] = "3600"
+
+        # Debug: Print headers for all responses
+        print(f"\nRequest Method: {request.method}")
+        print(f"Request Headers: {dict(request.headers)}")
+        print(f"Response Headers: {dict(response.headers)}")
+        print(f"Response Status: {response.status_code}")
 
         return response
+
+    # Add CORS test endpoint
+    @app.route("/api/v1/cors-test", methods=["GET", "OPTIONS"])
+    def cors_test():
+        """Test endpoint for CORS configuration."""
+        if request.method == "OPTIONS":
+            return "", 200
+        return {
+            "message": "CORS test successful",
+            "request_headers": dict(request.headers),
+            "origin": request.headers.get("Origin"),
+            "method": request.method,
+        }
 
     db.init_app(app)
     jwt.init_app(app)

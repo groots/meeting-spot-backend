@@ -15,6 +15,7 @@ from ..utils.notifications import send_email
 from .auth import api as auth_ns
 from .meeting_requests import api as meeting_requests_ns
 from .users import api as users_ns
+from .v1.cors import cors_ns
 
 # Create API v1 blueprint
 api_v1_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
@@ -79,6 +80,7 @@ api_v2 = Api(
 api_v1.add_namespace(auth_ns, path="/auth")
 api_v1.add_namespace(meeting_requests_ns, path="/meeting-requests")
 api_v1.add_namespace(users_ns, path="/users")
+api_v1.add_namespace(cors_ns, path="/cors")
 
 # Register namespaces for v2
 api_v2.add_namespace(auth_ns, path="/auth")
