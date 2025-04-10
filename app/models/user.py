@@ -14,23 +14,27 @@ class User(db.Model):
 
     __tablename__ = "users"
 
-    id = db.Column(UUIDType(), primary_key=True, default=uuid.uuid4)
+    id = db.Column(UUIDType(), primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(128), nullable=True)  # Allow null for OAuth users
     google_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = db.Column(
-        db.DateTime,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False)
 
     # Relationship to requests initiated by this user
     requests_initiated = db.relationship("MeetingRequest", back_populates="user_a", lazy=True)
 
     # Relationship to places suggested by this user
     suggested_places = db.relationship("Place", back_populates="suggested_by", lazy=True)
+
+    def __init__(self, **kwargs):
+        """Initialize a new user."""
+        now = datetime.now(timezone.utc)
+        kwargs.setdefault("created_at", now)
+        kwargs.setdefault("updated_at", now)
+        if "id" not in kwargs:
+            kwargs["id"] = uuid.uuid4()
+        super().__init__(**kwargs)
 
     def __repr__(self) -> str:
         return f"<User {self.email}>"
