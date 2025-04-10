@@ -91,7 +91,8 @@ class ProductionConfig(Config):
 
     # Database configuration
     SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/findameetingspot"
+        "DATABASE_URL",
+        "postgresql+pg8000://postgres@/findameetingspot?unix_sock=/cloudsql/find-a-meeting-spot:us-east1:findameetingspot/.s.PGSQL.5432",
     )
 
     # Set up SQLAlchemy with connection pool

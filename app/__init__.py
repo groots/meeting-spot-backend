@@ -17,8 +17,10 @@ migrate = Migrate()
 def setup_logging(app):
     """Set up logging configuration."""
     # Create logs directory if it doesn't exist
-    if not os.path.exists("logs"):
+    try:
         os.makedirs("logs")
+    except FileExistsError:
+        pass  # Directory already exists
 
     # Set up file handler for CORS logs
     cors_handler = RotatingFileHandler("logs/cors.log", maxBytes=10000000, backupCount=5)
