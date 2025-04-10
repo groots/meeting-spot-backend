@@ -110,8 +110,11 @@ def test_cors_expose_headers(client):
     assert "Authorization" in response.headers["Access-Control-Expose-Headers"]
 
 
-def test_cors_production_register():
+def test_cors_production_register(client, monkeypatch):
     """Test CORS configuration for production register endpoint."""
+    # Mock production config
+    monkeypatch.setitem(client.application.config, "CORS_ORIGINS", ["https://findameetingspot.com"])
+
     headers = {
         "Origin": "https://findameetingspot.com",
         "Accept": "application/json",
@@ -123,9 +126,9 @@ def test_cors_production_register():
         "sec-ch-ua-platform": '"macOS"',
     }
 
-    # First test OPTIONS (preflight)
-    options_response = requests.options(
-        "https://meeting-spot-backend-270814322595.us-east1.run.app/api/v1/auth/register",
+    # Test OPTIONS (preflight)
+    options_response = client.options(
+        "/api/v1/auth/register",
         headers={
             **headers,
             "Access-Control-Request-Method": "POST",
@@ -134,25 +137,20 @@ def test_cors_production_register():
     )
 
     assert options_response.status_code == 200, "Preflight request failed"
-    assert "access-control-allow-origin" in options_response.headers.keys(), "Missing CORS allow origin header"
+    assert "Access-Control-Allow-Origin" in options_response.headers, "Missing CORS allow origin header"
     assert (
-        options_response.headers["access-control-allow-origin"] == "https://findameetingspot.com"
+        options_response.headers["Access-Control-Allow-Origin"] == "https://findameetingspot.com"
     ), "Wrong origin allowed"
-    assert "access-control-allow-methods" in options_response.headers.keys(), "Missing allowed methods"
-    assert "POST" in options_response.headers["access-control-allow-methods"], "POST not in allowed methods"
-    assert "access-control-allow-headers" in options_response.headers.keys(), "Missing allowed headers"
+    assert "Access-Control-Allow-Methods" in options_response.headers, "Missing allowed methods"
+    assert "POST" in options_response.headers["Access-Control-Allow-Methods"], "POST not in allowed methods"
+    assert "Access-Control-Allow-Headers" in options_response.headers, "Missing allowed headers"
     assert all(
-        header.lower() in options_response.headers["access-control-allow-headers"].lower()
+        header.lower() in options_response.headers["Access-Control-Allow-Headers"].lower()
         for header in ["Content-Type", "Accept"]
     ), "Required headers not allowed"
 
-    # Print response headers for debugging
-    print("\nPreflight Response Headers:")
-    for key, value in options_response.headers.items():
-        print(f"{key}: {value}")
 
-
-def test_cors_production_origins():
+def test_cors_production_origins(client, monkeypatch):
     """Test CORS with all production origins."""
     production_origins = [
         "https://findameetingspot.com",
@@ -161,12 +159,15 @@ def test_cors_production_origins():
         "https://find-a-meeting-spot.ue.r.appspot.com",
     ]
 
+    # Mock production config
+    monkeypatch.setitem(client.application.config, "CORS_ORIGINS", production_origins)
+
     for origin in production_origins:
         headers = {"Origin": origin, "Accept": "application/json", "Content-Type": "application/json"}
 
         # Test preflight
-        options_response = requests.options(
-            "https://meeting-spot-backend-270814322595.us-east1.run.app/api/v1/auth/register",
+        options_response = client.options(
+            "/api/v1/auth/register",
             headers={
                 **headers,
                 "Access-Control-Request-Method": "POST",
@@ -175,11 +176,4 @@ def test_cors_production_origins():
         )
 
         assert options_response.status_code == 200, f"Preflight failed for {origin}"
-        assert (
-            options_response.headers.get("access-control-allow-origin") == origin
-        ), f"Wrong origin allowed for {origin}"
-
-        print(f"\nTesting origin: {origin}")
-        print("Response Headers:")
-        for key, value in options_response.headers.items():
-            print(f"{key}: {value}")
+        assert options_response.headers["Access-Control-Allow-Origin"] == origin, f"Wrong origin allowed for {origin}"
