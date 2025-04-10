@@ -52,19 +52,37 @@ def create_app(config_name="development"):
                     "Origin",
                     "Access-Control-Request-Method",
                     "Access-Control-Request-Headers",
+                    "Referer",
+                    "User-Agent",
+                    "Sec-Fetch-Mode",
+                    "Sec-Fetch-Site",
+                    "Sec-Fetch-Dest",
+                    "sec-ch-ua",
+                    "sec-ch-ua-mobile",
+                    "sec-ch-ua-platform",
                 ],
-                "expose_headers": ["Content-Type", "Authorization"],
+                "expose_headers": ["Content-Type", "Authorization", "Access-Control-Allow-Credentials"],
                 "supports_credentials": True,
                 "max_age": 3600,
                 "send_wildcard": False,
                 "automatic_options": True,
                 "vary_header": True,
+                "allow_credentials": True,
             }
         },
     )
     db.init_app(app)
     jwt.init_app(app)
     migrate.init_app(app, db)
+
+    # Add security headers middleware
+    @app.after_request
+    def add_security_headers(response):
+        """Add security headers to all responses."""
+        if app.config.get("SECURITY_HEADERS"):
+            for header, value in app.config["SECURITY_HEADERS"].items():
+                response.headers[header] = value
+        return response
 
     with app.app_context():
         # Register API blueprints

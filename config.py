@@ -23,19 +23,56 @@ def get_secret(secret_id, ignore_in_dev=False) -> None:
 
 
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "a_default_secret_key_for_dev")
-    DEBUG = os.environ.get("FLASK_DEBUG", "False") == "True"
-    PORT = int(os.environ.get("PORT", 8080))
+    """Base configuration."""
+
+    SECRET_KEY = os.getenv("SECRET_KEY", "dev")
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Google Cloud Project
+    GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "find-a-meeting-spot")
+
+    # Google Maps API Key
+    GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+
+    # Encryption Key
+    ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+
+    # JWT Configuration
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev")
+    JWT_TOKEN_LOCATION = ["headers", "cookies"]
+    JWT_ACCESS_COOKIE_PATH = "/api/"
+    JWT_COOKIE_CSRF_PROTECT = True
+    JWT_COOKIE_SECURE = True
+
+    # Frontend URL
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+    # CORS Configuration
+    CORS_ORIGINS = [
+        "http://localhost:3000",  # Local development
+        "http://localhost:5000",  # Local Flask server
+        "https://find-a-meeting-spot.web.app",  # Production frontend
+        "https://find-a-meeting-spot.ue.r.appspot.com",  # App Engine URL
+        "https://findameetingspot.com",  # Custom domain
+        "https://www.findameetingspot.com",  # www subdomain
+        "https://accounts.google.com",  # Google OAuth
+        "https://meeting-spot-backend-270814322595.us-east1.run.app",  # Backend URL
+    ]
+
+    # Security Headers
+    SECURITY_HEADERS = {
+        "Content-Security-Policy": "default-src 'self' https://accounts.google.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com; style-src 'self' 'unsafe-inline';",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "SAMEORIGIN",
+        "X-XSS-Protection": "1; mode=block",
+        "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    }
 
     # Database Configuration (using Cloud SQL Connector often avoids direct
     # host/port)
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "DATABASE_URL", "postgresql+psycopg2://user:password@host:port/dbname"
     )  # Example, replace with actual connection string or Cloud SQL Connector setup
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
-
-    # Google Cloud Project ID
-    GOOGLE_CLOUD_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT")
 
     # Service Account Configuration
     SERVICE_ACCOUNT_EMAIL = os.environ.get(
@@ -43,9 +80,6 @@ class Config:
         "meeting-spot-app@find-a-meeting-spot.iam.gserviceaccount.com",
     )
     SERVICE_ACCOUNT_CREDENTIALS = get_secret("meeting-spot-service-account", ignore_in_dev=True)
-
-    # Google Maps API Key (Store securely in Secret Manager)
-    GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
     # Notification Service API Keys (Store securely)
     SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
@@ -58,16 +92,6 @@ class Config:
     CLOUD_TASKS_QUEUE = os.environ.get("CLOUD_TASKS_QUEUE", "meeting-spot-queue")
     # Service account email for Cloud Tasks HTTP targets (if applicable)
     CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL = os.environ.get("CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL")
-
-    # Encryption Key (Store securely, maybe KMS)
-    ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY")
-
-    # JWT Configuration (for authentication)
-    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "another_dev_secret_jwt_key")
-    # Add other JWT settings like algorithm, expiry time etc. as needed
-
-    # Frontend URL (for generating links)
-    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
     # Add other configurations as needed
 
@@ -119,6 +143,7 @@ class ProductionConfig(Config):
         "https://findameetingspot.com",
         "https://www.findameetingspot.com",
         "https://meeting-spot-backend-270814322595.us-east1.run.app",
+        "https://accounts.google.com",
     ]
 
     # Database configuration
