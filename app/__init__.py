@@ -37,76 +37,54 @@ def create_app(config_name="development"):
     # Override config with environment variables
     app.config.from_envvar("APP_CONFIG", silent=True)
 
-    # Initialize extensions with CORS configuration
-    CORS(
-        app,
-        resources={
-            r"/api/*": {
-                "origins": app.config.get("CORS_ORIGINS", ["http://localhost:3000"]),
-                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": [
-                    "Content-Type",
-                    "Authorization",
-                    "Accept",
-                    "X-Requested-With",
-                    "Origin",
-                    "Access-Control-Request-Method",
-                    "Access-Control-Request-Headers",
-                    "Referer",
-                    "User-Agent",
-                    "Sec-Fetch-Mode",
-                    "Sec-Fetch-Site",
-                    "Sec-Fetch-Dest",
-                    "sec-ch-ua",
-                    "sec-ch-ua-mobile",
-                    "sec-ch-ua-platform",
-                ],
-                "expose_headers": [
-                    "Content-Type",
-                    "Authorization",
-                    "Access-Control-Allow-Origin",
-                    "Access-Control-Allow-Credentials",
-                    "Access-Control-Allow-Headers",
-                    "Access-Control-Allow-Methods",
-                ],
-                "supports_credentials": True,
-                "max_age": 3600,
-                "send_wildcard": False,
-                "automatic_options": True,
-                "vary_header": True,
-            }
-        },
-    )
+    # Configure CORS settings directly on the app
+    app.config["CORS_ORIGINS"] = app.config.get("CORS_ORIGINS", ["http://localhost:3000"])
+    app.config["CORS_ALLOW_HEADERS"] = [
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "X-Requested-With",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+        "Referer",
+        "User-Agent",
+        "Sec-Fetch-Mode",
+        "Sec-Fetch-Site",
+        "Sec-Fetch-Dest",
+        "sec-ch-ua",
+        "sec-ch-ua-mobile",
+        "sec-ch-ua-platform",
+    ]
+    app.config["CORS_EXPOSE_HEADERS"] = [
+        "Content-Type",
+        "Authorization",
+        "Access-Control-Allow-Origin",
+        "Access-Control-Allow-Credentials",
+        "Access-Control-Allow-Headers",
+        "Access-Control-Allow-Methods",
+    ]
+    app.config["CORS_SUPPORTS_CREDENTIALS"] = True
+    app.config["CORS_MAX_AGE"] = 3600
+    app.config["CORS_SEND_WILDCARD"] = False
+    app.config["CORS_AUTOMATIC_OPTIONS"] = True
+    app.config["CORS_VARY_HEADER"] = True
 
-    # Add combined CORS and security headers middleware
+    # Initialize CORS with app-wide settings
+    CORS(app)
+
+    # Add security headers middleware
     @app.after_request
-    def add_cors_security_headers(response):
-        """Add CORS and security headers to all responses."""
-        # Handle CORS headers
-        origin = request.headers.get("Origin")
-
-        # Always add security headers first
+    def add_security_headers(response):
+        """Add security headers to all responses."""
+        # Add security headers
         if app.config.get("SECURITY_HEADERS"):
             for header, value in app.config["SECURITY_HEADERS"].items():
                 response.headers[header] = value
 
-        # Handle CORS for all requests
-        if origin and origin in app.config.get("CORS_ORIGINS", []):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = (
-                "Content-Type, Authorization, Accept, X-Requested-With, "
-                "Origin, Referer, User-Agent, sec-ch-ua, sec-ch-ua-mobile, "
-                "sec-ch-ua-platform"
-            )
-            response.headers["Access-Control-Max-Age"] = "3600"
-            response.headers["Vary"] = "Origin"
-
-            # For OPTIONS requests, always return 200
-            if request.method == "OPTIONS":
-                response.status_code = 200
-                return response
+        # Ensure OPTIONS requests return 200
+        if request.method == "OPTIONS":
+            response.status_code = 200
 
         return response
 
