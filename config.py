@@ -144,6 +144,10 @@ class ProductionConfig(Config):
         "https://www.findameetingspot.com",
         "https://meeting-spot-backend-270814322595.us-east1.run.app",
         "https://accounts.google.com",
+        "http://localhost:3000",  # Development
+        "http://localhost:5000",  # Development
+        "https://oauth2.googleapis.com",  # Google OAuth
+        "https://www.googleapis.com",  # Google APIs
     ]
 
     # Database configuration

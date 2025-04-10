@@ -61,16 +61,42 @@ def create_app(config_name="development"):
                     "sec-ch-ua-mobile",
                     "sec-ch-ua-platform",
                 ],
-                "expose_headers": ["Content-Type", "Authorization", "Access-Control-Allow-Credentials"],
+                "expose_headers": [
+                    "Content-Type",
+                    "Authorization",
+                    "Access-Control-Allow-Origin",
+                    "Access-Control-Allow-Credentials",
+                    "Access-Control-Allow-Headers",
+                    "Access-Control-Allow-Methods",
+                ],
                 "supports_credentials": True,
                 "max_age": 3600,
                 "send_wildcard": False,
                 "automatic_options": True,
                 "vary_header": True,
-                "allow_credentials": True,
             }
         },
     )
+
+    # Add CORS headers middleware
+    @app.after_request
+    def after_request(response):
+        """Add CORS headers to all responses."""
+        # Get the origin from the request
+        origin = request.headers.get("Origin")
+
+        # If the origin is in our allowed origins, set it in the response
+        if origin and origin in app.config.get("CORS_ORIGINS", []):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+            response.headers[
+                "Access-Control-Allow-Headers"
+            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin, Referer, User-Agent, sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform"
+            response.headers["Access-Control-Max-Age"] = "3600"
+
+        return response
+
     db.init_app(app)
     jwt.init_app(app)
     migrate.init_app(app, db)
