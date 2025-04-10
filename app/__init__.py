@@ -84,25 +84,29 @@ def create_app(config_name="development"):
         """Add CORS and security headers to all responses."""
         # Handle CORS headers
         origin = request.headers.get("Origin")
-        if origin and origin in app.config.get("CORS_ORIGINS", []):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Credentials"] = "true"
 
-            # For OPTIONS requests (preflight), add additional required headers
-            if request.method == "OPTIONS":
-                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-                response.headers[
-                    "Access-Control-Allow-Headers"
-                ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin, Referer, User-Agent, sec-ch-ua, sec-ch-ua-mobile, sec-ch-ua-platform"
-                response.headers["Access-Control-Max-Age"] = "3600"
-                # Ensure OPTIONS requests get a 200 response
-                if response.status_code == 503:
-                    response.status_code = 200
-
-        # Add security headers
+        # Always add security headers first
         if app.config.get("SECURITY_HEADERS"):
             for header, value in app.config["SECURITY_HEADERS"].items():
                 response.headers[header] = value
+
+        # Handle CORS for all requests
+        if origin and origin in app.config.get("CORS_ORIGINS", []):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = (
+                "Content-Type, Authorization, Accept, X-Requested-With, "
+                "Origin, Referer, User-Agent, sec-ch-ua, sec-ch-ua-mobile, "
+                "sec-ch-ua-platform"
+            )
+            response.headers["Access-Control-Max-Age"] = "3600"
+            response.headers["Vary"] = "Origin"
+
+            # For OPTIONS requests, always return 200
+            if request.method == "OPTIONS":
+                response.status_code = 200
+                return response
 
         return response
 

@@ -56,12 +56,24 @@ class Config:
         "https://findameetingspot.com",  # Custom domain
         "https://www.findameetingspot.com",  # www subdomain
         "https://accounts.google.com",  # Google OAuth
+        "https://oauth2.googleapis.com",  # Google OAuth
+        "https://www.googleapis.com",  # Google APIs
         "https://meeting-spot-backend-270814322595.us-east1.run.app",  # Backend URL
     ]
 
     # Security Headers
     SECURITY_HEADERS = {
-        "Content-Security-Policy": "default-src 'self' https://accounts.google.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com; style-src 'self' 'unsafe-inline';",
+        "Content-Security-Policy": (
+            "default-src 'self' https://accounts.google.com; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com; "
+            "style-src 'self' 'unsafe-inline'; "
+            "frame-src 'self' https://accounts.google.com; "
+            "frame-ancestors 'self' https://accounts.google.com; "
+            "connect-src 'self' https://accounts.google.com https://meeting-spot-backend-270814322595.us-east1.run.app; "
+            "form-action 'self' https://accounts.google.com"
+        ),
+        "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
+        "Cross-Origin-Embedder-Policy": "require-corp",
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "SAMEORIGIN",
         "X-XSS-Protection": "1; mode=block",
