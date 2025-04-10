@@ -43,7 +43,7 @@ def create_app(config_name="development"):
         resources={
             r"/*": {
                 "origins": app.config.get("CORS_ORIGINS", ["http://localhost:3000"]),
-                "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
+                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                 "allow_headers": [
                     "Content-Type",
                     "Authorization",
@@ -93,7 +93,7 @@ def create_app(config_name="development"):
             # Ensure CORS headers are present
             if "Origin" in request.headers:
                 response.headers["Access-Control-Allow-Origin"] = request.headers["Origin"]
-                response.headers["Access-Control-Allow-Methods"] = "GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE"
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
                 response.headers[
                     "Access-Control-Allow-Headers"
                 ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
@@ -107,19 +107,6 @@ def create_app(config_name="development"):
         print(f"Response Status: {response.status_code}")
 
         return response
-
-    # Add CORS test endpoint
-    @app.route("/api/v1/cors-test", methods=["GET", "OPTIONS"])
-    def cors_test():
-        """Test endpoint for CORS configuration."""
-        if request.method == "OPTIONS":
-            return "", 200
-        return {
-            "message": "CORS test successful",
-            "request_headers": dict(request.headers),
-            "origin": request.headers.get("Origin"),
-            "method": request.method,
-        }
 
     db.init_app(app)
     jwt.init_app(app)
