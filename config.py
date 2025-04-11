@@ -27,7 +27,7 @@ class Config:
     # host/port)
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "DATABASE_URL",
-        "postgresql+psycopg2://postgres:ggSO12ro9u5N1VxANoQOlyGDuOzsHyv3Su7t9LO9IiQ@/findameetingspot?host=/cloudsql/find-a-meeting-spot:us-east1:findameetingspot",
+        "postgresql+pg8000://meetingspot:MeetingSpot123!@/findameetingspot?unix_sock=/cloudsql/find-a-meeting-spot:us-east1:findameetingspot/.s.PGSQL.5432",
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
