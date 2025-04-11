@@ -1,2 +1,3 @@
 FLASK_ENV: production
 CORS_ORIGINS: https://find-a-meeting-spot.ue.r.appspot.com,https://find-a-meeting-spot.web.app,https://findameetingspot.com,https://www.findameetingspot.com
+DATABASE_URL: postgresql+pg8000://meetingspot:MeetingSpot123!@/findameetingspot?unix_sock=/cloudsql/find-a-meeting-spot:us-east1:findameetingspot/.s.PGSQL.5432
