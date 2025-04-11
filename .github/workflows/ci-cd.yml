@@ -57,14 +57,11 @@ jobs:
 
       - name: Deploy Backend to Cloud Run
         run: |
-          # Create a proper comma-separated list without special characters
-          CORS_ORIGINS="https://find-a-meeting-spot.ue.r.appspot.com,https://find-a-meeting-spot.web.app,https://findameetingspot.com,https://www.findameetingspot.com"
-
           gcloud run deploy meeting-spot-backend \
             --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/meeting-spot-backend:${{ github.sha }} \
             --platform managed \
             --region us-east1 \
             --allow-unauthenticated \
-            --set-env-vars="FLASK_ENV=production,CORS_ORIGINS=${CORS_ORIGINS}" \
+            --env-vars-file=.github/env-files/env-vars.yaml \
             --set-secrets="ENCRYPTION_KEY=encryption-key:latest,JWT_SECRET_KEY=jwt-secret-key:latest,GOOGLE_MAPS_API_KEY=google-maps-api-key:latest,MAILGUN_API_KEY=mailgun-api-key:latest,MAILGUN_DOMAIN=mailgun-domain:latest,DATABASE_URL=database-url:latest" \
             --add-cloudsql-instances="find-a-meeting-spot:us-east1:findameetingspot"
