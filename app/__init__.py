@@ -47,26 +47,35 @@ def create_app(config_name="development"):
     """Create and configure the Flask application.
 
     Args:
-        config_name: The name of the configuration to use.
+        config_name (str): The name of the configuration to use.
 
     Returns:
-        The configured Flask application.
+        Flask: The configured Flask application.
     """
     app = Flask(__name__)
 
-    # Load configuration based on environment
-    if config_name == "testing":
-        app.config.from_object("config.TestingConfig")
-    elif config_name == "development":
-        # Use our development config that doesn't require Google Cloud
-        from development_config import DevelopmentConfig
+    # Load config
+    env = os.getenv("FLASK_ENV", config_name)
+    app.logger.info(f"Using environment: {env}")
 
-        app.config.from_object(DevelopmentConfig)
+    if env == "production":
+        app.config.from_object("app.config.ProductionConfig")
+    elif env == "development":
+        app.config.from_object("app.config.DevelopmentConfig")
+    elif env == "testing":
+        app.config.from_object("app.config.TestingConfig")
     else:
-        app.config.from_object("config.Config")
+        app.config.from_object("app.config.Config")
 
     # Override config with environment variables
-    app.config.from_envvar("APP_CONFIG", silent=True)
+    app.config.from_prefixed_env("FLASK_")
+
+    # Process CORS_ORIGINS from environment if present
+    cors_origins_env = os.getenv("CORS_ORIGINS")
+    if cors_origins_env:
+        cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
+        app.config["CORS_ORIGINS"] = cors_origins
+        app.logger.info(f"Loaded CORS origins from environment: {cors_origins}")
 
     # Set up logging
     setup_logging(app)
