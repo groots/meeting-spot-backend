@@ -9,6 +9,7 @@ from flask import Blueprint, current_app, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_restx import Api
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from .. import db
@@ -46,7 +47,7 @@ def health_check():
     # Check database connectivity
     try:
         # Simple query to check database connection
-        db_version = db.session.execute("SELECT version()").scalar()
+        db_version = db.session.execute(text("SELECT version()")).scalar()
         health_data["components"]["database"] = {
             "status": "healthy",
             "version": db_version,
@@ -175,7 +176,7 @@ def db_check():
     """Check database connectivity."""
     try:
         # Attempt to execute a simple query
-        db_version = db.session.execute("SELECT version()").scalar()
+        db_version = db.session.execute(text("SELECT version()")).scalar()
         return jsonify(
             {
                 "status": "success",

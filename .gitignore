@@ -50,3 +50,11 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
+
+# Credentials and private keys (never commit these!)
+credentials.json
+client-key.pem
+*-key.pem
+*.pem
+*.key
+*credentials*.json

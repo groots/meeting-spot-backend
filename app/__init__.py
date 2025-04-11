@@ -188,6 +188,6 @@ def create_app(config_name="development"):
         init_api(app)
 
         # Create database tables
-        db.create_all()
+        # db.create_all()
 
     return app
