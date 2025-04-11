@@ -85,11 +85,14 @@ class ProductionConfig(Config):
     CORS_ORIGINS = [
         "https://find-a-meeting-spot.ue.r.appspot.com",
         "https://find-a-meeting-spot.web.app",
+        "https://findameetingspot.com",
+        "https://www.findameetingspot.com",
     ]
 
-    # Database configuration
+    # Database configuration - Use socket for Cloud SQL
     SQLALCHEMY_DATABASE_URI = (
-        "postgresql+pg8000://postgres:ggSO12ro9u5N1VxANoQOlyGDuOzsHyv3Su7t9LO9IiQ@localhost:5432/findameetingspot"
+        "postgresql+pg8000://postgres:ggSO12ro9u5N1VxANoQOlyGDuOzsHyv3Su7t9LO9IiQ@/findameetingspot"
+        "?unix_sock=/cloudsql/find-a-meeting-spot:us-east1:findameetingspot/.s.PGSQL.5432"
     )
 
     # Set up SQLAlchemy with connection pool
