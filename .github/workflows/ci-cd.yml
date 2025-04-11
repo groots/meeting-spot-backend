@@ -66,5 +66,5 @@ jobs:
             --region us-east1 \
             --allow-unauthenticated \
             --env-vars-file=.github/env-files/env-vars.yaml \
-            --set-secrets="ENCRYPTION_KEY=encryption-key:latest,JWT_SECRET_KEY=jwt-secret-key:latest,GOOGLE_MAPS_API_KEY=google-maps-api-key:latest,MAILGUN_API_KEY=mailgun-api-key:latest,MAILGUN_DOMAIN=mailgun-domain:latest" \
+            --set-secrets="ENCRYPTION_KEY=encryption-key:latest,JWT_SECRET_KEY=jwt-secret-key:latest,GOOGLE_MAPS_API_KEY=google-maps-api-key:latest,MAILGUN_API_KEY=mailgun-api-key:latest,MAILGUN_DOMAIN=mailgun-domain:latest,DATABASE_URL=database-url:latest" \
             --add-cloudsql-instances="find-a-meeting-spot:us-east1:findameetingspot"
