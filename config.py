@@ -67,3 +67,35 @@ class Config:
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
     # Add other configurations as needed
+
+
+class TestingConfig(Config):
+    """Configuration for running tests."""
+
+    TESTING = True
+    DEBUG = True
+
+    # Use in-memory SQLite for testing
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///:memory:")
+
+    # Disable CSRF protection for testing
+    WTF_CSRF_ENABLED = False
+
+    # Use a fixed encryption key for tests
+    ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "test_encryption_key_for_testing_only")
+
+    # Use a fixed JWT secret key for tests
+    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "test_jwt_secret_key_for_testing_only")
+
+    # Disable external services for testing
+    SERVICE_ACCOUNT_CREDENTIALS = None
+
+    # Test frontend URL
+    FRONTEND_URL = "http://localhost:3000"
+
+    # Mock values for notification services
+    MAILGUN_API_KEY = "test-mailgun-key"
+    MAILGUN_DOMAIN = "test.example.com"
+    TWILIO_ACCOUNT_SID = "test-twilio-sid"
+    TWILIO_AUTH_TOKEN = "test-twilio-token"
+    TWILIO_PHONE_NUMBER = "+15555555555"
