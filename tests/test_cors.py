@@ -15,7 +15,10 @@ def test_cors_preflight(client):
     response = client.options("/api/v1/auth/register", headers=headers)
     assert response.status_code == 200
     assert response.headers["Access-Control-Allow-Origin"] == "http://localhost:3000"
-    assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, DELETE, OPTIONS"
+    # Check for methods without requiring a specific order
+    allowed_methods = response.headers["Access-Control-Allow-Methods"]
+    for method in ["GET", "POST", "PUT", "DELETE", "OPTIONS"]:
+        assert method in allowed_methods, f"HTTP method {method} not found in allowed methods"
     assert "Content-Type" in response.headers["Access-Control-Allow-Headers"]
 
     # Test Google callback endpoint
