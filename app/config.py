@@ -90,10 +90,7 @@ class ProductionConfig(Config):
     ]
 
     # Database configuration - Use socket for Cloud SQL
-    SQLALCHEMY_DATABASE_URI = (
-        "postgresql+pg8000://postgres:ggSO12ro9u5N1VxANoQOlyGDuOzsHyv3Su7t9LO9IiQ@/findameetingspot"
-        "?unix_sock=/cloudsql/find-a-meeting-spot:us-east1:findameetingspot/.s.PGSQL.5432"
-    )
+    SQLALCHEMY_DATABASE_URI = "postgresql+pg8000://postgres:ggSO12ro9u5N1VxANoQOlyGDuOzsHyv3Su7t9LO9IiQ@/findameetingspot?unix_sock=/cloudsql/find-a-meeting-spot:us-east1:findameetingspot/.s.PGSQL.5432"
 
     # Set up SQLAlchemy with connection pool
     SQLALCHEMY_ENGINE_OPTIONS = {
