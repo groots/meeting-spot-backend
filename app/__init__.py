@@ -121,6 +121,80 @@ def create_app(config_name="development"):
         },
     )
 
+    # Add a root route handler for the welcome page
+    @app.route("/")
+    def index():
+        return """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Find A Meeting Spot API</title>
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 20px;
+                }
+                h1 {
+                    color: #3498db;
+                    border-bottom: 2px solid #f1f1f1;
+                    padding-bottom: 10px;
+                }
+                .container {
+                    background-color: #fff;
+                    border-radius: 5px;
+                    padding: 20px;
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                }
+                code {
+                    background-color: #f8f9fa;
+                    padding: 2px 5px;
+                    border-radius: 3px;
+                    font-family: 'Courier New', Courier, monospace;
+                }
+                ul {
+                    margin-top: 20px;
+                }
+                li {
+                    margin-bottom: 10px;
+                }
+                .footer {
+                    margin-top: 30px;
+                    text-align: center;
+                    font-size: 0.9em;
+                    color: #666;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Find A Meeting Spot API</h1>
+                <p>Welcome to the Find A Meeting Spot API service! This is the backend server that powers the Find A Meeting Spot application.</p>
+
+                <h2>API Endpoints</h2>
+                <p>The API endpoints are available under the following paths:</p>
+                <ul>
+                    <li><code>/api/v1/...</code> - API version 1 endpoints</li>
+                    <li><code>/api/v2/...</code> - API version 2 endpoints</li>
+                    <li><code>/debug/...</code> - Debug and monitoring endpoints</li>
+                </ul>
+
+                <h2>Documentation</h2>
+                <p>For detailed API documentation, please visit <a href="https://findameetingspot.com">Find A Meeting Spot</a> website.</p>
+
+                <div class="footer">
+                    <p>&copy; 2025 Find A Meeting Spot</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
     # Add security headers middleware
     @app.after_request
     def add_security_headers(response):
