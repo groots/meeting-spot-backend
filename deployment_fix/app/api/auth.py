@@ -84,9 +84,9 @@ class Register(Resource):
             # Create new user
             user = User(email=data["email"])
             user.set_password(data["password"])
-            
+
             # Note: 'name' field is ignored as it's not in the User model
-                
+
             # Add and commit to database
             db.session.add(user)
             db.session.commit()
