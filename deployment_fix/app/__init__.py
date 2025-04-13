@@ -1,0 +1,276 @@
+"""Flask application factory."""
+import logging
+import os
+from logging.handlers import RotatingFileHandler
+
+from flask import Flask, current_app, request
+from flask_cors import CORS
+from flask_jwt_extended import JWTManager
+from flask_migrate import Migrate
+from flask_sqlalchemy import SQLAlchemy
+
+db = SQLAlchemy()
+jwt = JWTManager()
+migrate = Migrate()
+
+
+def setup_logging(app):
+    """Set up logging configuration."""
+    # Create logs directory if it doesn't exist
+    try:
+        os.makedirs("logs")
+    except FileExistsError:
+        pass  # Directory already exists
+
+    # Set up file handler for CORS logs
+    cors_handler = RotatingFileHandler("logs/cors.log", maxBytes=10000000, backupCount=5)
+    cors_handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s in %(module)s: %(message)s"))
+    cors_handler.setLevel(logging.INFO)
+
+    # Create CORS logger
+    cors_logger = logging.getLogger("cors")
+    cors_logger.setLevel(logging.INFO)
+    cors_logger.addHandler(cors_handler)
+
+    # Set up file handler for general application logs
+    handler = RotatingFileHandler("logs/app.log", maxBytes=10000000, backupCount=5)
+    handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s in %(module)s: %(message)s"))
+    handler.setLevel(logging.INFO)
+
+    # Add handlers to app logger
+    app.logger.addHandler(handler)
+    app.logger.setLevel(logging.INFO)
+    app.logger.info("Application startup")
+
+
+def create_app(config_name="development"):
+    """Create and configure the Flask application.
+
+    Args:
+        config_name (str): The name of the configuration to use.
+
+    Returns:
+        Flask: The configured Flask application.
+    """
+    app = Flask(__name__)
+
+    # Load config
+    env = os.getenv("FLASK_ENV", config_name)
+    app.logger.info(f"Using environment: {env}")
+
+    if env == "production":
+        app.config.from_object("app.config.ProductionConfig")
+    elif env == "development":
+        app.config.from_object("app.config.DevelopmentConfig")
+    elif env == "testing":
+        app.config.from_object("app.config.TestingConfig")
+    else:
+        app.config.from_object("app.config.Config")
+
+    # Override config with environment variables
+    app.config.from_prefixed_env("FLASK_")
+
+    # Process CORS_ORIGINS from environment if present
+    cors_origins_env = os.getenv("CORS_ORIGINS")
+    if cors_origins_env:
+        cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
+        app.config["CORS_ORIGINS"] = cors_origins
+        app.logger.info(f"Loaded CORS origins from environment: {cors_origins}")
+
+    # Set up logging
+    setup_logging(app)
+
+    # Initialize CORS with app-wide settings
+    CORS(
+        app,
+        resources={
+            r"/*": {
+                "origins": app.config.get("CORS_ORIGINS", ["http://localhost:3000"]),
+                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                "allow_headers": [
+                    "Content-Type",
+                    "Authorization",
+                    "Accept",
+                    "X-Requested-With",
+                    "Origin",
+                    "Access-Control-Request-Method",
+                    "Access-Control-Request-Headers",
+                    "Referer",
+                    "User-Agent",
+                    "Sec-Fetch-Mode",
+                    "Sec-Fetch-Site",
+                    "Sec-Fetch-Dest",
+                    "sec-ch-ua",
+                    "sec-ch-ua-mobile",
+                    "sec-ch-ua-platform",
+                ],
+                "expose_headers": [
+                    "Content-Type",
+                    "Authorization",
+                    "Access-Control-Allow-Origin",
+                    "Access-Control-Allow-Credentials",
+                    "Access-Control-Allow-Headers",
+                    "Access-Control-Allow-Methods",
+                ],
+                "supports_credentials": True,
+                "max_age": 3600,
+                "send_wildcard": False,
+                "automatic_options": True,
+                "vary_header": True,
+            }
+        },
+    )
+
+    # Add a root route handler for the welcome page
+    @app.route("/")
+    def index():
+        return """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Find A Meeting Spot API</title>
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 20px;
+                }
+                h1 {
+                    color: #3498db;
+                    border-bottom: 2px solid #f1f1f1;
+                    padding-bottom: 10px;
+                }
+                .container {
+                    background-color: #fff;
+                    border-radius: 5px;
+                    padding: 20px;
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                }
+                code {
+                    background-color: #f8f9fa;
+                    padding: 2px 5px;
+                    border-radius: 3px;
+                    font-family: 'Courier New', Courier, monospace;
+                }
+                ul {
+                    margin-top: 20px;
+                }
+                li {
+                    margin-bottom: 10px;
+                }
+                .footer {
+                    margin-top: 30px;
+                    text-align: center;
+                    font-size: 0.9em;
+                    color: #666;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>Find A Meeting Spot API</h1>
+                <p>Welcome to the Find A Meeting Spot API service! This is the backend server that powers the Find A Meeting Spot application.</p>
+
+                <h2>API Endpoints</h2>
+                <p>The API endpoints are available under the following paths:</p>
+                <ul>
+                    <li><code>/api/v1/...</code> - API version 1 endpoints</li>
+                    <li><code>/api/v2/...</code> - API version 2 endpoints</li>
+                    <li><code>/debug/...</code> - Debug and monitoring endpoints</li>
+                </ul>
+
+                <h2>Documentation</h2>
+                <p>For detailed API documentation, please visit <a href="https://findameetingspot.com">Find A Meeting Spot</a> website.</p>
+
+                <div class="footer">
+                    <p>&copy; 2025 Find A Meeting Spot</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+    # Add security headers middleware
+    @app.after_request
+    def add_security_headers(response):
+        """Add security headers to all responses."""
+        cors_logger = logging.getLogger("cors")
+
+        # Log request details
+        cors_logger.info(
+            "Request: %s %s\nHeaders: %s\nOrigin: %s\n",
+            request.method,
+            request.path,
+            dict(request.headers),
+            request.headers.get("Origin"),
+        )
+
+        # Add security headers
+        if app.config.get("SECURITY_HEADERS"):
+            for header, value in app.config["SECURITY_HEADERS"].items():
+                response.headers[header] = value
+
+        # For OPTIONS requests, ensure CORS headers are present and return 200
+        if request.method == "OPTIONS":
+            response.status_code = 200
+            # Ensure CORS headers are present
+            if "Origin" in request.headers:
+                origin = request.headers["Origin"]
+                allowed_origins = app.config.get("CORS_ORIGINS", [])
+
+                # Log CORS validation
+                cors_logger.info(
+                    "CORS Validation:\nOrigin: %s\nAllowed Origins: %s\nRequest Headers: %s\n",
+                    origin,
+                    allowed_origins,
+                    request.headers.get("Access-Control-Request-Headers"),
+                )
+
+                if origin in allowed_origins:
+                    response.headers["Access-Control-Allow-Origin"] = origin
+                    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+                    response.headers[
+                        "Access-Control-Allow-Headers"
+                    ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+                    response.headers["Access-Control-Allow-Credentials"] = "true"
+                    response.headers["Access-Control-Max-Age"] = "3600"
+
+                    cors_logger.info("CORS headers set successfully for origin: %s", origin)
+                else:
+                    cors_logger.warning("Invalid origin attempted access: %s", origin)
+
+        # Log response details
+        cors_logger.info("Response:\nStatus: %s\nHeaders: %s\n", response.status_code, dict(response.headers))
+
+        return response
+
+    # Add error handlers
+    @app.errorhandler(500)
+    def internal_error(error):
+        app.logger.error("Server Error: %s", error)
+        return jsonify(error="Internal server error"), 500
+
+    @app.errorhandler(503)
+    def service_unavailable(error):
+        app.logger.error("Service Unavailable: %s", error)
+        return jsonify(error="Service temporarily unavailable"), 503
+
+    db.init_app(app)
+    jwt.init_app(app)
+    migrate.init_app(app, db)
+
+    with app.app_context():
+        # Register API blueprints
+        from app.api import init_app as init_api
+
+        init_api(app)
+
+        # Create database tables
+        # db.create_all()
+
+    return app

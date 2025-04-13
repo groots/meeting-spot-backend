@@ -58,3 +58,6 @@ client-key.pem
 *.pem
 *.key
 *credentials*.json
+cloud_sql_proxy
+cloud_sql_proxy
+cloud_sql_proxy
