@@ -5,7 +5,8 @@ from typing import Any, Dict, List, Optional, Union
 from flask import current_app
 from sqlalchemy import Index, Table
 
-from ...utils.encryption import decrypt_data, encrypt_data
+from app.utils.encryption import decrypt_data, encrypt_data
+
 from .. import db
 from .enums import ContactType, MeetingRequestStatus
 from .place import Place
