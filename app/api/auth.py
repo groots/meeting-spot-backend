@@ -28,7 +28,7 @@ register_model = api.model(
     {
         "email": fields.String(required=True, description="User email"),
         "password": fields.String(required=True, description="User password"),
-        "name": fields.String(required=True, description="User name"),
+        "name": fields.String(required=False, description="User name (ignored)"),
     },
 )
 
@@ -85,12 +85,14 @@ class Register(Resource):
             user = User(email=data["email"])
             user.set_password(data["password"])
 
+            # Note: 'name' field is ignored as it's not in the User model
+
             # Add and commit to database
             db.session.add(user)
             db.session.commit()
 
             # Generate access token
-            access_token = create_access_token(identity=user.id)
+            access_token = create_access_token(identity=str(user.id))
 
             return {
                 "message": "User registered successfully",
@@ -100,6 +102,8 @@ class Register(Resource):
 
         except Exception as e:
             db.session.rollback()
+            # Log the actual error for debugging
+            current_app.logger.error(f"Error registering user: {str(e)}")
             return {"message": "Error registering user"}, 500
 
 
