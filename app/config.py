@@ -87,6 +87,7 @@ class ProductionConfig(Config):
         "https://find-a-meeting-spot.web.app",
         "https://findameetingspot.com",
         "https://www.findameetingspot.com",
+        "https://api.findameetingspot.com",
     ]
 
     # Database configuration - Use socket for Cloud SQL
