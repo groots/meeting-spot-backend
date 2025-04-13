@@ -6,7 +6,6 @@ from flask import current_app
 from sqlalchemy import Index, Table
 
 from ...utils.encryption import decrypt_data, encrypt_data
-
 from .. import db
 from .enums import ContactType, MeetingRequestStatus
 from .place import Place
