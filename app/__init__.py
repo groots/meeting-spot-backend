@@ -3,11 +3,12 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
-from flask import Flask, current_app, request
-from flask_cors import CORS
+from flask import Flask, current_app, jsonify, request
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
+
+from .cors_middleware import setup_cors
 
 db = SQLAlchemy()
 jwt = JWTManager()
@@ -68,7 +69,8 @@ def create_app(config_name="development"):
         app.config.from_object("app.config.Config")
 
     # Override config with environment variables
-    app.config.from_prefixed_env("FLASK_")
+    if hasattr(app.config, "from_prefixed_env"):
+        app.config.from_prefixed_env("FLASK_")
 
     # Process CORS_ORIGINS from environment if present
     cors_origins_env = os.getenv("CORS_ORIGINS")
@@ -80,46 +82,8 @@ def create_app(config_name="development"):
     # Set up logging
     setup_logging(app)
 
-    # Initialize CORS with app-wide settings
-    CORS(
-        app,
-        resources={
-            r"/*": {
-                "origins": app.config.get("CORS_ORIGINS", ["http://localhost:3000"]),
-                "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": [
-                    "Content-Type",
-                    "Authorization",
-                    "Accept",
-                    "X-Requested-With",
-                    "Origin",
-                    "Access-Control-Request-Method",
-                    "Access-Control-Request-Headers",
-                    "Referer",
-                    "User-Agent",
-                    "Sec-Fetch-Mode",
-                    "Sec-Fetch-Site",
-                    "Sec-Fetch-Dest",
-                    "sec-ch-ua",
-                    "sec-ch-ua-mobile",
-                    "sec-ch-ua-platform",
-                ],
-                "expose_headers": [
-                    "Content-Type",
-                    "Authorization",
-                    "Access-Control-Allow-Origin",
-                    "Access-Control-Allow-Credentials",
-                    "Access-Control-Allow-Headers",
-                    "Access-Control-Allow-Methods",
-                ],
-                "supports_credentials": True,
-                "max_age": 3600,
-                "send_wildcard": False,
-                "automatic_options": True,
-                "vary_header": True,
-            }
-        },
-    )
+    # Set up CORS with our custom middleware instead of Flask-CORS
+    setup_cors(app)
 
     # Add a root route handler for the welcome page
     @app.route("/")
@@ -195,13 +159,11 @@ def create_app(config_name="development"):
         </html>
         """
 
-    # Add security headers middleware
-    @app.after_request
-    def add_security_headers(response):
-        """Add security headers to all responses."""
+    # Log all requests
+    @app.before_request
+    def log_request():
+        """Log request details."""
         cors_logger = logging.getLogger("cors")
-
-        # Log request details
         cors_logger.info(
             "Request: %s %s\nHeaders: %s\nOrigin: %s\n",
             request.method,
@@ -210,39 +172,16 @@ def create_app(config_name="development"):
             request.headers.get("Origin"),
         )
 
+    # Add security headers middleware
+    @app.after_request
+    def add_security_headers(response):
+        """Add security headers to all responses."""
+        cors_logger = logging.getLogger("cors")
+
         # Add security headers
         if app.config.get("SECURITY_HEADERS"):
             for header, value in app.config["SECURITY_HEADERS"].items():
                 response.headers[header] = value
-
-        # For OPTIONS requests, ensure CORS headers are present and return 200
-        if request.method == "OPTIONS":
-            response.status_code = 200
-            # Ensure CORS headers are present
-            if "Origin" in request.headers:
-                origin = request.headers["Origin"]
-                allowed_origins = app.config.get("CORS_ORIGINS", [])
-
-                # Log CORS validation
-                cors_logger.info(
-                    "CORS Validation:\nOrigin: %s\nAllowed Origins: %s\nRequest Headers: %s\n",
-                    origin,
-                    allowed_origins,
-                    request.headers.get("Access-Control-Request-Headers"),
-                )
-
-                if origin in allowed_origins:
-                    response.headers["Access-Control-Allow-Origin"] = origin
-                    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-                    response.headers[
-                        "Access-Control-Allow-Headers"
-                    ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-                    response.headers["Access-Control-Allow-Credentials"] = "true"
-                    response.headers["Access-Control-Max-Age"] = "3600"
-
-                    cors_logger.info("CORS headers set successfully for origin: %s", origin)
-                else:
-                    cors_logger.warning("Invalid origin attempted access: %s", origin)
 
         # Log response details
         cors_logger.info("Response:\nStatus: %s\nHeaders: %s\n", response.status_code, dict(response.headers))
