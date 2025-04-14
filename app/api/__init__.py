@@ -108,7 +108,18 @@ def health_check():
     else:
         health_data["status"] = "degraded"
 
-    return jsonify(health_data)
+    response = jsonify(health_data)
+
+    # Add CORS headers directly to this response
+    origin = request.headers.get("Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        current_app.logger.info(f"Added direct CORS headers to health endpoint response for origin: {origin}")
+
+    return response
 
 
 # Add a test route directly to the blueprint
@@ -177,7 +188,7 @@ def db_check():
     try:
         # Attempt to execute a simple query
         db_version = db.session.execute(text("SELECT version()")).scalar()
-        return jsonify(
+        response = jsonify(
             {
                 "status": "success",
                 "message": "Database connection successful",
@@ -195,8 +206,19 @@ def db_check():
                 "google_maps_api_key_set": bool(current_app.config.get("GOOGLE_MAPS_API_KEY")),
             }
         )
+
+        # Add CORS headers directly to this response
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            current_app.logger.info(f"Added direct CORS headers to db-check response for origin: {origin}")
+
+        return response
     except SQLAlchemyError as e:
-        return (
+        error_response = (
             jsonify(
                 {
                     "status": "error",
@@ -217,6 +239,50 @@ def db_check():
             ),
             500,
         )
+
+        # Add CORS headers to error response too
+        origin = request.headers.get("Origin")
+        if origin:
+            error_response[0].headers["Access-Control-Allow-Origin"] = origin
+            error_response[0].headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            error_response[0].headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            error_response[0].headers["Access-Control-Allow-Credentials"] = "true"
+
+        return error_response
+
+
+@debug_bp.route("/db-check", methods=["OPTIONS"])
+def db_check_options():
+    """Handle OPTIONS requests for db-check endpoint."""
+    response = current_app.make_default_options_response()
+    origin = request.headers.get("Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers[
+            "Access-Control-Allow-Headers"
+        ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Max-Age"] = "3600"
+        current_app.logger.info(f"Added CORS headers to OPTIONS response for /debug/db-check, origin: {origin}")
+    return response
+
+
+@debug_bp.route("/health", methods=["OPTIONS"])
+def health_options():
+    """Handle OPTIONS requests for health endpoint."""
+    response = current_app.make_default_options_response()
+    origin = request.headers.get("Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers[
+            "Access-Control-Allow-Headers"
+        ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Max-Age"] = "3600"
+        current_app.logger.info(f"Added CORS headers to OPTIONS response for /debug/health, origin: {origin}")
+    return response
 
 
 # Register debug blueprint with the app
