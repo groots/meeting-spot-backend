@@ -113,11 +113,15 @@ def health_check():
     # Add CORS headers directly to this response
     origin = request.headers.get("Origin")
     if origin:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        current_app.logger.info(f"Added direct CORS headers to health endpoint response for origin: {origin}")
+        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
+        if "*" in allowed_origins or origin in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            current_app.logger.info(f"Added direct CORS headers to health endpoint response for origin: {origin}")
+        else:
+            current_app.logger.info(f"Origin not allowed for health endpoint: {origin}")
 
     return response
 
@@ -257,14 +261,18 @@ def db_check_options():
     response = current_app.make_default_options_response()
     origin = request.headers.get("Origin")
     if origin:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        response.headers[
-            "Access-Control-Allow-Headers"
-        ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Max-Age"] = "3600"
-        current_app.logger.info(f"Added CORS headers to OPTIONS response for /debug/db-check, origin: {origin}")
+        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
+        if "*" in allowed_origins or origin in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers[
+                "Access-Control-Allow-Headers"
+            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+            current_app.logger.info(f"Added CORS headers to OPTIONS response for /debug/db-check, origin: {origin}")
+        else:
+            current_app.logger.info(f"Origin not allowed for db-check OPTIONS: {origin}")
     return response
 
 
@@ -274,14 +282,18 @@ def health_options():
     response = current_app.make_default_options_response()
     origin = request.headers.get("Origin")
     if origin:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        response.headers[
-            "Access-Control-Allow-Headers"
-        ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Max-Age"] = "3600"
-        current_app.logger.info(f"Added CORS headers to OPTIONS response for /debug/health, origin: {origin}")
+        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
+        if "*" in allowed_origins or origin in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers[
+                "Access-Control-Allow-Headers"
+            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+            current_app.logger.info(f"Added CORS headers to OPTIONS response for /debug/health, origin: {origin}")
+        else:
+            current_app.logger.info(f"Origin not allowed for health OPTIONS: {origin}")
     return response
 
 

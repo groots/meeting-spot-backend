@@ -48,27 +48,24 @@ def setup_cors(app):
         # Log the request for debugging
         cors_logger.info(f"Processing request: {request.method} {request.path} from origin: {origin}")
 
-        # Always add CORS headers for all responses, regardless of route
-        # This is the recommended approach for Cloud Run
+        # Only add CORS headers if the origin is provided
         if origin:
-            # If origin matches our allowed origins, reflect it back
-            # Otherwise use '*' for public APIs (or remove this line for more restricted access)
-            allowed_origins = app.config.get("CORS_ORIGINS", ["*"])
+            # Check if origin is in our allowed origins list
+            allowed_origins = app.config.get("CORS_ORIGINS", [])
 
+            # Only add Access-Control-Allow-Origin if the origin is allowed
             if "*" in allowed_origins or origin in allowed_origins:
                 response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+                response.headers[
+                    "Access-Control-Allow-Headers"
+                ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Max-Age"] = "3600"
+                response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization, Content-Length"
+                cors_logger.info(f"Applied CORS headers for origin: {origin}")
             else:
-                response.headers["Access-Control-Allow-Origin"] = "*"
-
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            response.headers[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-            response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization, Content-Length"
-
-            cors_logger.info(f"Applied CORS headers for origin: {origin}")
+                cors_logger.info(f"Origin not allowed: {origin}")
 
         return response
 
@@ -84,22 +81,21 @@ def setup_cors(app):
         # Create a response with 200 OK status
         response = current_app.make_default_options_response()
 
-        # Add CORS headers
+        # Add CORS headers only if the origin is allowed
         if origin:
-            allowed_origins = app.config.get("CORS_ORIGINS", ["*"])
+            allowed_origins = app.config.get("CORS_ORIGINS", [])
 
             if "*" in allowed_origins or origin in allowed_origins:
                 response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+                response.headers[
+                    "Access-Control-Allow-Headers"
+                ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Max-Age"] = "3600"
+                response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization, Content-Length"
+                cors_logger.info(f"Applied OPTIONS CORS headers for origin: {origin}")
             else:
-                response.headers["Access-Control-Allow-Origin"] = "*"
-
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            response.headers[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-
-            cors_logger.info(f"Applied CORS headers for OPTIONS request from origin: {origin}")
+                cors_logger.info(f"Origin not allowed for OPTIONS: {origin}")
 
         return response
