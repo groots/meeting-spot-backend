@@ -196,3 +196,30 @@ def auth_headers(app_context, test_user, app):
 
     access_token = create_access_token(identity=test_user.id)
     return {"Authorization": f"Bearer {access_token}"}
+
+
+@pytest.fixture(scope="function")
+def mock_process_meeting_request():
+    """Mock the process_meeting_request function to always succeed."""
+    from unittest.mock import patch
+
+    from app.models.enums import MeetingRequestStatus
+
+    with patch("app.utils.location.process_meeting_request") as mock_process:
+        # Set up the mock to update the status and return True
+        def side_effect(meeting_request):
+            meeting_request.status = MeetingRequestStatus.CALCULATING
+            meeting_request.suggested_options = [
+                {
+                    "name": "Test Restaurant",
+                    "place_id": "place123",
+                    "address": "123 Test St, Test City",
+                    "location": {"lat": 37.78, "lng": -122.41},
+                    "rating": 4.5,
+                    "photos": ["https://example.com/photo.jpg"],
+                }
+            ]
+            return True
+
+        mock_process.side_effect = side_effect
+        yield mock_process

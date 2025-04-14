@@ -44,7 +44,7 @@ def test_get_request_status(client, test_meeting_request, auth_headers) -> None:
     assert result["status"] == MeetingRequestStatus.PENDING_B_ADDRESS.value
 
 
-def test_respond_to_request(client, test_meeting_request, auth_headers) -> None:
+def test_respond_to_request(client, test_meeting_request, auth_headers, mock_process_meeting_request) -> None:
     """Test responding to a meeting request."""
     # First, get the token from the request creation
     response = client.get(
@@ -59,6 +59,8 @@ def test_respond_to_request(client, test_meeting_request, auth_headers) -> None:
     data = {
         "address_b": "456 Test Ave, Test City, TS 12345",
         "token": test_meeting_request.token_b,
+        "address_b_lat": 40.7128,
+        "address_b_lon": -74.0060,
     }
     response = client.post(
         f"/api/v1/meeting-requests/{test_meeting_request.request_id}/respond",
@@ -69,6 +71,9 @@ def test_respond_to_request(client, test_meeting_request, auth_headers) -> None:
     assert response.status_code == 200
     result = json.loads(response.data)
     assert result["status"] == MeetingRequestStatus.CALCULATING.value
+
+    # Verify the mock was called
+    mock_process_meeting_request.assert_called_once()
 
 
 def test_get_request_results(client, test_meeting_request, auth_headers) -> None:

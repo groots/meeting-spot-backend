@@ -41,25 +41,39 @@ def auth_user(client):
 @pytest.fixture
 def mock_location_api():
     """Mock the location API calls"""
+    from app.models.enums import MeetingRequestStatus
+
+    # Set up mock spots data
+    mock_spots = [
+        {
+            "name": "Test Restaurant",
+            "place_id": "place123",
+            "address": "123 Test St",
+            "location": {"lat": 37.78, "lng": -122.41},
+            "rating": 4.5,
+            "price_level": 2,
+            "photos": ["https://example.com/photo.jpg"],
+            "distance": 1.2,
+            "types": ["restaurant", "food"],
+            "category": "Food & Drink",
+            "subcategory": "fine dining",
+        }
+    ]
+
+    # Create mock for find_meeting_spots
     with patch("app.utils.location.find_meeting_spots") as mock_find:
-        # Set up mock return value for find_meeting_spots
-        mock_spots = [
-            {
-                "name": "Test Restaurant",
-                "place_id": "place123",
-                "address": "123 Test St",
-                "location": {"lat": 37.78, "lng": -122.41},
-                "rating": 4.5,
-                "price_level": 2,
-                "photos": ["https://example.com/photo.jpg"],
-                "distance": 1.2,
-                "types": ["restaurant", "food"],
-                "category": "Food & Drink",
-                "subcategory": "fine dining",
-            }
-        ]
         mock_find.return_value = mock_spots
-        yield mock_find
+
+        # Also patch process_meeting_request
+        with patch("app.utils.location.process_meeting_request") as mock_process:
+
+            def process_side_effect(meeting_request):
+                meeting_request.status = MeetingRequestStatus.COMPLETED
+                meeting_request.suggested_options = mock_spots
+                return True
+
+            mock_process.side_effect = process_side_effect
+            yield mock_find
 
 
 def test_meeting_request_full_flow(client, auth_user, mock_location_api):
@@ -70,7 +84,7 @@ def test_meeting_request_full_flow(client, auth_user, mock_location_api):
     create_data = {
         "address_a": "123 Test St, San Francisco, CA",
         "location_type": "Food & Drink: fine dining",
-        "user_b_contact_type": "EMAIL",
+        "user_b_contact_type": "email",
         "user_b_contact": "friend@example.com",
     }
 
@@ -126,7 +140,7 @@ def test_meeting_request_invalid_token(client, auth_user):
     create_data = {
         "address_a": "123 Test St, San Francisco, CA",
         "location_type": "Food & Drink",
-        "user_b_contact_type": "EMAIL",
+        "user_b_contact_type": "email",
         "user_b_contact": "friend@example.com",
     }
 
@@ -170,7 +184,7 @@ def test_different_categories(client, auth_user, mock_location_api):
         create_data = {
             "address_a": "123 Test St, San Francisco, CA",
             "location_type": category,
-            "user_b_contact_type": "EMAIL",
+            "user_b_contact_type": "email",
             "user_b_contact": "friend@example.com",
         }
 

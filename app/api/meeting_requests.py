@@ -105,7 +105,7 @@ class MeetingRequestList(Resource):
                 address_a_lat=address_a_lat,
                 address_a_lon=address_a_lon,
                 location_type=data["location_type"],
-                user_b_contact_type=ContactType(data["user_b_contact_type"]),
+                user_b_contact_type=ContactType(data["user_b_contact_type"].lower()),
                 user_b_contact=data["user_b_contact"],
                 token_b=uuid.uuid4().hex,
                 status=MeetingRequestStatus.PENDING_B_ADDRESS,
