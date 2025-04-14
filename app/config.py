@@ -34,13 +34,27 @@ class Config:
 
     # CORS Configuration
     CORS_ORIGINS = [
-        "http://localhost:3000",  # Local development
+        "http://localhost:3000",  # Local development frontend
+        "http://localhost:3001",  # Alternative port
         "http://localhost:5000",  # Local Flask server
+        "http://localhost:5001",  # Alternative port
+        "http://localhost:8080",  # Common local testing port
+        "http://localhost:8081",  # Backend running port
+        "http://127.0.0.1:3000",  # Using IP instead of localhost
+        "http://127.0.0.1:8080",  # Using IP instead of localhost
+        "http://127.0.0.1:8081",  # Using IP instead of localhost
         "https://find-a-meeting-spot.web.app",  # Production frontend
         "https://find-a-meeting-spot.ue.r.appspot.com",  # App Engine URL
         "https://findameetingspot.com",  # Custom domain
         "https://www.findameetingspot.com",  # www subdomain
     ]
+
+    # Security Headers
+    SECURITY_HEADERS = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "SAMEORIGIN",
+        "X-XSS-Protection": "1; mode=block",
+    }
 
 
 class TestingConfig(Config):

@@ -31,6 +31,7 @@ def setup_logging(app):
     # Create CORS logger
     cors_logger = logging.getLogger("cors")
     cors_logger.setLevel(logging.INFO)
+    cors_logger.handlers = []  # Clear existing handlers if any
     cors_logger.addHandler(cors_handler)
 
     # Set up file handler for general application logs
@@ -78,6 +79,9 @@ def create_app(config_name="development"):
         cors_origins = [origin.strip() for origin in cors_origins_env.split(",")]
         app.config["CORS_ORIGINS"] = cors_origins
         app.logger.info(f"Loaded CORS origins from environment: {cors_origins}")
+
+    # Log the configured CORS origins for debugging
+    app.logger.info(f"Configured CORS origins: {app.config.get('CORS_ORIGINS', [])}")
 
     # Set up logging
     setup_logging(app)
@@ -158,6 +162,27 @@ def create_app(config_name="development"):
         </body>
         </html>
         """
+
+    # Add CORS check route to easily test CORS configuration
+    @app.route("/debug/cors-check")
+    def cors_check():
+        """Endpoint to check CORS configuration."""
+        origin = request.headers.get("Origin", "No origin provided")
+        cors_logger = logging.getLogger("cors")
+        cors_logger.info(f"CORS check requested from origin: {origin}")
+
+        allowed_origins = app.config.get("CORS_ORIGINS", [])
+        is_allowed = origin in allowed_origins or "*" in allowed_origins
+
+        return jsonify(
+            {
+                "origin": origin,
+                "is_allowed": is_allowed,
+                "allowed_origins": allowed_origins,
+                "debug_mode": app.config.get("DEBUG", False),
+                "environment": app.config.get("ENV", "unknown"),
+            }
+        )
 
     # Log all requests
     @app.before_request
