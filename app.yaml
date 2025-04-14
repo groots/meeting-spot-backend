@@ -10,6 +10,7 @@ env_variables:
   GOOGLE_CLOUD_PROJECT: "find-a-meeting-spot"
   FRONTEND_URL: "https://find-a-meeting-spot.ue.r.appspot.com"
   LOG_LEVEL: "INFO"
+  DATABASE_URL: "postgresql+pg8000:///findameetingspot?unix_sock=/cloudsql/find-a-meeting-spot:us-east1:findameetingspot/.s.PGSQL.5432"
 
 entrypoint: gunicorn -b :$PORT wsgi:app
 
