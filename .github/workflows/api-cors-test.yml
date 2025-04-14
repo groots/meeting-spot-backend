@@ -1,0 +1,59 @@
+name: API CORS Test
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/api-cors-test.yml'
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  test-cors:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install requests colorama pytest
+
+    - name: Start Cloud SQL Proxy (if needed)
+      run: |
+        # Skip proxy for testing - we'll use a mock DB or test config
+        echo "Using test configuration without real database"
+
+    - name: Run CORS pre-deployment tests
+      run: |
+        # Set test mode to avoid real database connections
+        export FLASK_ENV=testing
+        export TESTING=true
+        export CORS_ORIGINS="https://findameetingspot.com,https://www.findameetingspot.com,https://find-a-meeting-spot.web.app,https://find-a-meeting-spot.ue.r.appspot.com"
+
+        # Run the CORS test script
+        python test_cors_predeployment.py --port 8081
+
+    - name: Test deployed API if specified (optional)
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        # This step only runs when workflow is manually triggered
+        # It can be used to test an already deployed API
+        python test_cors_deployed.py --api-url https://api.findameetingspot.com
+
+    - name: Check for critical errors
+      if: failure()
+      run: |
+        echo "::error::CORS tests failed! Please fix CORS configuration before deploying."
+        exit 1
