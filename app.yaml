@@ -28,12 +28,54 @@ automatic_scaling:
   target_throughput_utilization: 0.6
 
 handlers:
+- url: /debug/.*
+  script: auto
+  secure: always
+  http_headers:
+    Access-Control-Allow-Origin: '*'
+    Access-Control-Allow-Methods: 'GET, POST, OPTIONS, PUT, DELETE'
+    Access-Control-Allow-Headers: 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+    Access-Control-Max-Age: '3600'
+    Access-Control-Allow-Credentials: 'true'
+
+- url: /api/v1/.*
+  script: auto
+  secure: always
+  http_headers:
+    Access-Control-Allow-Origin: '*'
+    Access-Control-Allow-Methods: 'GET, POST, OPTIONS, PUT, DELETE'
+    Access-Control-Allow-Headers: 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+    Access-Control-Max-Age: '3600'
+    Access-Control-Allow-Credentials: 'true'
+
+- url: /api/v2/.*
+  script: auto
+  secure: always
+  http_headers:
+    Access-Control-Allow-Origin: '*'
+    Access-Control-Allow-Methods: 'GET, POST, OPTIONS, PUT, DELETE'
+    Access-Control-Allow-Headers: 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+    Access-Control-Max-Age: '3600'
+    Access-Control-Allow-Credentials: 'true'
+
 - url: /api/v1/swagger/swaggerui/.*
   static_dir: static/swaggerui
   secure: always
+  http_headers:
+    Access-Control-Allow-Origin: '*'
+    Access-Control-Allow-Methods: 'GET, OPTIONS'
+    Access-Control-Allow-Headers: 'Origin, X-Requested-With, Content-Type, Accept'
+    Access-Control-Max-Age: '3600'
+
 - url: /.*
   script: auto
   secure: always
+  http_headers:
+    Access-Control-Allow-Origin: '*'
+    Access-Control-Allow-Methods: 'GET, POST, OPTIONS, PUT, DELETE'
+    Access-Control-Allow-Headers: 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+    Access-Control-Max-Age: '3600'
+    Access-Control-Allow-Credentials: 'true'
 
 includes:
 - secret_settings.yaml

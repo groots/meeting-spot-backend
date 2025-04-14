@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.pool import StaticPool
 
 from app import create_app, db

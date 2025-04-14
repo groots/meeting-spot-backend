@@ -1,121 +1,105 @@
 """CORS Middleware for Flask application.
 
-This module provides functions to add CORS headers to all responses.
+This module provides a simple, reliable approach to handling CORS in Cloud Run.
 """
 
 import logging
 
-from flask import Flask, current_app, request
+from flask import current_app, request
 
 
 def setup_cors(app):
-    """Set up CORS for the Flask application.
+    """Set up CORS for the Flask application using a direct approach that works reliably in Cloud Run.
 
-    This adds proper CORS headers to all responses and handles OPTIONS requests.
+    This implementation adds explicit CORS headers to all responses rather than relying on flask-cors,
+    which can sometimes be stripped by Cloud Run.
 
     Args:
         app: The Flask application instance
     """
     cors_logger = logging.getLogger("cors")
 
+    # Create a list of default allowed origins if not specified
+    if not app.config.get("CORS_ORIGINS"):
+        app.config["CORS_ORIGINS"] = [
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://localhost:5000",
+            "http://localhost:5001",
+            "http://localhost:8080",
+            "http://localhost:8081",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:8080",
+            "http://127.0.0.1:8081",
+            "https://find-a-meeting-spot.web.app",
+            "https://find-a-meeting-spot.firebaseapp.com",
+            "https://find-a-meeting-spot.ue.r.appspot.com",
+            "https://findameetingspot.com",
+            "https://www.findameetingspot.com",
+        ]
+
+    cors_logger.info(f"Initializing CORS with allowed origins: {app.config['CORS_ORIGINS']}")
+
     @app.after_request
     def add_cors_headers(response):
         """Add CORS headers to all responses."""
-        # Get the origin from the request
         origin = request.headers.get("Origin")
 
-        # Log the origin for debugging
+        # Log the request for debugging
+        cors_logger.info(f"Processing request: {request.method} {request.path} from origin: {origin}")
+
+        # Always add CORS headers for all responses, regardless of route
+        # This is the recommended approach for Cloud Run
         if origin:
-            cors_logger.info(f"Processing request with Origin: {origin}")
+            # If origin matches our allowed origins, reflect it back
+            # Otherwise use '*' for public APIs (or remove this line for more restricted access)
+            allowed_origins = app.config.get("CORS_ORIGINS", ["*"])
 
-        # SPECIAL CASE 1: Always allow CORS for debug endpoints
-        if origin and request.path.startswith("/debug/"):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            response.headers[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-            response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization, Content-Length"
-            cors_logger.info(f"Applied permissive CORS headers for debug endpoint: {request.path}")
-            return response
-
-        # SPECIAL CASE 2: Always allow CORS for API endpoints in development
-        elif origin and request.path.startswith("/api/") and app.config.get("DEBUG", False):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            response.headers[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-            response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization, Content-Length"
-            cors_logger.info(f"Applied permissive CORS headers for API in development: {request.path}")
-            return response
-
-        # For other endpoints, only allow from permitted origins
-        elif origin:
-            allowed_origins = current_app.config.get("CORS_ORIGINS", ["http://localhost:3000"])
-
-            # Check if origin is in allowed origins or if wildcard is allowed
-            if origin in allowed_origins or "*" in allowed_origins:
+            if "*" in allowed_origins or origin in allowed_origins:
                 response.headers["Access-Control-Allow-Origin"] = origin
-                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-                response.headers[
-                    "Access-Control-Allow-Headers"
-                ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-                response.headers["Access-Control-Allow-Credentials"] = "true"
-                response.headers["Access-Control-Max-Age"] = "3600"
-                response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization, Content-Length"
-                cors_logger.info(f"Applied CORS headers for permitted origin: {origin}")
             else:
-                cors_logger.warning(f"CORS request denied for origin: {origin}, path: {request.path}")
-                cors_logger.warning(f"Allowed origins: {allowed_origins}")
+                response.headers["Access-Control-Allow-Origin"] = "*"
+
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+            response.headers[
+                "Access-Control-Allow-Headers"
+            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+            response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization, Content-Length"
+
+            cors_logger.info(f"Applied CORS headers for origin: {origin}")
 
         return response
 
-    @app.route("/", defaults={"path": ""}, methods=["OPTIONS"])
     @app.route("/<path:path>", methods=["OPTIONS"])
-    def handle_options_requests(path):
-        """Handle OPTIONS requests for all routes."""
+    @app.route("/", defaults={"path": ""}, methods=["OPTIONS"])
+    def handle_options(path=""):
+        """Handle OPTIONS requests explicitly.
+        This is often required for Cloud Run to properly handle preflight requests.
+        """
         origin = request.headers.get("Origin")
-        resp = current_app.make_default_options_response()
+        cors_logger.info(f"Handling OPTIONS request for path: {path} from origin: {origin}")
 
-        # Log the OPTIONS request
-        cors_logger.info(f"Handling OPTIONS request for path: {path}, origin: {origin}")
+        # Create a response with 200 OK status
+        response = current_app.make_default_options_response()
 
-        # Always allow OPTIONS for debug endpoints
-        if path.startswith("debug/") and origin:
-            resp.headers["Access-Control-Allow-Origin"] = origin
-            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            resp.headers[
+        # Add CORS headers
+        if origin:
+            allowed_origins = app.config.get("CORS_ORIGINS", ["*"])
+
+            if "*" in allowed_origins or origin in allowed_origins:
+                response.headers["Access-Control-Allow-Origin"] = origin
+            else:
+                response.headers["Access-Control-Allow-Origin"] = "*"
+
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+            response.headers[
                 "Access-Control-Allow-Headers"
             ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-            resp.headers["Access-Control-Allow-Credentials"] = "true"
-            resp.headers["Access-Control-Max-Age"] = "3600"
-            cors_logger.info(f"Applied CORS headers for OPTIONS to debug endpoint: {path}")
-        # Special case for API endpoints in development
-        elif path.startswith("api/") and origin and current_app.config.get("DEBUG", False):
-            resp.headers["Access-Control-Allow-Origin"] = origin
-            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            resp.headers[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-            resp.headers["Access-Control-Allow-Credentials"] = "true"
-            resp.headers["Access-Control-Max-Age"] = "3600"
-            cors_logger.info(f"Applied CORS headers for OPTIONS to API endpoint: {path}")
-        # For other paths, check against allowed origins
-        elif origin:
-            allowed_origins = current_app.config.get("CORS_ORIGINS", ["http://localhost:3000"])
-            if origin in allowed_origins or "*" in allowed_origins:
-                resp.headers["Access-Control-Allow-Origin"] = origin
-                resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-                resp.headers[
-                    "Access-Control-Allow-Headers"
-                ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-                resp.headers["Access-Control-Allow-Credentials"] = "true"
-                resp.headers["Access-Control-Max-Age"] = "3600"
-                cors_logger.info(f"Applied CORS headers for OPTIONS to regular endpoint: {path}")
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
 
-        return resp
+            cors_logger.info(f"Applied CORS headers for OPTIONS request from origin: {origin}")
+
+        return response

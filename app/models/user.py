@@ -41,7 +41,8 @@ class User(db.Model):
 
     def set_password(self, password) -> None:
         """Set hashed password."""
-        self.password_hash = generate_password_hash(password)
+        # Use method='pbkdf2:sha1' to generate a shorter hash (default is pbkdf2:sha256)
+        self.password_hash = generate_password_hash(password, method="pbkdf2:sha1")
 
     def check_password(self, password) -> bool:
         """Check if password matches hash."""

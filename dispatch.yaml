@@ -1,0 +1,11 @@
+dispatch:
+  # Route API traffic to the backend service
+  - url: "api.findameetingspot.com/*"
+    service: backend
+
+  # Route all other domains to the default (frontend) service
+  - url: "findameetingspot.com/*"
+    service: default
+
+  - url: "www.findameetingspot.com/*"
+    service: default

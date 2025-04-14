@@ -8,6 +8,7 @@ from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 
+# IMPORTANT: Import CORS setup early
 from .cors_middleware import setup_cors
 
 db = SQLAlchemy()
@@ -80,14 +81,33 @@ def create_app(config_name="development"):
         app.config["CORS_ORIGINS"] = cors_origins
         app.logger.info(f"Loaded CORS origins from environment: {cors_origins}")
 
+    # Explicitly add important production origins if not present
+    production_origins = [
+        "https://findameetingspot.com",
+        "https://www.findameetingspot.com",
+        "https://find-a-meeting-spot.web.app",
+        "https://find-a-meeting-spot.firebaseapp.com",
+    ]
+
+    if "CORS_ORIGINS" in app.config:
+        for origin in production_origins:
+            if origin not in app.config["CORS_ORIGINS"]:
+                app.config["CORS_ORIGINS"].append(origin)
+                app.logger.info(f"Added important production origin: {origin}")
+
     # Log the configured CORS origins for debugging
     app.logger.info(f"Configured CORS origins: {app.config.get('CORS_ORIGINS', [])}")
 
     # Set up logging
     setup_logging(app)
 
-    # Set up CORS with our custom middleware instead of Flask-CORS
+    # *** IMPORTANT: Set up CORS with our simplified middleware BEFORE other extensions and blueprints ***
     setup_cors(app)
+
+    # Initialize database and other extensions AFTER CORS
+    db.init_app(app)
+    jwt.init_app(app)
+    migrate.init_app(app, db)
 
     # Add a root route handler for the welcome page
     @app.route("/")
@@ -223,10 +243,6 @@ def create_app(config_name="development"):
     def service_unavailable(error):
         app.logger.error("Service Unavailable: %s", error)
         return jsonify(error="Service temporarily unavailable"), 503
-
-    db.init_app(app)
-    jwt.init_app(app)
-    migrate.init_app(app, db)
 
     with app.app_context():
         # Register API blueprints

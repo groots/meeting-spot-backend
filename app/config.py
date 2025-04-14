@@ -95,13 +95,21 @@ class ProductionConfig(Config):
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_SAMESITE = "Lax"
 
-    # CORS settings
+    # CORS settings - include ALL possible production origins
     CORS_ORIGINS = [
-        "https://find-a-meeting-spot.ue.r.appspot.com",
-        "https://find-a-meeting-spot.web.app",
+        # Production domains
         "https://findameetingspot.com",
         "https://www.findameetingspot.com",
+        # Firebase hosting
+        "https://find-a-meeting-spot.web.app",
+        "https://find-a-meeting-spot.firebaseapp.com",
+        # App Engine
+        "https://find-a-meeting-spot.ue.r.appspot.com",
+        # Cloud Run domains
         "https://api.findameetingspot.com",
+        "https://meeting-spot-backend-zylogyedtq-ue.a.run.app",
+        # Temporarily allow all origins for testing - Remove this in production if needed
+        "*",
     ]
 
     # Database configuration - Use socket for Cloud SQL
