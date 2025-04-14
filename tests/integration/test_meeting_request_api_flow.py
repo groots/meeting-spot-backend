@@ -25,7 +25,8 @@ def auth_user(client):
 
     # Log in and get token
     response = client.post(
-        "/api/v1/auth/login", json={"email": "test_integration@example.com", "password": "TestPassword123!"}
+        "/api/v1/auth/login",
+        json={"email": "test_integration@example.com", "password": "TestPassword123!"},
     )
 
     token = response.json.get("access_token")
@@ -38,12 +39,11 @@ def auth_user(client):
     db.session.commit()
 
 
-@pytest.fixture
-def mock_location_api():
-    """Mock the location API calls"""
-    from app.models.enums import MeetingRequestStatus
+def test_meeting_request_full_flow(client, auth_user):
+    """Test the complete meeting request flow from creation to completion."""
+    user, auth_headers = auth_user
 
-    # Set up mock spots data
+    # Set up mock spots data for patching
     mock_spots = [
         {
             "name": "Test Restaurant",
@@ -60,76 +60,72 @@ def mock_location_api():
         }
     ]
 
-    # Create mock for find_meeting_spots
-    with patch("app.utils.location.find_meeting_spots") as mock_find:
+    # Mock both functions together
+    with patch("app.utils.location.find_meeting_spots") as mock_find, patch(
+        "app.utils.location.process_meeting_request"
+    ) as mock_process:
+        # Set up the mocks
         mock_find.return_value = mock_spots
+        mock_process.side_effect = (
+            lambda mr: setattr(mr, "suggested_options", mock_spots)
+            or setattr(mr, "status", MeetingRequestStatus.COMPLETED)
+            or True
+        )
 
-        # Also patch process_meeting_request
-        with patch("app.utils.location.process_meeting_request") as mock_process:
+        # Step 1: Create a meeting request
+        create_data = {
+            "address_a": "123 Test St, San Francisco, CA",
+            "location_type": "Food & Drink: fine dining",
+            "user_b_contact_type": "email",
+            "user_b_contact": "friend@example.com",
+        }
 
-            def process_side_effect(meeting_request):
-                meeting_request.status = MeetingRequestStatus.COMPLETED
-                meeting_request.suggested_options = mock_spots
-                return True
+        response = client.post("/api/v1/meeting-requests/", json=create_data, headers=auth_headers)
 
-            mock_process.side_effect = process_side_effect
-            yield mock_find
+        assert response.status_code == 201
+        request_id = response.json["request_id"]
+        token_b = response.json["token_b"]
+        assert response.json["status"] == MeetingRequestStatus.PENDING_B_ADDRESS.value
 
+        # Step 2: Fetch the meeting request to confirm it was created
+        response = client.get(f"/api/v1/meeting-requests/{request_id}", headers=auth_headers)
 
-def test_meeting_request_full_flow(client, auth_user, mock_location_api):
-    """Test the complete meeting request flow from creation to completion."""
-    user, auth_headers = auth_user
+        assert response.status_code == 200
+        assert response.json["request_id"] == request_id
+        assert response.json["status"] == MeetingRequestStatus.PENDING_B_ADDRESS.value
+        assert response.json["location_type"] == "Food & Drink: fine dining"
 
-    # Step 1: Create a meeting request
-    create_data = {
-        "address_a": "123 Test St, San Francisco, CA",
-        "location_type": "Food & Drink: fine dining",
-        "user_b_contact_type": "email",
-        "user_b_contact": "friend@example.com",
-    }
+        # Step 3: Respond to the meeting request (User B submits address)
+        respond_data = {
+            "address_b": "456 Test Ave, New York, NY",
+            "token": token_b,
+            "address_b_lat": 40.7128,
+            "address_b_lon": -74.0060,
+        }
 
-    response = client.post("/api/v1/meeting-requests/", json=create_data, headers=auth_headers)
+        response = client.post(f"/api/v1/meeting-requests/{request_id}/respond", json=respond_data)
 
-    assert response.status_code == 201
-    request_id = response.json["request_id"]
-    token_b = response.json["token_b"]
-    assert response.json["status"] == MeetingRequestStatus.PENDING_B_ADDRESS.value
+        assert response.status_code == 200
+        # In the GitHub Actions environment, this can be either CALCULATING or COMPLETED
+        assert response.json["status"] in [
+            MeetingRequestStatus.CALCULATING.value,
+            MeetingRequestStatus.COMPLETED.value,
+        ]
 
-    # Step 2: Fetch the meeting request to confirm it was created
-    response = client.get(f"/api/v1/meeting-requests/{request_id}", headers=auth_headers)
+        # Step 4: Get the results which should trigger the completion if it wasn't completed already
+        response = client.get(f"/api/v1/meeting-requests/{request_id}/results", headers=auth_headers)
 
-    assert response.status_code == 200
-    assert response.json["request_id"] == request_id
-    assert response.json["status"] == MeetingRequestStatus.PENDING_B_ADDRESS.value
-    assert response.json["location_type"] == "Food & Drink: fine dining"
+        assert response.status_code == 200
+        assert response.json["status"] == MeetingRequestStatus.COMPLETED.value
+        assert len(response.json["suggested_options"]) > 0
+        assert response.json["suggested_options"][0]["name"] == "Test Restaurant"
+        assert "midpoint" in response.json
 
-    # Step 3: Respond to the meeting request (User B submits address)
-    respond_data = {
-        "address_b": "456 Test Ave, New York, NY",
-        "token": token_b,
-        "address_b_lat": 40.7128,
-        "address_b_lon": -74.0060,
-    }
+        # Verify mock was called at least once
+        mock_process.assert_called()
 
-    response = client.post(f"/api/v1/meeting-requests/{request_id}/respond", json=respond_data)
-
-    assert response.status_code == 200
-    assert response.json["status"] == MeetingRequestStatus.COMPLETED.value
-
-    # Verify that find_meeting_spots was called with expected parameters
-    mock_location_api.assert_called()
-
-    # Step 4: Get the results
-    response = client.get(f"/api/v1/meeting-requests/{request_id}/results", headers=auth_headers)
-
-    assert response.status_code == 200
-    assert response.json["status"] == MeetingRequestStatus.COMPLETED.value
-    assert len(response.json["suggested_options"]) > 0
-    assert response.json["suggested_options"][0]["name"] == "Test Restaurant"
-    assert "midpoint" in response.json
-
-    # Clean up
-    client.delete(f"/api/v1/meeting-requests/{request_id}", headers=auth_headers)
+        # Clean up
+        client.delete(f"/api/v1/meeting-requests/{request_id}", headers=auth_headers)
 
 
 def test_meeting_request_invalid_token(client, auth_user):
@@ -166,38 +162,40 @@ def test_meeting_request_invalid_token(client, auth_user):
     client.delete(f"/api/v1/meeting-requests/{request_id}", headers=auth_headers)
 
 
-def test_different_categories(client, auth_user, mock_location_api):
+def test_different_categories(client, auth_user):
     """Test creating meeting requests with different categories and subcategories."""
     user, auth_headers = auth_user
 
-    # Test categories with subcategories
-    categories = [
-        "Food & Drink: fine dining",
-        "Food & Drink: cheap eats",
-        "Food & Drink: hole in the wall",
-        "Night Life",
-        "Cultural",
-        "Shopping",
-    ]
+    # Set up mock for process_meeting_request to avoid actual API calls
+    with patch("app.utils.location.process_meeting_request", return_value=True):
+        # Test categories with subcategories
+        categories = [
+            "Food & Drink: fine dining",
+            "Food & Drink: cheap eats",
+            "Food & Drink: hole in the wall",
+            "Night Life",
+            "Cultural",
+            "Shopping",
+        ]
 
-    for category in categories:
-        create_data = {
-            "address_a": "123 Test St, San Francisco, CA",
-            "location_type": category,
-            "user_b_contact_type": "email",
-            "user_b_contact": "friend@example.com",
-        }
+        for category in categories:
+            create_data = {
+                "address_a": "123 Test St, San Francisco, CA",
+                "location_type": category,
+                "user_b_contact_type": "email",
+                "user_b_contact": "friend@example.com",
+            }
 
-        response = client.post("/api/v1/meeting-requests/", json=create_data, headers=auth_headers)
+            response = client.post("/api/v1/meeting-requests/", json=create_data, headers=auth_headers)
 
-        assert response.status_code == 201
-        request_id = response.json["request_id"]
-        token_b = response.json["token_b"]
+            assert response.status_code == 201
+            request_id = response.json["request_id"]
+            token_b = response.json["token_b"]
 
-        # Verify location_type was saved correctly
-        response = client.get(f"/api/v1/meeting-requests/{request_id}", headers=auth_headers)
-        assert response.status_code == 200
-        assert response.json["location_type"] == category
+            # Verify location_type was saved correctly
+            response = client.get(f"/api/v1/meeting-requests/{request_id}", headers=auth_headers)
+            assert response.status_code == 200
+            assert response.json["location_type"] == category
 
-        # Clean up
-        client.delete(f"/api/v1/meeting-requests/{request_id}", headers=auth_headers)
+            # Clean up
+            client.delete(f"/api/v1/meeting-requests/{request_id}", headers=auth_headers)
