@@ -7,6 +7,7 @@ from flask_restx import Namespace, Resource, fields
 
 from .. import db
 from ..models import ContactType, MeetingRequest, MeetingRequestStatus, User
+from ..utils.location import process_meeting_request
 from ..utils.notifications import send_email
 
 api = Namespace("meeting-requests", description="Meeting request operations")
@@ -296,19 +297,44 @@ class MeetingRequestResponseResource(Resource):
         if meeting_request.token_b != data["token"]:
             return {"error": "Invalid token"}, 400
 
-        # TODO: Geocode address_b to get lat/lon
-        # For now, using dummy coordinates
-        address_b_lat = 37.7833
-        address_b_lon = -122.4167
+        # TODO: Properly geocode address_b to get lat/lon
+        # For now, using dummy coordinates or parsing from the request if provided
+        if "address_b_lat" in data and "address_b_lon" in data:
+            address_b_lat = float(data["address_b_lat"])
+            address_b_lon = float(data["address_b_lon"])
+        else:
+            # Default coordinates if geocoding isn't implemented yet
+            address_b_lat = 37.7833
+            address_b_lon = -122.4167
 
         meeting_request.address_b_lat = address_b_lat
         meeting_request.address_b_lon = address_b_lon
         meeting_request.status = MeetingRequestStatus.CALCULATING
         meeting_request.updated_at = datetime.now(timezone.utc)
 
+        # Save the coordinates first
         db.session.commit()
 
-        return {"status": meeting_request.status.value}
+        # Process the request to find meeting spots
+        try:
+            # Calculate equidistant meeting spots
+            success = process_meeting_request(meeting_request)
+
+            if success:
+                current_app.logger.info(f"Successfully processed meeting request {meeting_request.request_id}")
+            else:
+                current_app.logger.error(f"Failed to process meeting request {meeting_request.request_id}")
+
+            # Save the updated meeting request with results
+            db.session.commit()
+
+            return {"status": meeting_request.status.value}
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.exception(f"Error processing meeting request: {str(e)}")
+            meeting_request.status = MeetingRequestStatus.FAILED
+            db.session.commit()
+            return {"error": "Failed to process meeting request", "status": "failed"}, 500
 
 
 @api.route("/<string:request_id>/results")
@@ -339,9 +365,52 @@ class MeetingRequestResultsResource(Resource):
         if meeting_request.user_a_id != user.id:
             return {"error": "Unauthorized"}, 403
 
+        # If meeting request is still in CALCULATING status, try to process it
+        if meeting_request.status == MeetingRequestStatus.CALCULATING:
+            try:
+                from ..utils.location import process_meeting_request
+
+                process_success = process_meeting_request(meeting_request)
+                if process_success:
+                    db.session.commit()
+                    current_app.logger.info(
+                        f"Processed meeting request {meeting_request.request_id} during results fetch"
+                    )
+                else:
+                    current_app.logger.warning(
+                        f"Failed to process meeting request {meeting_request.request_id} during results fetch"
+                    )
+            except Exception as e:
+                current_app.logger.exception(f"Error processing meeting request during results fetch: {str(e)}")
+
+        # Calculate midpoint for frontend reference
+        midpoint = None
+        if (
+            meeting_request.address_a_lat
+            and meeting_request.address_a_lon
+            and meeting_request.address_b_lat
+            and meeting_request.address_b_lon
+        ):
+            from ..utils.location import calculate_midpoint
+
+            mid_lat, mid_lon = calculate_midpoint(
+                meeting_request.address_a_lat,
+                meeting_request.address_a_lon,
+                meeting_request.address_b_lat,
+                meeting_request.address_b_lon,
+            )
+            midpoint = {"lat": mid_lat, "lng": mid_lon}
+
         return {
             "request_id": str(request_id),
             "status": meeting_request.status.value,
             "suggested_options": meeting_request.suggested_options,
             "selected_place": meeting_request.selected_place_details,
+            "midpoint": midpoint,
+            "locations": {
+                "a": {"lat": meeting_request.address_a_lat, "lng": meeting_request.address_a_lon},
+                "b": {"lat": meeting_request.address_b_lat, "lng": meeting_request.address_b_lon},
+            }
+            if meeting_request.address_b_lat
+            else None,
         }

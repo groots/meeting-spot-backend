@@ -297,6 +297,34 @@ def health_options():
     return response
 
 
+@debug_bp.route("/fix-schema")
+def fix_schema():
+    """Fix database schema by adding the selected_place_id column to meeting_requests."""
+    try:
+        # Use raw SQL to add the column with SQLAlchemy's text function
+        query = text("ALTER TABLE meeting_requests ADD COLUMN IF NOT EXISTS selected_place_id UUID;")
+        result = db.session.execute(query)
+        db.session.commit()
+        return jsonify(
+            {
+                "success": True,
+                "message": "Added selected_place_id column to meeting_requests table",
+            }
+        )
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error fixing schema: {str(e)}")
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": str(e),
+                }
+            ),
+            500,
+        )
+
+
 # Register debug blueprint with the app
 def init_app(app):
     """Initialize API blueprints with the Flask app."""
