@@ -31,6 +31,8 @@ def app() -> None:
     os.environ["JWT_SECRET_KEY"] = "test-jwt-secret-key"
     # Force SQLite for testing
     os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+    # Add test Google Maps API key
+    os.environ["GOOGLE_MAPS_API_KEY"] = "test-maps-api-key"
 
     app = create_app("testing")  # Use testing config
 
@@ -46,6 +48,7 @@ def app() -> None:
             },
             "TESTING": True,
             "JWT_SECRET_KEY": "test-jwt-secret-key",
+            "GOOGLE_MAPS_API_KEY": "test-maps-api-key",
             "SERVER_NAME": "localhost:5000",
             "APPLICATION_ROOT": "/",
             "PREFERRED_URL_SCHEME": "http",

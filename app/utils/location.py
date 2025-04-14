@@ -304,12 +304,20 @@ def process_meeting_request(meeting_request) -> bool:
     from app.models.enums import MeetingRequestStatus
 
     try:
+        # Log that we're starting to process the request
+        logger.info(f"Processing meeting request {meeting_request.request_id}")
+
+        # Debug log the coordinates we're working with
+        logger.info(
+            f"Coordinates: A({meeting_request.address_a_lat}, {meeting_request.address_a_lon}), B({meeting_request.address_b_lat}, {meeting_request.address_b_lon})"
+        )
+
         # Ensure request has both locations
         if (
-            not meeting_request.address_a_lat
-            or not meeting_request.address_a_lon
-            or not meeting_request.address_b_lat
-            or not meeting_request.address_b_lon
+            meeting_request.address_a_lat is None
+            or meeting_request.address_a_lon is None
+            or meeting_request.address_b_lat is None
+            or meeting_request.address_b_lon is None
         ):
             logger.error(f"Missing coordinates for meeting request {meeting_request.request_id}")
             meeting_request.status = MeetingRequestStatus.FAILED

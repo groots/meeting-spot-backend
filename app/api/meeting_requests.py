@@ -77,28 +77,49 @@ class MeetingRequestList(Resource):
         if not all(field in data for field in required_fields):
             return {"error": "Missing required fields"}, 400
 
-        # TODO: Geocode address_a to get lat/lon
-        # For now, using dummy coordinates
-        address_a_lat = 37.7749
-        address_a_lon = -122.4194
+        try:
+            # Check if explicit coordinates are provided in the request
+            if "address_a_lat" in data and "address_a_lon" in data:
+                address_a_lat = float(data["address_a_lat"])
+                address_a_lon = float(data["address_a_lon"])
 
-        # Create new request
-        new_request = MeetingRequest(
-            user_a_id=user.id,
-            address_a_lat=address_a_lat,
-            address_a_lon=address_a_lon,
-            location_type=data["location_type"],
-            user_b_contact_type=ContactType(data["user_b_contact_type"]),
-            user_b_contact=data["user_b_contact"],
-            token_b=uuid.uuid4().hex,
-            status=MeetingRequestStatus.PENDING_B_ADDRESS,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
-            expires_at=datetime.now(timezone.utc) + timedelta(days=1),
-        )
+                # Validate coordinate ranges
+                if not (-90 <= address_a_lat <= 90) or not (-180 <= address_a_lon <= 180):
+                    return {
+                        "error": "Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180"
+                    }, 400
 
-        db.session.add(new_request)
-        db.session.commit()
+                current_app.logger.info(f"Using provided coordinates for address_a: ({address_a_lat}, {address_a_lon})")
+            else:
+                # TODO: Implement proper geocoding here
+                # For now, using default coordinates as a fallback
+                address_a_lat = 37.7749
+                address_a_lon = -122.4194
+                current_app.logger.warning(
+                    f"No coordinates provided for address_a, using defaults: ({address_a_lat}, {address_a_lon})"
+                )
+
+            # Create new request
+            new_request = MeetingRequest(
+                user_a_id=user.id,
+                address_a_lat=address_a_lat,
+                address_a_lon=address_a_lon,
+                location_type=data["location_type"],
+                user_b_contact_type=ContactType(data["user_b_contact_type"]),
+                user_b_contact=data["user_b_contact"],
+                token_b=uuid.uuid4().hex,
+                status=MeetingRequestStatus.PENDING_B_ADDRESS,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+            )
+
+            db.session.add(new_request)
+            db.session.commit()
+
+        except (ValueError, TypeError) as e:
+            current_app.logger.exception(f"Error processing coordinates: {str(e)}")
+            return {"error": f"Invalid coordinate format: {str(e)}"}, 400
 
         # Send email to user B if contact type is email
         if new_request.user_b_contact_type == ContactType.EMAIL:
@@ -297,26 +318,49 @@ class MeetingRequestResponseResource(Resource):
         if meeting_request.token_b != data["token"]:
             return {"error": "Invalid token"}, 400
 
-        # TODO: Properly geocode address_b to get lat/lon
-        # For now, using dummy coordinates or parsing from the request if provided
-        if "address_b_lat" in data and "address_b_lon" in data:
-            address_b_lat = float(data["address_b_lat"])
-            address_b_lon = float(data["address_b_lon"])
-        else:
-            # Default coordinates if geocoding isn't implemented yet
-            address_b_lat = 37.7833
-            address_b_lon = -122.4167
+        # Extract coordinates from request data
+        try:
+            if "address_b_lat" in data and "address_b_lon" in data:
+                address_b_lat = float(data["address_b_lat"])
+                address_b_lon = float(data["address_b_lon"])
+                # Validate coordinate ranges
+                if not (-90 <= address_b_lat <= 90) or not (-180 <= address_b_lon <= 180):
+                    return {
+                        "error": "Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180"
+                    }, 400
+            else:
+                # Default coordinates if geocoding isn't implemented yet
+                current_app.logger.warning(f"Missing coordinates for request {request_id}, using defaults")
+                address_b_lat = 37.7833
+                address_b_lon = -122.4167
 
-        meeting_request.address_b_lat = address_b_lat
-        meeting_request.address_b_lon = address_b_lon
-        meeting_request.status = MeetingRequestStatus.CALCULATING
-        meeting_request.updated_at = datetime.now(timezone.utc)
+            # Log coordinates being used
+            current_app.logger.info(f"User B coordinates for request {request_id}: ({address_b_lat}, {address_b_lon})")
 
-        # Save the coordinates first
-        db.session.commit()
+            # Ensure address_a coordinates are valid
+            if meeting_request.address_a_lat is None or meeting_request.address_a_lon is None:
+                current_app.logger.error(f"Missing address_a coordinates for request {request_id}")
+                meeting_request.status = MeetingRequestStatus.FAILED
+                db.session.commit()
+                return {"error": "Missing address_a coordinates"}, 400
+
+            meeting_request.address_b_lat = address_b_lat
+            meeting_request.address_b_lon = address_b_lon
+            meeting_request.status = MeetingRequestStatus.CALCULATING
+            meeting_request.updated_at = datetime.now(timezone.utc)
+
+            # Save the coordinates first
+            db.session.commit()
+
+        except (ValueError, TypeError) as e:
+            current_app.logger.exception(f"Error parsing coordinates for request {request_id}: {str(e)}")
+            return {"error": f"Invalid coordinate format: {str(e)}"}, 400
 
         # Process the request to find meeting spots
         try:
+            # Import here to avoid circular imports
+            from ..utils.location import process_meeting_request
+
             # Calculate equidistant meeting spots
             success = process_meeting_request(meeting_request)
 
@@ -368,8 +412,27 @@ class MeetingRequestResultsResource(Resource):
         # If meeting request is still in CALCULATING status, try to process it
         if meeting_request.status == MeetingRequestStatus.CALCULATING:
             try:
+                # Check if we have all required coordinates
+                if (
+                    meeting_request.address_a_lat is None
+                    or meeting_request.address_a_lon is None
+                    or meeting_request.address_b_lat is None
+                    or meeting_request.address_b_lon is None
+                ):
+                    current_app.logger.error(f"Missing coordinates for meeting request {meeting_request.request_id}")
+                    meeting_request.status = MeetingRequestStatus.FAILED
+                    db.session.commit()
+                    return {
+                        "error": "Missing coordinates",
+                        "status": meeting_request.status.value,
+                        "request_id": str(request_id),
+                    }, 400
+
                 from ..utils.location import process_meeting_request
 
+                current_app.logger.info(
+                    f"Attempting to process meeting request {meeting_request.request_id} during results fetch"
+                )
                 process_success = process_meeting_request(meeting_request)
                 if process_success:
                     db.session.commit()
@@ -386,31 +449,38 @@ class MeetingRequestResultsResource(Resource):
         # Calculate midpoint for frontend reference
         midpoint = None
         if (
-            meeting_request.address_a_lat
-            and meeting_request.address_a_lon
-            and meeting_request.address_b_lat
-            and meeting_request.address_b_lon
+            meeting_request.address_a_lat is not None
+            and meeting_request.address_a_lon is not None
+            and meeting_request.address_b_lat is not None
+            and meeting_request.address_b_lon is not None
         ):
-            from ..utils.location import calculate_midpoint
+            try:
+                from ..utils.location import calculate_midpoint
 
-            mid_lat, mid_lon = calculate_midpoint(
-                meeting_request.address_a_lat,
-                meeting_request.address_a_lon,
-                meeting_request.address_b_lat,
-                meeting_request.address_b_lon,
-            )
-            midpoint = {"lat": mid_lat, "lng": mid_lon}
+                mid_lat, mid_lon = calculate_midpoint(
+                    meeting_request.address_a_lat,
+                    meeting_request.address_a_lon,
+                    meeting_request.address_b_lat,
+                    meeting_request.address_b_lon,
+                )
+                midpoint = {"lat": mid_lat, "lng": mid_lon}
+            except Exception as e:
+                current_app.logger.exception(f"Error calculating midpoint: {str(e)}")
+                midpoint = None
+
+        # Prepare response locations data if both coordinates exist
+        locations = None
+        if meeting_request.address_a_lat is not None and meeting_request.address_a_lon is not None:
+            locations = {"a": {"lat": meeting_request.address_a_lat, "lng": meeting_request.address_a_lon}}
+
+            if meeting_request.address_b_lat is not None and meeting_request.address_b_lon is not None:
+                locations["b"] = {"lat": meeting_request.address_b_lat, "lng": meeting_request.address_b_lon}
 
         return {
             "request_id": str(request_id),
             "status": meeting_request.status.value,
-            "suggested_options": meeting_request.suggested_options,
+            "suggested_options": meeting_request.suggested_options or [],
             "selected_place": meeting_request.selected_place_details,
             "midpoint": midpoint,
-            "locations": {
-                "a": {"lat": meeting_request.address_a_lat, "lng": meeting_request.address_a_lon},
-                "b": {"lat": meeting_request.address_b_lat, "lng": meeting_request.address_b_lon},
-            }
-            if meeting_request.address_b_lat
-            else None,
+            "locations": locations,
         }

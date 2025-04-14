@@ -16,7 +16,7 @@ def auth_user(client):
     from app.models.user import User
 
     # Create a test user
-    user = User(email="test_integration@example.com", username="test_integration_user", is_verified=True)
+    user = User(email="test_integration@example.com")
     user.set_password("TestPassword123!")
 
     # Save to database

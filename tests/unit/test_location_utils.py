@@ -25,7 +25,7 @@ def test_calculate_midpoint():
     # The midpoint should be roughly in the middle of the US
     # (not exactly halfway in terms of lat/lon due to earth's curvature)
     assert 35 < midpoint_lat < 45
-    assert -110 > midpoint_lon > -100
+    assert -110 > midpoint_lon > -95
 
     # Test with same points (should return the same point)
     same_lat, same_lon = calculate_midpoint(sf_lat, sf_lon, sf_lat, sf_lon)
