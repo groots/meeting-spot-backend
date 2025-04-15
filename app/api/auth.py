@@ -39,6 +39,21 @@ google_callback_model = api.model(
     },
 )
 
+forgot_password_model = api.model(
+    "ForgotPassword",
+    {
+        "email": fields.String(required=True, description="User's email address"),
+    },
+)
+
+reset_password_model = api.model(
+    "ResetPassword",
+    {
+        "token": fields.String(required=True, description="Password reset token"),
+        "password": fields.String(required=True, description="New password"),
+    },
+)
+
 
 @api.route("/login")
 class Login(Resource):
@@ -183,3 +198,194 @@ class GoogleCallback(Resource):
             # Other errors
             current_app.logger.error(f"Google authentication error: {str(e)}")
             return {"message": "Authentication failed"}, 500
+
+
+@api.route("/forgot-password")
+class ForgotPassword(Resource):
+    @api.expect(forgot_password_model)
+    @api.doc(
+        "forgot_password",
+        responses={
+            200: "Password reset email sent",
+            400: "Invalid input",
+            404: "User not found",
+            500: "Server error",
+        },
+    )
+    def post(self):
+        """Request a password reset email"""
+        from app.models.password_reset import PasswordReset
+        from app.utils.notifications import send_email
+
+        data = request.get_json()
+        if not data or not data.get("email"):
+            return {"message": "Email is required"}, 400
+
+        email = data["email"].lower().strip()
+        user = User.query.filter_by(email=email).first()
+
+        # Always return success to prevent email enumeration
+        if not user:
+            current_app.logger.info(f"Password reset requested for non-existent email: {email}")
+            return {"message": "If your email is registered, you will receive a password reset link"}, 200
+
+        try:
+            # Create a password reset token
+            reset = PasswordReset.create_for_user(user.id)
+            db.session.commit()
+
+            # Generate the reset URL
+            frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
+            reset_url = f"{frontend_url}/auth/reset-password/{reset.token}"
+
+            # Send the email
+            subject = "Reset Your Password - Find a Meeting Spot"
+            body = f"""Hello,
+
+You have requested to reset your password for your Find a Meeting Spot account.
+
+To reset your password, please click the following link:
+{reset_url}
+
+This link will expire in 1 hour.
+
+If you did not request a password reset, please ignore this email.
+
+Best regards,
+Find a Meeting Spot Team
+"""
+            success = send_email(user.email, subject, body)
+
+            if not success:
+                db.session.rollback()
+                current_app.logger.error(f"Failed to send password reset email to {user.email}")
+                return {"message": "Failed to send password reset email"}, 500
+
+            return {"message": "If your email is registered, you will receive a password reset link"}, 200
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error creating password reset: {str(e)}")
+            return {"message": "An error occurred while processing your request"}, 500
+
+
+@api.route("/reset-password")
+class RequestPasswordReset(Resource):
+    @api.expect(forgot_password_model)
+    @api.doc(
+        "request_password_reset",
+        responses={
+            200: "Password reset email sent",
+            400: "Invalid input",
+            500: "Server error",
+        },
+    )
+    def post(self):
+        """Request a password reset email (alternate endpoint)"""
+        from app.models.password_reset import PasswordReset
+        from app.utils.notifications import send_email
+
+        data = request.get_json()
+        if not data or not data.get("email"):
+            return {"message": "Email is required"}, 400
+
+        email = data["email"].lower().strip()
+        user = User.query.filter_by(email=email).first()
+
+        # Always return success to prevent email enumeration
+        if not user:
+            current_app.logger.info(f"Password reset requested for non-existent email: {email}")
+            return {"message": "If your email is registered, you will receive a password reset link"}, 200
+
+        try:
+            # Create a password reset token
+            reset = PasswordReset.create_for_user(user.id)
+            db.session.commit()
+
+            # Generate the reset URL
+            frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
+            reset_url = f"{frontend_url}/auth/reset-password/{reset.token}"
+
+            # Send the email
+            subject = "Reset Your Password - Find a Meeting Spot"
+            body = f"""Hello,
+
+You have requested to reset your password for your Find a Meeting Spot account.
+
+To reset your password, please click the following link:
+{reset_url}
+
+This link will expire in 1 hour.
+
+If you did not request a password reset, please ignore this email.
+
+Best regards,
+Find a Meeting Spot Team
+"""
+            success = send_email(user.email, subject, body)
+
+            if not success:
+                db.session.rollback()
+                current_app.logger.error(f"Failed to send password reset email to {user.email}")
+                return {"message": "Failed to send password reset email"}, 500
+
+            return {"message": "If your email is registered, you will receive a password reset link"}, 200
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error creating password reset: {str(e)}")
+            return {"message": "An error occurred while processing your request"}, 500
+
+
+@api.route("/reset-password/confirm")
+class ResetPasswordConfirm(Resource):
+    @api.expect(reset_password_model)
+    @api.doc(
+        "reset_password_confirm",
+        responses={
+            200: "Password reset successful",
+            400: "Invalid input or token",
+            500: "Server error",
+        },
+    )
+    def post(self):
+        """Reset user password using a token (confirm route)"""
+        from app.models.password_reset import PasswordReset
+
+        data = request.get_json()
+        if not data or not data.get("token") or not data.get("password"):
+            return {"message": "Token and password are required"}, 400
+
+        token = data["token"].strip()
+        password = data["password"]
+
+        # Validate password strength
+        if len(password) < 8:
+            return {"message": "Password must be at least 8 characters long"}, 400
+
+        # Find the reset token
+        reset = PasswordReset.get_by_token(token)
+        if not reset or not reset.is_valid():
+            return {"message": "Invalid or expired token"}, 400
+
+        try:
+            # Get the user
+            user = User.query.get(reset.user_id)
+            if not user:
+                return {"message": "User not found"}, 404
+
+            # Update the password
+            user.set_password(password)
+
+            # Mark the token as used
+            reset.use()
+
+            # Save changes
+            db.session.commit()
+
+            return {"message": "Password reset successful"}, 200
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error resetting password: {str(e)}")
+            return {"message": "An error occurred while resetting your password"}, 500
