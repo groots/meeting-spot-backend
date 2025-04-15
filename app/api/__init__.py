@@ -1731,6 +1731,7 @@ def debug_dashboard():
         <title>Debug Dashboard - Find a Meeting Spot</title>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
         <style>
             body {
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -1979,6 +1980,8 @@ def debug_dashboard():
 
         # Add endpoints to this tab
         for endpoint in group["endpoints"]:
+            # Use the path only instead of full URL to maintain same protocol
+            path_url = endpoint["path"]
             full_url = base_url + endpoint["path"]
             html += f"""
                         <div class="endpoint-card">
@@ -1988,7 +1991,7 @@ def debug_dashboard():
                             <div class="action-buttons">
                                 <a href="{full_url}" class="btn" target="_blank">Visit</a>
                                 <button class="btn copy-btn" onclick="navigator.clipboard.writeText('{full_url}')">Copy URL</button>
-                                <button class="btn view-btn" data-url="{full_url}">View Here</button>
+                                <button class="btn view-btn" data-url="{path_url}">View Here</button>
                             </div>
                         </div>
             """
@@ -2068,6 +2071,7 @@ def debug_dashboard():
                 viewButtons.forEach(button => {
                     button.addEventListener('click', function() {
                         const url = this.getAttribute('data-url');
+                        // Use relative URLs to maintain the same protocol (HTTP/HTTPS)
                         iframe.src = url;
                         iframe.style.display = 'block';
 
@@ -2111,6 +2115,7 @@ def debug_dashboard():
                         searchResultsContent.innerHTML = '<p>No results found.</p>';
                     } else {
                         results.forEach(endpoint => {
+                            const pathUrl = endpoint.path;
                             const fullUrl = '"""
         + base_url
         + """' + endpoint.path;
@@ -2123,7 +2128,7 @@ def debug_dashboard():
                                 <div class="action-buttons">
                                     <a href="${fullUrl}" class="btn" target="_blank">Visit</a>
                                     <button class="btn copy-btn" onclick="navigator.clipboard.writeText('${fullUrl}')">Copy URL</button>
-                                    <button class="btn view-btn" data-url="${fullUrl}">View Here</button>
+                                    <button class="btn view-btn" data-url="${pathUrl}">View Here</button>
                                 </div>
                             `;
                             searchResultsContent.appendChild(endpointCard);
@@ -2143,6 +2148,7 @@ def debug_dashboard():
                         searchResultsContent.querySelectorAll('.view-btn').forEach(button => {
                             button.addEventListener('click', function() {
                                 const url = this.getAttribute('data-url');
+                                // Use relative URLs to maintain the same protocol (HTTP/HTTPS)
                                 iframe.src = url;
                                 iframe.style.display = 'block';
 
