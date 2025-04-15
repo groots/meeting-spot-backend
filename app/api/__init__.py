@@ -1515,7 +1515,7 @@ def debug_gcp_logs():
 
         # Construct the request
         request_dict = {
-            "filter": filter_str,
+            "filter_": filter_str,  # Changed from "filter" to "filter_"
             "order_by": "timestamp desc",  # Most recent first
             "page_size": limit,
         }
