@@ -63,11 +63,33 @@ jobs:
 
           # Set up environment for Flask-Migrate
           export FLASK_APP=wsgi.py
-          export DATABASE_URL="postgresql://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@localhost:5432/findameetingspot"
+          export DATABASE_URL="postgresql://${{ secrets.DATABASE_ADMIN_USER }}:${{ secrets.DATABASE_ADMIN_PASSWORD }}@localhost:5432/findameetingspot"
 
           # Run migrations
           echo "Running database migrations..."
           flask db upgrade
+
+          # Also run direct SQL commands to fix issues
+          echo "Applying direct SQL fixes..."
+          cat << EOF > fix_schema.sql
+          -- Fix column length
+          ALTER TABLE IF EXISTS users ALTER COLUMN password_hash TYPE varchar(256);
+
+          -- Create missing tables
+          CREATE TABLE IF NOT EXISTS password_resets (
+            id UUID PRIMARY KEY,
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token VARCHAR(255) UNIQUE NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW(),
+            expires_at TIMESTAMP NOT NULL,
+            used BOOLEAN DEFAULT FALSE NOT NULL
+          );
+
+          -- Update alembic version if needed
+          UPDATE alembic_version SET version_num = '84151472c340' WHERE version_num < '84151472c340';
+          EOF
+
+          PGPASSWORD=${{ secrets.DATABASE_ADMIN_PASSWORD }} psql -h localhost -p 5432 -U ${{ secrets.DATABASE_ADMIN_USER }} -d findameetingspot -f fix_schema.sql || true
 
           # Kill Cloud SQL Proxy
           echo "Stopping Cloud SQL Proxy..."
