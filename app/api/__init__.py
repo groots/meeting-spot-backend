@@ -496,6 +496,28 @@ def fix_production_tables():
                 500,
             )
 
+        # First, try to fix the users.password_hash column length issue
+        try:
+            current_app.logger.info("Checking password_hash column length in users table")
+            # Get the column info
+            columns = inspector.get_columns("users")
+            password_hash_col = next((col for col in columns if col["name"] == "password_hash"), None)
+
+            if password_hash_col:
+                # Try to determine the current length
+                col_type_str = str(password_hash_col["type"])
+                current_app.logger.info(f"Current password_hash column type: {col_type_str}")
+
+                # If it's VARCHAR(128), upgrade it to VARCHAR(256)
+                if "128" in col_type_str:
+                    current_app.logger.info("Increasing password_hash column length to 256")
+                    db.session.execute(text("ALTER TABLE users ALTER COLUMN password_hash TYPE varchar(256)"))
+                    db.session.commit()
+                    current_app.logger.info("Successfully updated password_hash column length")
+        except Exception as e:
+            current_app.logger.error(f"Error updating password_hash column: {str(e)}")
+            # Continue even if this fails
+
         # Create metadata for new tables
         metadata = MetaData(schema=None)  # Explicitly use default schema
         engine = db.engine
@@ -659,6 +681,9 @@ def fix_production_tables():
         inspector = inspect(db.engine)
         tables_after = inspector.get_table_names()
 
+        # Calculate new tables
+        new_tables = [t for t in tables_after if t not in tables_before]
+
         # Build response
         response_data = {
             "status": "success",
@@ -667,7 +692,7 @@ def fix_production_tables():
             "tables": {
                 "before": tables_before,
                 "after": tables_after,
-                "new_tables": [t for t in tables_after if t not in tables_before],
+                "new_tables": new_tables,
             },
             "users_table_info": {"columns": users_column_names, "primary_key": users_pk_cols},
         }
@@ -675,7 +700,7 @@ def fix_production_tables():
         current_app.logger.info(f"Tables fixed successfully: {response_data['tables_created']}")
 
         # Update alembic_version table to mark these migrations as applied
-        if tables_to_create and len(response_data["new_tables"]) > 0:
+        if tables_to_create and len(new_tables) > 0:
             try:
                 with engine.connect() as conn:
                     # Use the latest migration revision as the current version
