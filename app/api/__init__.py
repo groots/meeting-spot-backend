@@ -1221,6 +1221,130 @@ def emergency_fix():
         return jsonify(results)
 
 
+@debug_bp.route("/debug-reset-password")
+def debug_reset_password():
+    """Debug the reset-password endpoint flow"""
+    try:
+        from app.models.password_reset import PasswordReset
+        from app.models.user import User
+
+        results = {"status": "success", "tests": [], "reset_flow": {}}
+
+        # Step 1: Check if we can import and use the PasswordReset model
+        try:
+            reset_model_info = {
+                "module": str(PasswordReset.__module__),
+                "class": PasswordReset.__name__,
+                "tablename": getattr(PasswordReset, "__tablename__", "unknown"),
+                "methods": [
+                    m for m in dir(PasswordReset) if not m.startswith("_") and callable(getattr(PasswordReset, m))
+                ],
+            }
+            results["reset_flow"]["model_info"] = reset_model_info
+            results["tests"].append({"test": "check_model", "status": "success"})
+        except Exception as e:
+            results["tests"].append({"test": "check_model", "status": "error", "message": str(e)})
+
+        # Step 2: Check if we can query the table
+        try:
+            # Try to create a sample token (but don't save it)
+            import secrets
+            from datetime import datetime, timedelta
+
+            sample_token = secrets.token_urlsafe(32)
+            sample_reset = PasswordReset(
+                user_id="00000000-0000-0000-0000-000000000000", token=sample_token, expires_in=1  # Dummy ID  # 1 hour
+            )
+
+            # Check if the token was created properly
+            token_info = {
+                "token_length": len(sample_token),
+                "token_format": sample_token[:10] + "...",
+                "expires_at": str(sample_reset.expires_at) if hasattr(sample_reset, "expires_at") else "unknown",
+                "used": sample_reset.used if hasattr(sample_reset, "used") else "unknown",
+            }
+            results["reset_flow"]["token_info"] = token_info
+
+            # Try to query existing resets (if any)
+            reset_count = PasswordReset.query.count()
+            results["reset_flow"]["reset_count"] = reset_count
+            results["tests"].append({"test": "query_table", "status": "success"})
+        except Exception as e:
+            results["tests"].append({"test": "query_table", "status": "error", "message": str(e)})
+
+        # Step 3: Check if we can create and find a user
+        try:
+            # Try to find a test user
+            test_user = User.query.filter_by(email="test@example.com").first()
+
+            if not test_user:
+                # Create a test user for diagnostics
+                test_user = User(email="test@example.com")
+                test_user.set_password("password123")
+
+                # Don't actually save this test user to the database
+                # db.session.add(test_user)
+                # db.session.commit()
+
+            user_info = {
+                "found": test_user is not None,
+                "email": test_user.email if test_user else None,
+                "id": str(test_user.id) if test_user else None,
+                "password_hash_length": len(test_user.password_hash)
+                if test_user and hasattr(test_user, "password_hash")
+                else 0,
+            }
+
+            results["reset_flow"]["user_info"] = user_info
+            results["tests"].append({"test": "check_user", "status": "success"})
+        except Exception as e:
+            results["tests"].append({"test": "check_user", "status": "error", "message": str(e)})
+
+        # Step 4: Check if we can simulate the reset flow
+        try:
+            # Import what we need from the reset password route
+            from flask import jsonify, request
+
+            from app.utils.email import send_reset_password_email
+
+            # Get the create_for_user method
+            create_method = getattr(PasswordReset, "create_for_user", None)
+            get_by_token_method = getattr(PasswordReset, "get_by_token", None)
+
+            method_info = {
+                "create_method_exists": create_method is not None,
+                "get_by_token_exists": get_by_token_method is not None,
+            }
+
+            results["reset_flow"]["method_info"] = method_info
+
+            # Check if the email utility exists
+            email_info = {
+                "function_exists": callable(send_reset_password_email)
+                if "send_reset_password_email" in locals()
+                else False
+            }
+
+            results["reset_flow"]["email_info"] = email_info
+            results["tests"].append({"test": "check_flow", "status": "success"})
+        except Exception as e:
+            results["tests"].append({"test": "check_flow", "status": "error", "message": str(e)})
+
+        # Step 5: Check for any errors in the logs related to reset password
+        try:
+            # This only works if logging to the database or if we have access to the logs
+            # Just a placeholder for now
+            results["reset_flow"]["recent_errors"] = "Cannot access logs from this endpoint"
+            results["tests"].append({"test": "check_logs", "status": "skipped"})
+        except Exception as e:
+            results["tests"].append({"test": "check_logs", "status": "error", "message": str(e)})
+
+        # Return the results
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Failed to debug reset password", "error": str(e)}), 500
+
+
 # Register debug blueprint with the app
 def init_app(app):
     """Initialize API blueprints with the Flask app."""
