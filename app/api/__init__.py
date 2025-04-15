@@ -1345,6 +1345,115 @@ def debug_reset_password():
         return jsonify({"status": "error", "message": "Failed to debug reset password", "error": str(e)}), 500
 
 
+@debug_bp.route("/debug-register")
+def debug_register():
+    """Debug the register endpoint flow"""
+    try:
+        from app.api.auth import RegisterSchema
+        from app.models.user import User
+
+        results = {"status": "success", "tests": [], "register_flow": {}}
+
+        # Step 1: Check if User model works
+        try:
+            user_model_info = {
+                "module": str(User.__module__),
+                "class": User.__name__,
+                "tablename": getattr(User, "__tablename__", "unknown"),
+                "methods": [m for m in dir(User) if not m.startswith("_") and callable(getattr(User, m))],
+            }
+            results["register_flow"]["model_info"] = user_model_info
+
+            # Check user table structure
+            inspector = inspect(db.engine)
+            columns = inspector.get_columns("users")
+            col_info = [{"name": col["name"], "type": str(col["type"]), "nullable": col["nullable"]} for col in columns]
+            results["register_flow"]["table_structure"] = col_info
+
+            results["tests"].append({"test": "check_model", "status": "success"})
+        except Exception as e:
+            results["tests"].append({"test": "check_model", "status": "error", "message": str(e)})
+
+        # Step 2: Test user creation (no commit)
+        try:
+            # Create a test user without saving to DB
+            test_user = User(email="test_register@example.com", profile_name="Test Register")
+            test_user.set_password("password123")
+
+            # Check password hash
+            password_hash_info = {
+                "length": len(test_user.password_hash),
+                "starts_with": test_user.password_hash[:20] + "..." if test_user.password_hash else "None",
+            }
+            results["register_flow"]["password_hash"] = password_hash_info
+
+            # Check methods required for registration
+            set_password_method = getattr(User, "set_password", None)
+            to_dict_method = getattr(User, "to_dict", None)
+
+            method_info = {
+                "set_password_exists": set_password_method is not None,
+                "to_dict_exists": to_dict_method is not None,
+            }
+
+            results["register_flow"]["method_info"] = method_info
+            results["tests"].append({"test": "user_creation", "status": "success"})
+        except Exception as e:
+            results["tests"].append({"test": "user_creation", "status": "error", "message": str(e)})
+
+        # Step 3: Test database insertion (no commit)
+        try:
+            # Try adding to session but don't commit
+            temp_user = User(email="temp_test@example.com", profile_name="Temporary Test")
+            temp_user.set_password("temppass123")
+
+            # Just add to session to test if the model can be added
+            db.session.add(temp_user)
+            # Rollback immediately to avoid actually creating the user
+            db.session.rollback()
+
+            results["tests"].append({"test": "db_insertion", "status": "success"})
+        except Exception as e:
+            db.session.rollback()
+            results["tests"].append({"test": "db_insertion", "status": "error", "message": str(e)})
+
+        # Step 4: Check other dependencies
+        try:
+            # Check if we can import and use the RegisterSchema
+            schema_info = {
+                "module": str(RegisterSchema.__module__),
+                "class": RegisterSchema.__name__,
+                "fields": list(RegisterSchema().fields.keys()) if hasattr(RegisterSchema(), "fields") else [],
+            }
+            results["register_flow"]["schema_info"] = schema_info
+
+            # Check JWT config
+            try:
+                from flask_jwt_extended import create_access_token
+
+                jwt_config = {"jwt_available": True, "create_token_callable": callable(create_access_token)}
+                results["register_flow"]["jwt_config"] = jwt_config
+            except ImportError:
+                results["register_flow"]["jwt_config"] = {"jwt_available": False}
+
+            results["tests"].append({"test": "check_dependencies", "status": "success"})
+        except Exception as e:
+            results["tests"].append({"test": "check_dependencies", "status": "error", "message": str(e)})
+
+        # Step 5: Check for any existing users (basic count)
+        try:
+            user_count = User.query.count()
+            results["register_flow"]["user_count"] = user_count
+            results["tests"].append({"test": "check_existing_users", "status": "success"})
+        except Exception as e:
+            results["tests"].append({"test": "check_existing_users", "status": "error", "message": str(e)})
+
+        # Return the results
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Failed to debug register endpoint", "error": str(e)}), 500
+
+
 # Register debug blueprint with the app
 def init_app(app):
     """Initialize API blueprints with the Flask app."""
