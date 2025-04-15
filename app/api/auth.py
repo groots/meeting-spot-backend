@@ -138,6 +138,43 @@ class UserProfile(Resource):
 
         return user.to_dict()
 
+    @api.doc("delete_account")
+    @api.response(200, "Account successfully deleted")
+    @api.response(401, "Unauthorized")
+    @api.response(404, "User not found")
+    @api.response(500, "Server error")
+    @jwt_required()
+    def delete(self) -> None:
+        """Delete the current user's account and all associated data"""
+        try:
+            # Get the current user from the JWT token
+            current_user_id = get_jwt_identity()
+            user = User.query.get(uuid.UUID(current_user_id))
+
+            if not user:
+                return {"error": "User not found"}, 404
+
+            # Store email for response
+            email = user.email
+
+            # Delete the user and all their data
+            # Cascade will handle related data through relationship settings
+            db.session.delete(user)
+            db.session.commit()
+
+            # Log the deletion
+            current_app.logger.info(f"User account deleted: {email}")
+
+            return {
+                "message": "Your account and all associated data have been successfully deleted",
+                "email": email,
+            }, 200
+
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error deleting user account: {str(e)}")
+            return {"error": "An error occurred while deleting your account"}, 500
+
 
 @api.route("/google/callback")
 class GoogleCallback(Resource):

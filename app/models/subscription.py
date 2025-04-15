@@ -12,7 +12,7 @@ class Subscription(db.Model):
     __tablename__ = "subscriptions"
 
     id = db.Column(UUIDType(), primary_key=True)
-    user_id = db.Column(UUIDType(), db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(UUIDType(), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     stripe_subscription_id = db.Column(db.String(255), unique=True, nullable=True)
     stripe_customer_id = db.Column(db.String(255), nullable=True)
     plan_id = db.Column(db.String(50), nullable=False)  # 'basic', 'premium', etc.

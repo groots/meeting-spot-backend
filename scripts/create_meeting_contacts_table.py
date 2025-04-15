@@ -1,46 +1,49 @@
-#!/usr/bin/env python3
+"""
+Script to create the meeting_contacts association table.
+This is a fallback in case the Alembic migration doesn't work.
+"""
 
-from sqlalchemy import text
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Table, inspect
+from sqlalchemy.dialects.postgresql import UUID
 
 from app import create_app, db
 
 
-def create_meeting_contacts_table():
-    """Create meeting_contacts join table"""
+def create_table():
+    """Create the meeting_contacts association table if it doesn't exist."""
     app = create_app()
     with app.app_context():
-        conn = db.engine.connect()
+        inspector = inspect(db.engine)
 
+        # Check if the table already exists
+        if "meeting_contacts" in inspector.get_table_names():
+            print("meeting_contacts table already exists.")
+            return
+
+        # Create the table manually
+        meeting_contacts = Table(
+            "meeting_contacts",
+            db.metadata,
+            Column(
+                "meeting_request_id",
+                UUID(as_uuid=True),
+                ForeignKey("meeting_requests.request_id", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+            Column("contact_id", UUID(as_uuid=True), ForeignKey("contacts.id", ondelete="CASCADE"), primary_key=True),
+            Column("created_at", DateTime(timezone=True), nullable=False, default=datetime.now(timezone.utc)),
+        )
+
+        # Create the table
         try:
-            # Check if the table already exists
-            result = conn.execute(
-                text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'meeting_contacts')")
-            ).fetchone()
-
-            if result and result[0]:
-                print("meeting_contacts table already exists.")
-                return
-
-            print("Creating meeting_contacts table...")
-            conn.execute(
-                text(
-                    """
-                CREATE TABLE meeting_contacts (
-                    meeting_request_id UUID NOT NULL REFERENCES meeting_requests(request_id) ON DELETE CASCADE,
-                    contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                    PRIMARY KEY (meeting_request_id, contact_id)
-                )
-                """
-                )
-            )
-            conn.commit()
-            print("Successfully created meeting_contacts table!")
-
+            meeting_contacts.create(db.engine)
+            print("Table 'meeting_contacts' created successfully.")
         except Exception as e:
-            print(f"Error: {e}")
-            conn.rollback()
+            print(f"Error creating 'meeting_contacts' table: {e}")
 
 
 if __name__ == "__main__":
-    create_meeting_contacts_table()
+    create_table()

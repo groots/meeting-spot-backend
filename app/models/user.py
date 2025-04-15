@@ -26,11 +26,11 @@ class User(db.Model):
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False)
 
     # Relationships
-    subscriptions = db.relationship("Subscription", back_populates="user", lazy=True)
+    subscriptions = db.relationship("Subscription", back_populates="user", lazy=True, cascade="all, delete-orphan")
     requests_initiated = db.relationship(
         "MeetingRequest", foreign_keys="MeetingRequest.user_a_id", back_populates="user_a", lazy=True
     )
-    suggested_places = db.relationship("Place", back_populates="suggested_by", lazy=True)
+    suggested_places = db.relationship("Place", back_populates="suggested_by", lazy=True, cascade="all, delete-orphan")
     contacts = db.relationship("Contact", back_populates="user", lazy=True, cascade="all, delete-orphan")
 
     def __init__(self, **kwargs):

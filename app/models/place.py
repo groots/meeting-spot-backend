@@ -31,7 +31,7 @@ class Place(db.Model):
     google_place_id = db.Column(db.String, unique=True)
 
     # Who suggested this place
-    suggested_by_id = db.Column(UUIDType(), db.ForeignKey("users.id"), nullable=False)
+    suggested_by_id = db.Column(UUIDType(), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     suggested_by = db.relationship("User", back_populates="suggested_places")
 
     # Meeting requests that suggested this place

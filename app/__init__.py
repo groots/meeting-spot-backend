@@ -64,7 +64,16 @@ def create_app(config_name="development"):
     if env == "production":
         app.config.from_object("app.config.ProductionConfig")
     elif env == "development":
-        app.config.from_object("app.config.DevelopmentConfig")
+        try:
+            # First try to load from development_config.py (preferred for local dev)
+            from development_config import DevelopmentConfig
+
+            app.config.from_object(DevelopmentConfig)
+            app.logger.info("Using development_config.py")
+        except (ImportError, ModuleNotFoundError):
+            # Fall back to the built-in config
+            app.config.from_object("app.config.DevelopmentConfig")
+            app.logger.info("Using app.config.DevelopmentConfig")
     elif env == "testing":
         app.config.from_object("app.config.TestingConfig")
     else:
