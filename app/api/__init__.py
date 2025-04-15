@@ -878,6 +878,157 @@ def check_database():
         return jsonify({"status": "error", "message": "Failed to check database", "error": str(e)}), 500
 
 
+@debug_bp.route("/sql-fix")
+def sql_fix():
+    """Apply direct SQL fixes to fix critical database issues."""
+    try:
+        results = {"status": "success", "steps": []}
+
+        # Fix password_hash column length
+        try:
+            db.session.execute(text("ALTER TABLE users ALTER COLUMN password_hash TYPE varchar(256)"))
+            db.session.commit()
+            results["steps"].append(
+                {
+                    "action": "alter_column",
+                    "result": "success",
+                    "details": "Updated password_hash column to VARCHAR(256)",
+                }
+            )
+        except Exception as e:
+            results["steps"].append({"action": "alter_column", "result": "error", "details": str(e)})
+
+        # Create password_resets table if it doesn't exist
+        try:
+            db.session.execute(
+                text(
+                    """
+                CREATE TABLE IF NOT EXISTS password_resets (
+                    id UUID PRIMARY KEY,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    token VARCHAR(255) UNIQUE NOT NULL,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    expires_at TIMESTAMP NOT NULL,
+                    used BOOLEAN DEFAULT FALSE NOT NULL
+                )
+            """
+                )
+            )
+            db.session.commit()
+            results["steps"].append(
+                {"action": "create_table", "result": "success", "details": "Created password_resets table"}
+            )
+        except Exception as e:
+            results["steps"].append(
+                {"action": "create_table", "result": "error", "details": str(e), "table": "password_resets"}
+            )
+
+        # Create contacts table if it doesn't exist
+        try:
+            db.session.execute(
+                text(
+                    """
+                CREATE TABLE IF NOT EXISTS contacts (
+                    id UUID PRIMARY KEY,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    email VARCHAR(255),
+                    phone VARCHAR(50),
+                    company VARCHAR(255),
+                    notes TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE
+                )
+            """
+                )
+            )
+            db.session.commit()
+            results["steps"].append(
+                {"action": "create_table", "result": "success", "details": "Created contacts table"}
+            )
+        except Exception as e:
+            results["steps"].append(
+                {"action": "create_table", "result": "error", "details": str(e), "table": "contacts"}
+            )
+
+        # Create meeting_contacts table if it doesn't exist
+        try:
+            db.session.execute(
+                text(
+                    """
+                CREATE TABLE IF NOT EXISTS meeting_contacts (
+                    meeting_request_id UUID REFERENCES meeting_requests(request_id) ON DELETE CASCADE,
+                    contact_id UUID REFERENCES contacts(id) ON DELETE CASCADE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+                    PRIMARY KEY (meeting_request_id, contact_id)
+                )
+            """
+                )
+            )
+            db.session.commit()
+            results["steps"].append(
+                {"action": "create_table", "result": "success", "details": "Created meeting_contacts table"}
+            )
+        except Exception as e:
+            results["steps"].append(
+                {"action": "create_table", "result": "error", "details": str(e), "table": "meeting_contacts"}
+            )
+
+        # Create subscriptions table if it doesn't exist
+        try:
+            db.session.execute(
+                text(
+                    """
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                    id UUID PRIMARY KEY,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    stripe_subscription_id VARCHAR(255) UNIQUE,
+                    stripe_customer_id VARCHAR(255),
+                    plan_id VARCHAR(50) NOT NULL,
+                    status VARCHAR(50) NOT NULL,
+                    current_period_start TIMESTAMP WITH TIME ZONE,
+                    current_period_end TIMESTAMP WITH TIME ZONE,
+                    cancel_at_period_end BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+                )
+            """
+                )
+            )
+            db.session.commit()
+            results["steps"].append(
+                {"action": "create_table", "result": "success", "details": "Created subscriptions table"}
+            )
+        except Exception as e:
+            results["steps"].append(
+                {"action": "create_table", "result": "error", "details": str(e), "table": "subscriptions"}
+            )
+
+        # Update alembic version
+        try:
+            db.session.execute(text("UPDATE alembic_version SET version_num = '84151472c340'"))
+            db.session.commit()
+            results["steps"].append(
+                {"action": "update_migration", "result": "success", "details": "Updated alembic_version to latest"}
+            )
+        except Exception as e:
+            results["steps"].append({"action": "update_migration", "result": "error", "details": str(e)})
+
+        # Add CORS headers
+        response = jsonify(results)
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+
+        return response
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Failed to apply SQL fixes", "error": str(e)}), 500
+
+
 # Register debug blueprint with the app
 def init_app(app):
     """Initialize API blueprints with the Flask app."""
