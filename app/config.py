@@ -32,6 +32,19 @@ class Config:
     MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
     MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN")
 
+    # Stripe Configuration
+    STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+    STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
+    STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+    STRIPE_TEST_SECRET_KEY = os.getenv(
+        "STRIPE_TEST_SECRET_KEY",
+        "sk_test_51Pv1j0CVP5VPWd1qTYMRZLEfPd9eWQQorZoHwYGXuAVfqqDx2eHuVEuMrVvmXh5zXo2jVyRXBfzfazpnDRkETAWL00kJXwCNZB",
+    )
+    STRIPE_TEST_PUBLISHABLE_KEY = os.getenv(
+        "STRIPE_TEST_PUBLISHABLE_KEY",
+        "pk_test_51Pv1j0CVP5VPWd1qKrxJGkxC9paTJpD4IILrGqkRUeB0z4uyLt37HZVudwrGvPVQPwqnnBbjwMIrzN3XhPw6YS5400OT0tdCGm",
+    )
+
     # CORS Configuration
     CORS_ORIGINS = [
         "http://localhost:3000",  # Local development frontend

@@ -6,9 +6,10 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 from flask_restx import Namespace, Resource, fields
 
 from .. import db
-from ..models import ContactType, MeetingRequest, MeetingRequestStatus, User
+from ..models import Contact, ContactType, MeetingRequest, MeetingRequestStatus, User
 from ..utils.location import process_meeting_request
 from ..utils.notifications import send_email
+from ..utils.stripe_helpers import is_premium_feature
 
 api = Namespace("meeting-requests", description="Meeting request operations")
 
@@ -19,6 +20,8 @@ meeting_request_model = api.model(
         "request_id": fields.String(description="Unique identifier for the request"),
         "user_a_id": fields.String(description="ID of the user who initiated the request"),
         "user_b_contact_type": fields.String(description="Type of contact for user B (email, phone, sms)"),
+        "user_b_email": fields.String(description="Email address of user B"),
+        "user_b_name": fields.String(description="Name of user B"),
         "location_type": fields.String(description="Type of location (e.g., Restaurant / Food)"),
         "address_a_lat": fields.Float(description="Latitude of user A's location"),
         "address_a_lon": fields.Float(description="Longitude of user A's location"),
@@ -38,6 +41,8 @@ create_request_model = api.model(
         "location_type": fields.String(required=True, description="Type of location"),
         "user_b_contact_type": fields.String(required=True, description="Type of contact for user B"),
         "user_b_contact": fields.String(required=True, description="Contact information for user B"),
+        "user_b_name": fields.String(description="Name of user B"),
+        "save_as_contact": fields.Boolean(description="Whether to save user B as a contact"),
     },
 )
 
@@ -99,14 +104,23 @@ class MeetingRequestList(Resource):
                     f"No coordinates provided for address_a, using defaults: ({address_a_lat}, {address_a_lon})"
                 )
 
-            # Create new request
+            # Create new request with additional fields
+            user_b_email = data["user_b_contact"] if data["user_b_contact_type"].lower() == "email" else None
+            user_b_name = data.get("user_b_name", "")
+
+            # Create location data in JSON format
+            location_a = {"address": data["address_a"], "latitude": address_a_lat, "longitude": address_a_lon}
+
             new_request = MeetingRequest(
                 user_a_id=user.id,
                 address_a_lat=address_a_lat,
                 address_a_lon=address_a_lon,
+                location_a=location_a,
                 location_type=data["location_type"],
                 user_b_contact_type=ContactType(data["user_b_contact_type"].lower()),
                 user_b_contact=data["user_b_contact"],
+                user_b_email=user_b_email,
+                user_b_name=user_b_name,
                 token_b=uuid.uuid4().hex,
                 status=MeetingRequestStatus.PENDING_B_ADDRESS,
                 created_at=datetime.now(timezone.utc),
@@ -115,6 +129,42 @@ class MeetingRequestList(Resource):
             )
 
             db.session.add(new_request)
+
+            # If user wants to save as contact and is premium, create a contact
+            save_as_contact = data.get("save_as_contact", False)
+            if save_as_contact:
+                # Check if contacts is a premium feature
+                if is_premium_feature("contacts") and not user.is_premium():
+                    return {
+                        "error": "Premium subscription required",
+                        "message": "Saving contacts requires a premium subscription",
+                        "request_created": False,
+                    }, 402
+
+                # Check if contact with this email already exists
+                if user_b_email:
+                    existing_contact = Contact.query.filter_by(user_id=user.id, email=user_b_email).first()
+
+                    if existing_contact:
+                        # Update existing contact with new info if provided
+                        if user_b_name and not existing_contact.name:
+                            existing_contact.name = user_b_name
+                            existing_contact.updated_at = datetime.now(timezone.utc)
+
+                        # Associate the meeting request with the existing contact
+                        new_request.contacts.append(existing_contact)
+                    else:
+                        # Create new contact
+                        contact = Contact(
+                            user_id=user.id,
+                            name=user_b_name or "Unknown",
+                            email=user_b_email,
+                        )
+                        db.session.add(contact)
+
+                        # Associate the meeting request with the new contact
+                        new_request.contacts.append(contact)
+
             db.session.commit()
 
         except (ValueError, TypeError) as e:
@@ -128,7 +178,7 @@ class MeetingRequestList(Resource):
 
             subject = "You've been invited to find a meeting spot!"
             body = f"""
-Hello!
+Hello{f' {user_b_name}' if user_b_name else ''}!
 
 {user.email} has invited you to find a convenient meeting spot.
 

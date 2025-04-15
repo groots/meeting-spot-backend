@@ -16,9 +16,12 @@ from .. import db
 from ..models import ContactType, MeetingRequest, MeetingRequestStatus
 from ..utils.notifications import send_email
 from .auth import api as auth_ns
+from .contacts import api as contacts_ns
 from .meeting_requests import api as meeting_requests_ns
+from .payments import api as payments_ns
 from .users import api as users_ns
 from .v1.cors import cors_ns
+from .v1.subscriptions import api as subscriptions_ns
 
 # Create API v1 blueprint
 api_v1_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
@@ -177,11 +180,16 @@ api_v1.add_namespace(auth_ns, path="/auth")
 api_v1.add_namespace(meeting_requests_ns, path="/meeting-requests")
 api_v1.add_namespace(users_ns, path="/users")
 api_v1.add_namespace(cors_ns, path="/cors")
+api_v1.add_namespace(payments_ns, path="/payments")
+api_v1.add_namespace(contacts_ns, path="/contacts")
+api_v1.add_namespace(subscriptions_ns, path="/subscriptions")
 
 # Register namespaces for v2
 api_v2.add_namespace(auth_ns, path="/auth")
 api_v2.add_namespace(meeting_requests_ns, path="/meeting-requests")
 api_v2.add_namespace(users_ns, path="/users")
+api_v2.add_namespace(payments_ns, path="/payments")
+api_v2.add_namespace(contacts_ns, path="/contacts")
 
 # No need to import routes since we're using Flask-RESTX namespaces
 

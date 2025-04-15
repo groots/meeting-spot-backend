@@ -3,7 +3,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 
 from flask import current_app
-from sqlalchemy import Index, Table
+from sqlalchemy import Column, ForeignKey, Index, Table, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 
 from app.utils.encryption import decrypt_data, encrypt_data
 
@@ -28,66 +30,74 @@ class MeetingRequest(db.Model):
     __tablename__ = "meeting_requests"
 
     # Using UUID as primary key, defaulting to generating a new UUID
-    request_id = db.Column(UUIDType(), primary_key=True, default=uuid.uuid4)
+    request_id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
 
     # Foreign Key to User who initiated the request (can be null for anonymous)
-    user_a_id = db.Column(UUIDType(), db.ForeignKey("users.id"), nullable=True)
-    user_a = db.relationship("User", back_populates="requests_initiated")
+    user_a_id = Column(UUIDType(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_a = relationship("User", back_populates="requests_initiated")
 
     # User B contact info
-    user_b_contact_type = db.Column(db.Enum(ContactType), nullable=False)
-    user_b_contact_encrypted = db.Column(db.String(255), nullable=False)  # Store encrypted email/phone
+    user_b_contact_type = Column(db.Enum(ContactType), nullable=False)
+    user_b_contact_encrypted = Column(db.String(255), nullable=False)  # Store encrypted email/phone
+    user_b_email = Column(db.String(120), nullable=False)
+    user_b_name = Column(db.String(255), nullable=True)  # New field for user B's name
 
     # Request details
-    location_type = db.Column(db.String(50), nullable=False)  # e.g., "Restaurant / Food"
+    location_type = Column(db.String(50), nullable=False)  # e.g., "Restaurant / Food"
+    location_a = Column(JSONType, nullable=False)
+    location_b = Column(JSONType, nullable=True)
 
     # Coordinates
-    address_a_lat = db.Column(db.Float, nullable=False)
-    address_a_lon = db.Column(db.Float, nullable=False)
-    address_b_lat = db.Column(db.Float, nullable=True)
-    address_b_lon = db.Column(db.Float, nullable=True)
+    address_a_lat = Column(db.Float, nullable=False)
+    address_a_lon = Column(db.Float, nullable=False)
+    address_b_lat = Column(db.Float, nullable=True)
+    address_b_lon = Column(db.Float, nullable=True)
 
     # Status of the request
-    status = db.Column(
+    status = Column(
         db.Enum(MeetingRequestStatus),
         nullable=False,
         default=MeetingRequestStatus.PENDING_B_ADDRESS,
     )
 
     # Secure token for User B to submit their address
-    token_b = db.Column(db.String(64), unique=True, nullable=False)
+    token_b = Column(db.String(64), unique=True, nullable=False)
 
     # Details of the selected place
-    selected_place_google_id = db.Column(db.String(255), nullable=True)
-    selected_place_details = db.Column(JSONType, nullable=True)
+    selected_place_google_id = Column(db.String(255), nullable=True)
+    selected_place_details = Column(JSONType, nullable=True)
 
     # Store suggested options
-    suggested_options = db.Column(JSONType, nullable=True)
+    suggested_options = Column(JSONType, nullable=True)
 
     # Identifier for anonymous User A sessions
-    session_identifier_a = db.Column(db.String(255), nullable=True)
+    session_identifier_a = Column(db.String(255), nullable=True)
 
     # Place relationships
-    selected_place_id = db.Column(UUIDType(), db.ForeignKey("places.id"), nullable=True)
-    selected_place = db.relationship("Place", foreign_keys=[selected_place_id], back_populates="selected_by_meetings")
+    selected_place_id = Column(UUIDType(), ForeignKey("places.id"), nullable=True)
+    selected_place = relationship(
+        "Place",
+        back_populates="selected_by_meetings",
+        uselist=False,
+    )
 
-    suggested_places = db.relationship(
+    suggested_places = relationship(
         "Place", secondary=meeting_request_suggested_places, back_populates="suggested_for_meetings"
     )
 
     # Timestamps
-    created_at = db.Column(
+    created_at = Column(
         db.DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
-    updated_at = db.Column(
+    updated_at = Column(
         db.DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
-    expires_at = db.Column(
+    expires_at = Column(
         db.DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc) + timedelta(days=1),
@@ -100,6 +110,9 @@ class MeetingRequest(db.Model):
         Index("ix_meeting_requests_token_b", "token_b"),
         Index("ix_meeting_requests_session_identifier_a", "session_identifier_a"),
     )
+
+    # Relationship to contacts via the association table
+    contacts = relationship("Contact", secondary="meeting_contacts", back_populates="meeting_requests")
 
     @property
     def user_b_contact(self) -> Optional[str]:
@@ -129,11 +142,15 @@ class MeetingRequest(db.Model):
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert meeting request to dictionary."""
-        return {
+        user_b_contact = next((c for c in self.contacts if c.email == self.user_b_email), None)
+
+        result = {
             "request_id": str(self.request_id),
             "user_a_id": str(self.user_a_id) if self.user_a_id else None,
             "user_b_contact_type": self.user_b_contact_type.value,
             "user_b_contact_encrypted": self.user_b_contact_encrypted,
+            "user_b_email": self.user_b_email,
+            "user_b_name": self.user_b_name,
             "location_type": self.location_type,
             "address_a_lat": self.address_a_lat,
             "address_a_lon": self.address_a_lon,
@@ -151,4 +168,51 @@ class MeetingRequest(db.Model):
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "expires_at": self.expires_at.isoformat(),
+            "is_expired": self.is_expired(),
         }
+
+        # Add contact details if available
+        if user_b_contact:
+            result["user_b_contact"] = {
+                "id": str(user_b_contact.id),
+                "name": user_b_contact.name,
+                "email": user_b_contact.email,
+                "phone": user_b_contact.phone,
+                "company": user_b_contact.company,
+            }
+
+        return result
+
+    def is_expired(self) -> bool:
+        """Check if the meeting request has expired."""
+        if not self.expires_at:
+            return False
+        return datetime.now(timezone.utc) > self.expires_at
+
+    @staticmethod
+    def create_from_dict(data: Dict[str, Any], user_id: uuid.UUID) -> "MeetingRequest":
+        """Create a new meeting request from dictionary data."""
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7)  # Default to 7 days
+
+        location_a = {
+            "address": data.get("location_a", {}).get("address", ""),
+            "latitude": data.get("location_a", {}).get("latitude"),
+            "longitude": data.get("location_a", {}).get("longitude"),
+        }
+
+        categories = data.get("categories", None)
+
+        return MeetingRequest(
+            user_a_id=user_id,
+            user_b_email=data["user_b_email"].lower(),
+            user_b_name=data.get("user_b_name", ""),
+            location_a=location_a,
+            location_type=data.get("location_type", ""),
+            address_a_lat=data.get("location_a", {}).get("latitude"),
+            address_a_lon=data.get("location_a", {}).get("longitude"),
+            address_b_lat=data.get("location_b", {}).get("latitude"),
+            address_b_lon=data.get("location_b", {}).get("longitude"),
+            status=data.get("status", MeetingRequestStatus.PENDING_B_ADDRESS),
+            expires_at=expires_at,
+            categories=categories,
+        )

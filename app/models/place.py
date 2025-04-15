@@ -40,9 +40,7 @@ class Place(db.Model):
     )
 
     # Meeting requests that selected this place
-    selected_by_meetings = db.relationship(
-        "MeetingRequest", foreign_keys="[MeetingRequest.selected_place_id]", back_populates="selected_place"
-    )
+    selected_by_meetings = db.relationship("MeetingRequest", back_populates="selected_place")
 
     # Timestamps
     created_at = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
