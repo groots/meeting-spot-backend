@@ -50,6 +50,30 @@ jobs:
       - name: Configure Docker
         run: gcloud auth configure-docker
 
+      # Add migration step here
+      - name: Run Database Migrations
+        run: |
+          # Download and start Cloud SQL Proxy
+          curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.6.1/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy -instances=${{ secrets.GCP_PROJECT_ID }}:us-east1:findameetingspot=tcp:5432 &
+          PROXY_PID=$!
+          echo "Cloud SQL Proxy started with PID: $PROXY_PID"
+          sleep 10
+
+          # Set up environment for Flask-Migrate
+          export FLASK_APP=wsgi.py
+          export DATABASE_URL="postgresql://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@localhost:5432/findameetingspot"
+
+          # Run migrations
+          echo "Running database migrations..."
+          flask db upgrade
+
+          # Kill Cloud SQL Proxy
+          echo "Stopping Cloud SQL Proxy..."
+          kill $PROXY_PID || true
+        continue-on-error: true # Allow deployment even if migrations fail
+
       - name: Build and Push Backend Container
         run: |
           docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/meeting-spot-backend:${{ github.sha }} .
