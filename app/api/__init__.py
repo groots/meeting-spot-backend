@@ -1454,6 +1454,119 @@ def debug_register():
         return jsonify({"status": "error", "message": "Failed to debug register endpoint", "error": str(e)}), 500
 
 
+@debug_bp.route("/debug-gcp-logs")
+def debug_gcp_logs():
+    """Fetch recent logs from Google Cloud Logging"""
+    try:
+        import datetime
+
+        from google.cloud import logging
+        from google.cloud.logging_v2.types import ListLogEntriesRequest
+
+        # Number of log entries to fetch (default to 50)
+        limit = request.args.get("limit", 50, type=int)
+        # Type of logs to fetch: "error", "all", or specific string to filter
+        log_type = request.args.get("type", "error")
+        # Service to fetch logs for (default to "registration" but can be any service)
+        service = request.args.get("service", "registration")
+
+        # Initialize the logging client
+        logging_client = logging.Client()
+
+        # Build the filter string
+        filter_parts = []
+
+        # Filter by project (should automatically use the current project)
+        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+        if project_id:
+            filter_parts.append(f"resource.type=gae_app AND resource.labels.project_id={project_id}")
+
+        # Filter by log severity if requested
+        if log_type == "error":
+            filter_parts.append("severity>=ERROR")
+        elif log_type != "all" and log_type:
+            # Allow custom text filtering
+            filter_parts.append(f"textPayload:{log_type} OR jsonPayload:{log_type}")
+
+        # Filter by service name if specified
+        if service:
+            filter_parts.append(f"(textPayload:{service} OR jsonPayload:{service})")
+
+        # Combine all filter parts
+        filter_str = " AND ".join(filter_parts) if filter_parts else ""
+
+        # Get logs from the last 24 hours by default
+        end_time = datetime.datetime.utcnow()
+        start_time = end_time - datetime.timedelta(hours=24)
+
+        # Construct the request
+        request_dict = {
+            "filter": filter_str,
+            "order_by": "timestamp desc",  # Most recent first
+            "page_size": limit,
+        }
+
+        # Set time range if we have project ID
+        if project_id:
+            request_dict["resource_names"] = [f"projects/{project_id}"]
+
+        # Execute query
+        entries = logging_client.list_entries(**request_dict)
+
+        # Format logs for API response
+        logs = []
+        for entry in entries:
+            log_entry = {
+                "timestamp": entry.timestamp.isoformat() if hasattr(entry, "timestamp") and entry.timestamp else None,
+                "severity": entry.severity,
+                "log_name": entry.log_name,
+            }
+
+            # Extract the payload (could be text or JSON)
+            if hasattr(entry, "payload") and entry.payload:
+                if isinstance(entry.payload, dict):
+                    log_entry["payload"] = entry.payload
+                else:
+                    log_entry["payload"] = str(entry.payload)
+            elif hasattr(entry, "text_payload") and entry.text_payload:
+                log_entry["payload"] = entry.text_payload
+            elif hasattr(entry, "json_payload") and entry.json_payload:
+                log_entry["payload"] = dict(entry.json_payload)
+            else:
+                log_entry["payload"] = "No payload"
+
+            # Add trace info if available
+            if hasattr(entry, "trace") and entry.trace:
+                log_entry["trace"] = entry.trace
+
+            # Add resource info if available
+            if hasattr(entry, "resource") and entry.resource:
+                log_entry["resource"] = {
+                    "type": entry.resource.type,
+                    "labels": dict(entry.resource.labels) if hasattr(entry.resource, "labels") else {},
+                }
+
+            logs.append(log_entry)
+
+        # Return formatted response
+        return jsonify({"status": "success", "filter": filter_str, "count": len(logs), "logs": logs})
+
+    except ImportError as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "Failed to import Google Cloud Logging library",
+                    "error": str(e),
+                    "resolution": "Install google-cloud-logging package",
+                }
+            ),
+            500,
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Failed to fetch GCP logs", "error": str(e)}), 500
+
+
 # Register debug blueprint with the app
 def init_app(app):
     """Initialize API blueprints with the Flask app."""
