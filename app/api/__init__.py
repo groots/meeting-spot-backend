@@ -1499,12 +1499,13 @@ def debug_gcp_logs():
         if log_type == "error":
             filter_parts.append("severity>=ERROR")
         elif log_type != "all" and log_type:
-            # Allow custom text filtering
-            filter_parts.append(f"textPayload:{log_type} OR jsonPayload:{log_type}")
+            # Allow custom text filtering - use text search instead of trying to filter on jsonPayload
+            filter_parts.append(f"textPayload:*{log_type}*")
 
         # Filter by service name if specified
         if service:
-            filter_parts.append(f"(textPayload:{service} OR jsonPayload:{service})")
+            # Use text search instead of trying to access jsonPayload directly
+            filter_parts.append(f"textPayload:*{service}*")
 
         # Combine all filter parts
         filter_str = " AND ".join(filter_parts) if filter_parts else ""
@@ -1523,6 +1524,15 @@ def debug_gcp_logs():
         # Set time range if we have project ID
         if project_id:
             request_dict["resource_names"] = [f"projects/{project_id}"]
+
+        # Add more details in the response for debugging
+        response_data = {
+            "status": "success",
+            "filter": filter_str,
+            "request_params": request_dict,
+            "count": 0,
+            "logs": [],
+        }
 
         # Execute query
         entries = logging_client.list_entries(**request_dict)
@@ -1562,8 +1572,11 @@ def debug_gcp_logs():
 
             logs.append(log_entry)
 
+        response_data["count"] = len(logs)
+        response_data["logs"] = logs
+
         # Return formatted response
-        return jsonify({"status": "success", "filter": filter_str, "count": len(logs), "logs": logs})
+        return jsonify(response_data)
 
     except ImportError as e:
         return (
@@ -1578,7 +1591,17 @@ def debug_gcp_logs():
             500,
         )
     except Exception as e:
-        return jsonify({"status": "error", "message": "Failed to fetch GCP logs", "error": str(e)}), 500
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "Failed to fetch GCP logs",
+                    "error": str(e),
+                    "filter_string": filter_str if "filter_str" in locals() else "Not created yet",
+                }
+            ),
+            500,
+        )
 
 
 @debug_bp.route("/dashboard")
