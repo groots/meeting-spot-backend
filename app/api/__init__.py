@@ -1,15 +1,22 @@
 """API blueprints for the application."""
 
+import json
+import logging
 import os
+import re
+import sys
+import threading
+import time
+import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import psutil
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, g, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_restx import Api
-from sqlalchemy import inspect, text
+from sqlalchemy import MetaData, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from .. import db
@@ -34,6 +41,13 @@ limiter = Limiter(key_func=get_remote_address)
 
 # Create debug blueprint
 debug_bp = Blueprint("debug", __name__, url_prefix="/debug")
+
+# Global variables for request tracking and performance monitoring
+_request_history = []
+_request_lock = threading.Lock()
+_max_requests = 100
+_performance_metrics = {"endpoints": {}, "start_time": time.time()}
+_performance_lock = threading.Lock()
 
 
 @debug_bp.route("/health")
@@ -1569,58 +1583,145 @@ def debug_gcp_logs():
 
 @debug_bp.route("/dashboard")
 def debug_dashboard():
-    """Render a simple dashboard with links to all debug endpoints."""
+    """Render a dashboard with tabs for all debug endpoints."""
     base_url = request.url_root.rstrip("/") + "/debug"
 
-    # List of all debug endpoints with descriptions
-    endpoints = [
+    # Define the tabs and groups of endpoints
+    endpoint_groups = [
         {
-            "path": "/health",
-            "name": "Health Check",
-            "description": "Comprehensive health check of the application, database and system resources.",
+            "id": "general",
+            "name": "General",
+            "description": "General health and diagnostics",
+            "endpoints": [
+                {
+                    "path": "/health",
+                    "name": "Health Check",
+                    "description": "Comprehensive health check of the application, database and system resources.",
+                },
+                {
+                    "path": "/db-check",
+                    "name": "Database Check",
+                    "description": "Check database connectivity and configuration.",
+                },
+                {
+                    "path": "/check-tables",
+                    "name": "Check Tables",
+                    "description": "Check if specific database tables exist.",
+                },
+                {
+                    "path": "/fix-production-tables",
+                    "name": "Fix Production Tables",
+                    "description": "Fix production database tables by creating them in the correct order.",
+                },
+                {
+                    "path": "/check-database",
+                    "name": "Check Database",
+                    "description": "Comprehensive check of database status.",
+                },
+            ],
         },
         {
-            "path": "/db-check",
-            "name": "Database Check",
-            "description": "Check database connectivity and configuration.",
-        },
-        {"path": "/check-tables", "name": "Check Tables", "description": "Check if specific database tables exist."},
-        {"path": "/apply-migrations", "name": "Apply Migrations", "description": "Apply missing database migrations."},
-        {"path": "/fix-schema", "name": "Fix Schema", "description": "Fix database schema by adding missing columns."},
-        {
-            "path": "/fix-production-tables",
-            "name": "Fix Production Tables",
-            "description": "Fix production database tables by creating them in the correct order.",
-        },
-        {"path": "/check-database", "name": "Check Database", "description": "Comprehensive check of database status."},
-        {
-            "path": "/sql-fix",
-            "name": "SQL Fix",
-            "description": "Apply direct SQL fixes to fix critical database issues.",
-        },
-        {
-            "path": "/emergency-fix",
-            "name": "Emergency Fix",
-            "description": "Last-resort fix for critical database issues.",
+            "id": "metrics",
+            "name": "Metrics & Monitoring",
+            "description": "Performance metrics and system monitoring",
+            "endpoints": [
+                {
+                    "path": "/performance",
+                    "name": "API Performance",
+                    "description": "Monitor API performance metrics, response times, and error rates.",
+                },
+                {
+                    "path": "/requests",
+                    "name": "Request Inspector",
+                    "description": "View recent API requests, their headers, parameters, and responses.",
+                },
+                {
+                    "path": "/system-resources",
+                    "name": "System Resources",
+                    "description": "Monitor system resources like CPU, memory, and disk usage.",
+                },
+            ],
         },
         {
-            "path": "/debug-reset-password",
-            "name": "Debug Reset Password",
-            "description": "Debug the reset-password endpoint flow.",
+            "id": "logs",
+            "name": "Logs & Errors",
+            "description": "Application logs and error tracking",
+            "endpoints": [
+                {
+                    "path": "/debug-gcp-logs",
+                    "name": "GCP Logs",
+                    "description": "Fetch and view logs from Google Cloud Logging.",
+                },
+                {
+                    "path": "/error-tracker",
+                    "name": "Error Tracker",
+                    "description": "Track and view recent application errors.",
+                },
+            ],
         },
-        {"path": "/debug-register", "name": "Debug Register", "description": "Debug the register endpoint flow."},
         {
-            "path": "/debug-gcp-logs",
-            "name": "Debug GCP Logs",
-            "description": "Fetch recent logs from Google Cloud Logging.",
+            "id": "auth",
+            "name": "Authentication",
+            "description": "Authentication and authorization debugging",
+            "endpoints": [
+                {
+                    "path": "/auth-debug",
+                    "name": "Auth Debugger",
+                    "description": "Debug JWT tokens and authentication configuration.",
+                },
+                {
+                    "path": "/debug-register",
+                    "name": "Register Debug",
+                    "description": "Debug the registration flow and user creation.",
+                },
+                {
+                    "path": "/debug-reset-password",
+                    "name": "Reset Password Debug",
+                    "description": "Debug the password reset flow.",
+                },
+            ],
         },
-        {"path": "/test-email", "name": "Test Email", "description": "Send a test email."},
         {
-            "path": "/dashboard",
-            "name": "Debug Dashboard",
-            "description": "This page - dashboard of all debug endpoints.",
+            "id": "environment",
+            "name": "Environment",
+            "description": "Environment variables and system configuration",
+            "endpoints": [
+                {
+                    "path": "/environment",
+                    "name": "Environment Variables",
+                    "description": "View environment variables and configuration settings.",
+                }
+            ],
+        },
+        {
+            "id": "database",
+            "name": "Database",
+            "description": "Database profiling and debugging",
+            "endpoints": [
+                {
+                    "path": "/db-profiler",
+                    "name": "Database Profiler",
+                    "description": "Profile database performance and slow queries.",
+                },
+                {
+                    "path": "/apply-migrations",
+                    "name": "Apply Migrations",
+                    "description": "Apply missing database migrations.",
+                },
+                {
+                    "path": "/sql-fix",
+                    "name": "SQL Fix",
+                    "description": "Apply direct SQL fixes to fix critical database issues.",
+                },
+            ],
         },
     ]
+
+    # All endpoints for the search function
+    all_endpoints = []
+    for group in endpoint_groups:
+        for endpoint in group["endpoints"]:
+            all_endpoints.append(endpoint)
 
     # Generate HTML page
     html = """
@@ -1635,17 +1736,65 @@ def debug_dashboard():
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                 line-height: 1.6;
                 color: #333;
-                max-width: 1000px;
+                margin: 0;
+                padding: 0;
+            }
+            .container {
+                max-width: 1200px;
                 margin: 0 auto;
                 padding: 20px;
             }
+            header {
+                background-color: #2c3e50;
+                color: white;
+                padding: 20px;
+                text-align: center;
+            }
             h1 {
-                color: #2c3e50;
-                border-bottom: 2px solid #3498db;
-                padding-bottom: 10px;
+                margin: 0;
+                font-size: 24px;
             }
             h2 {
                 color: #3498db;
+                border-bottom: 2px solid #3498db;
+                padding-bottom: 5px;
+                margin-top: 30px;
+            }
+            h3 {
+                color: #2c3e50;
+                margin-top: 20px;
+            }
+            .tabs {
+                display: flex;
+                overflow-x: auto;
+                margin-top: 20px;
+                border-bottom: 1px solid #ddd;
+                background-color: #f8f9fa;
+            }
+            .tab {
+                padding: 12px 24px;
+                cursor: pointer;
+                transition: background-color 0.3s;
+                font-weight: 500;
+                white-space: nowrap;
+                border-bottom: 3px solid transparent;
+            }
+            .tab:hover {
+                background-color: #eaeaea;
+            }
+            .tab.active {
+                background-color: white;
+                border-bottom: 3px solid #3498db;
+                color: #3498db;
+            }
+            .tab-content {
+                display: none;
+                padding: 20px;
+                background-color: white;
+                border-radius: 0 0 4px 4px;
+            }
+            .tab-content.active {
+                display: block;
             }
             .endpoints {
                 display: grid;
@@ -1659,6 +1808,9 @@ def debug_dashboard():
                 padding: 15px;
                 transition: transform 0.2s, box-shadow 0.2s;
                 background-color: #f8f9fa;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
             }
             .endpoint-card:hover {
                 transform: translateY(-5px);
@@ -1681,6 +1833,7 @@ def debug_dashboard():
             .endpoint-description {
                 color: #555;
                 font-size: 0.9em;
+                flex-grow: 1;
             }
             .action-buttons {
                 margin-top: 10px;
@@ -1696,6 +1849,8 @@ def debug_dashboard():
                 border-radius: 4px;
                 font-size: 0.9em;
                 transition: background-color 0.2s;
+                border: none;
+                cursor: pointer;
             }
             .btn:hover {
                 background-color: #2980b9;
@@ -1713,62 +1868,159 @@ def debug_dashboard():
                 margin: 20px 0;
                 border-radius: 0 4px 4px 0;
             }
+            .search-container {
+                display: flex;
+                margin: 20px 0;
+                max-width: 600px;
+            }
+            .search-input {
+                flex-grow: 1;
+                padding: 10px;
+                border: 1px solid #ddd;
+                border-radius: 4px 0 0 4px;
+                font-size: 16px;
+            }
+            .search-btn {
+                border-radius: 0 4px 4px 0;
+                border: 1px solid #2980b9;
+                background-color: #3498db;
+                color: white;
+                padding: 0 15px;
+                cursor: pointer;
+            }
+            .search-results {
+                display: none;
+                margin-top: 20px;
+            }
             .footer {
                 margin-top: 30px;
                 text-align: center;
                 color: #7f8c8d;
                 font-size: 0.8em;
+                padding: 10px;
+                background-color: #f8f9fa;
+                border-top: 1px solid #eee;
+            }
+            .tab-description {
+                color: #666;
+                margin-bottom: 20px;
+            }
+            .iframe-view {
+                width: 100%;
+                height: 600px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                margin-top: 20px;
+                display: none;
             }
             @media (max-width: 768px) {
                 .endpoints {
                     grid-template-columns: 1fr;
                 }
+                .tabs {
+                    flex-wrap: wrap;
+                }
+                .tab {
+                    width: 50%;
+                    text-align: center;
+                    box-sizing: border-box;
+                }
             }
         </style>
     </head>
     <body>
-        <h1>Debug Dashboard</h1>
-        <p>
-            This dashboard provides access to various debug endpoints for the Find a Meeting Spot application.
-            Use these tools to diagnose and fix issues in the application.
-        </p>
+        <header>
+            <h1>Find a Meeting Spot - Debug Dashboard</h1>
+        </header>
 
-        <div class="note">
-            <strong>Note:</strong> These endpoints are for debugging purposes only and should not be exposed in production.
-        </div>
+        <div class="container">
+            <div class="note">
+                <strong>Note:</strong> These endpoints are for debugging purposes only and should not be exposed in production.
+                You can use this dashboard to diagnose issues with the application.
+            </div>
 
-        <h2>Available Endpoints</h2>
-        <div class="endpoints">
+            <div class="search-container">
+                <input type="text" id="search-input" class="search-input" placeholder="Search endpoints...">
+                <button id="search-btn" class="search-btn">Search</button>
+            </div>
+
+            <div id="search-results" class="search-results">
+                <h3>Search Results</h3>
+                <div id="search-results-content" class="endpoints"></div>
+            </div>
+
+            <div class="tabs" id="tabs">
     """
 
-    # Add each endpoint to the HTML
-    for endpoint in endpoints:
-        full_url = base_url + endpoint["path"]
-        html += f"""
-            <div class="endpoint-card">
-                <div class="endpoint-title">{endpoint["name"]}</div>
-                <div class="endpoint-path">{endpoint["path"]}</div>
-                <div class="endpoint-description">{endpoint["description"]}</div>
-                <div class="action-buttons">
-                    <a href="{full_url}" class="btn" target="_blank">Visit</a>
-                    <button class="btn copy-btn" onclick="navigator.clipboard.writeText('{full_url}')">Copy URL</button>
-                </div>
+    # Add tabs to HTML
+    for index, group in enumerate(endpoint_groups):
+        active = " active" if index == 0 else ""
+        html += f'<div class="tab{active}" data-tab="{group["id"]}">{group["name"]}</div>'
+
+    # Add iframe tab
+    html += '<div class="tab" data-tab="iframe-tab">Live View</div>'
+
+    # Complete tabs and start tab content
+    html += """
             </div>
+
+            <div id="tab-contents">
+    """
+
+    # Add tab content
+    for index, group in enumerate(endpoint_groups):
+        active = " active" if index == 0 else ""
+        html += f"""
+                <div id="{group['id']}-content" class="tab-content{active}">
+                    <h2>{group['name']}</h2>
+                    <p class="tab-description">{group['description']}</p>
+                    <div class="endpoints">
         """
 
-    # Complete the HTML
+        # Add endpoints to this tab
+        for endpoint in group["endpoints"]:
+            full_url = base_url + endpoint["path"]
+            html += f"""
+                        <div class="endpoint-card">
+                            <div class="endpoint-title">{endpoint['name']}</div>
+                            <div class="endpoint-path">{endpoint['path']}</div>
+                            <div class="endpoint-description">{endpoint['description']}</div>
+                            <div class="action-buttons">
+                                <a href="{full_url}" class="btn" target="_blank">Visit</a>
+                                <button class="btn copy-btn" onclick="navigator.clipboard.writeText('{full_url}')">Copy URL</button>
+                                <button class="btn view-btn" data-url="{full_url}">View Here</button>
+                            </div>
+                        </div>
+            """
+
+        # Close this tab's content
+        html += """
+                    </div>
+                </div>
+        """
+
+    # Add iframe tab content
+    html += """
+                <div id="iframe-tab-content" class="tab-content">
+                    <h2>Live View</h2>
+                    <p class="tab-description">View debug endpoint content directly in this dashboard</p>
+                    <iframe id="endpoint-iframe" class="iframe-view" src=""></iframe>
+                </div>
+    """
+
+    # Special notes section
     html += (
         """
-        </div>
-
-        <div class="note">
-            <strong>GCP Logs Usage:</strong> For the GCP logs endpoint, you can add query parameters:
-            <ul>
-                <li><code>?limit=100</code> - Get 100 logs (default is 50)</li>
-                <li><code>?type=all</code> - Get all log types (default is 'error')</li>
-                <li><code>?service=auth</code> - Filter logs for a specific service (default is 'registration')</li>
-            </ul>
-            Example: <code>/debug/debug-gcp-logs?type=all&limit=20&service=auth</code>
+                <div class="note">
+                    <strong>GCP Logs Usage:</strong> For the GCP logs endpoint, you can add query parameters:
+                    <ul>
+                        <li><code>?limit=100</code> - Get 100 logs (default is 50)</li>
+                        <li><code>?type=all</code> - Get all log types (default is 'error')</li>
+                        <li><code>?service=auth</code> - Filter logs for a specific service (default is 'registration')</li>
+                    </ul>
+                    Example: <code>/debug/debug-gcp-logs?type=all&limit=20&service=auth</code>
+                </div>
+            </div>
         </div>
 
         <div class="footer">
@@ -1778,8 +2030,28 @@ def debug_dashboard():
         </div>
 
         <script>
-            // Add a success message when copy button is clicked
+            // Tab navigation
             document.addEventListener('DOMContentLoaded', function() {
+                const tabs = document.querySelectorAll('.tab');
+                const tabContents = document.querySelectorAll('.tab-content');
+                const iframe = document.getElementById('endpoint-iframe');
+
+                // Tab switching
+                tabs.forEach(tab => {
+                    tab.addEventListener('click', function() {
+                        const tabId = this.getAttribute('data-tab');
+
+                        // Hide all tab contents and deactivate tabs
+                        tabContents.forEach(content => content.classList.remove('active'));
+                        tabs.forEach(tab => tab.classList.remove('active'));
+
+                        // Activate selected tab and content
+                        this.classList.add('active');
+                        document.getElementById(tabId + '-content').classList.add('active');
+                    });
+                });
+
+                // Copy button functionality
                 const copyButtons = document.querySelectorAll('.copy-btn');
                 copyButtons.forEach(button => {
                     button.addEventListener('click', function() {
@@ -1789,6 +2061,108 @@ def debug_dashboard():
                             this.innerText = originalText;
                         }, 1500);
                     });
+                });
+
+                // View button functionality
+                const viewButtons = document.querySelectorAll('.view-btn');
+                viewButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const url = this.getAttribute('data-url');
+                        iframe.src = url;
+                        iframe.style.display = 'block';
+
+                        // Switch to iframe tab
+                        tabs.forEach(tab => tab.classList.remove('active'));
+                        tabContents.forEach(content => content.classList.remove('active'));
+
+                        document.querySelector('[data-tab="iframe-tab"]').classList.add('active');
+                        document.getElementById('iframe-tab-content').classList.add('active');
+                    });
+                });
+
+                // Search functionality
+                const searchInput = document.getElementById('search-input');
+                const searchButton = document.getElementById('search-btn');
+                const searchResults = document.getElementById('search-results');
+                const searchResultsContent = document.getElementById('search-results-content');
+
+                function performSearch() {
+                    const query = searchInput.value.toLowerCase();
+
+                    if (!query) {
+                        searchResults.style.display = 'none';
+                        return;
+                    }
+
+                    // Filter endpoints
+                    const endpoints = """
+        + json.dumps(all_endpoints)
+        + """;
+                    const results = endpoints.filter(endpoint =>
+                        endpoint.name.toLowerCase().includes(query) ||
+                        endpoint.description.toLowerCase().includes(query) ||
+                        endpoint.path.toLowerCase().includes(query)
+                    );
+
+                    // Display results
+                    searchResultsContent.innerHTML = '';
+
+                    if (results.length === 0) {
+                        searchResultsContent.innerHTML = '<p>No results found.</p>';
+                    } else {
+                        results.forEach(endpoint => {
+                            const fullUrl = '"""
+        + base_url
+        + """' + endpoint.path;
+                            const endpointCard = document.createElement('div');
+                            endpointCard.className = 'endpoint-card';
+                            endpointCard.innerHTML = `
+                                <div class="endpoint-title">${endpoint.name}</div>
+                                <div class="endpoint-path">${endpoint.path}</div>
+                                <div class="endpoint-description">${endpoint.description}</div>
+                                <div class="action-buttons">
+                                    <a href="${fullUrl}" class="btn" target="_blank">Visit</a>
+                                    <button class="btn copy-btn" onclick="navigator.clipboard.writeText('${fullUrl}')">Copy URL</button>
+                                    <button class="btn view-btn" data-url="${fullUrl}">View Here</button>
+                                </div>
+                            `;
+                            searchResultsContent.appendChild(endpointCard);
+                        });
+
+                        // Reattach event listeners to new buttons
+                        searchResultsContent.querySelectorAll('.copy-btn').forEach(button => {
+                            button.addEventListener('click', function() {
+                                const originalText = this.innerText;
+                                this.innerText = 'Copied!';
+                                setTimeout(() => {
+                                    this.innerText = originalText;
+                                }, 1500);
+                            });
+                        });
+
+                        searchResultsContent.querySelectorAll('.view-btn').forEach(button => {
+                            button.addEventListener('click', function() {
+                                const url = this.getAttribute('data-url');
+                                iframe.src = url;
+                                iframe.style.display = 'block';
+
+                                tabs.forEach(tab => tab.classList.remove('active'));
+                                tabContents.forEach(content => content.classList.remove('active'));
+
+                                document.querySelector('[data-tab="iframe-tab"]').classList.add('active');
+                                document.getElementById('iframe-tab-content').classList.add('active');
+                            });
+                        });
+                    }
+
+                    searchResults.style.display = 'block';
+                }
+
+                searchButton.addEventListener('click', performSearch);
+                searchInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        performSearch();
+                    }
                 });
             });
         </script>
@@ -1803,6 +2177,109 @@ def debug_dashboard():
     return response
 
 
+@debug_bp.route("/performance")
+def performance_monitor():
+    """API Performance monitoring endpoint."""
+    try:
+        with _performance_lock:
+            # Calculate and add averages
+            metrics_copy = json.loads(json.dumps(_performance_metrics))
+            uptime = time.time() - metrics_copy["start_time"]
+
+            for endpoint, data in metrics_copy["endpoints"].items():
+                if data["count"] > 0:
+                    data["avg_time"] = round(data["total_time"] / data["count"] * 1000, 2)  # in ms
+                    data["min_time"] = round(data["min_time"] * 1000, 2) if data["min_time"] != float("inf") else 0
+                    data["max_time"] = round(data["max_time"] * 1000, 2)
+                    data["total_time"] = round(data["total_time"] * 1000, 2)
+
+                # Add error rate
+                total_requests = data["count"]
+                error_requests = sum(data["status_codes"].get(str(code), 0) for code in range(400, 600))
+                data["error_rate"] = round((error_requests / total_requests * 100), 2) if total_requests > 0 else 0
+
+        # Overall stats
+        total_requests = sum(data["count"] for data in metrics_copy["endpoints"].values())
+        total_errors = sum(
+            sum(data["status_codes"].get(str(code), 0) for code in range(400, 600))
+            for data in metrics_copy["endpoints"].values()
+        )
+
+        metrics_copy["summary"] = {
+            "uptime_seconds": round(uptime, 2),
+            "uptime_human": str(timedelta(seconds=int(uptime))),
+            "total_requests": total_requests,
+            "total_errors": total_errors,
+            "error_rate": round((total_errors / total_requests * 100), 2) if total_requests > 0 else 0,
+            "requests_per_minute": round(total_requests / (uptime / 60), 2) if uptime > 0 else 0,
+        }
+
+        # Sort endpoints by count (most used first)
+        metrics_copy["endpoints"] = dict(
+            sorted(metrics_copy["endpoints"].items(), key=lambda x: x[1]["count"], reverse=True)
+        )
+
+        return jsonify({"status": "success", "metrics": metrics_copy})
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Failed to get performance metrics", "error": str(e)}), 500
+
+
+@debug_bp.route("/requests")
+def request_inspector():
+    """Recent API requests inspector."""
+    try:
+        # Get query parameters
+        method = request.args.get("method", "").upper()
+        path_filter = request.args.get("path", "")
+        status_code = request.args.get("status", "")
+        limit = min(int(request.args.get("limit", 50)), _max_requests)
+
+        with _request_lock:
+            # Apply filters
+            filtered_requests = _request_history.copy()
+
+            if method:
+                filtered_requests = [r for r in filtered_requests if r.get("method") == method]
+
+            if path_filter:
+                filtered_requests = [r for r in filtered_requests if path_filter in r.get("path", "")]
+
+            if status_code:
+                filtered_requests = [r for r in filtered_requests if r.get("status_code") == int(status_code)]
+
+            # Sort by timestamp descending (newest first)
+            filtered_requests.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
+            # Apply limit
+            filtered_requests = filtered_requests[:limit]
+
+        # Calculate stats
+        status_counts = {}
+        method_counts = {}
+
+        for r in _request_history:
+            status = r.get("status_code")
+            if status:
+                status_counts[status] = status_counts.get(status, 0) + 1
+
+            method = r.get("method")
+            if method:
+                method_counts[method] = method_counts.get(method, 0) + 1
+
+        return jsonify(
+            {
+                "status": "success",
+                "request_count": len(_request_history),
+                "filtered_count": len(filtered_requests),
+                "status_counts": status_counts,
+                "method_counts": method_counts,
+                "requests": filtered_requests,
+            }
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Failed to get request history", "error": str(e)}), 500
+
+
 # Register debug blueprint with the app
 def init_app(app):
     """Initialize API blueprints with the Flask app."""
@@ -1815,5 +2292,102 @@ def init_app(app):
 
     # Register debug endpoints
     app.register_blueprint(debug_bp)
+
+    # Request tracking for debug purposes
+    @app.before_request
+    def track_request():
+        """Track API request for debugging purposes."""
+        # Skip tracking for static files and debug endpoints to avoid clutter
+        if request.path.startswith("/static/") or request.path.startswith("/debug/"):
+            return
+
+        g.start_time = time.time()
+        g.request_id = str(uuid.uuid4())
+
+        # Record basic request info
+        request_data = {
+            "id": g.request_id,
+            "timestamp": datetime.now().isoformat(),
+            "method": request.method,
+            "path": request.path,
+            "remote_addr": request.remote_addr,
+            "user_agent": request.headers.get("User-Agent", "Unknown"),
+            "content_type": request.content_type,
+        }
+
+        # Get request headers (excluding Authorization for security)
+        headers = {k: v for k, v in request.headers.items() if k.lower() != "authorization"}
+        request_data["headers"] = headers
+
+        # Get request params
+        if request.args:
+            request_data["query_params"] = dict(request.args)
+
+        # Get request body if it's JSON
+        if request.is_json and request.data:
+            try:
+                body = request.get_json(silent=True)
+                # Mask sensitive fields
+                if isinstance(body, dict):
+                    masked_body = body.copy()
+                    for sensitive in ["password", "token", "secret", "key", "auth"]:
+                        for k in list(masked_body.keys()):
+                            if sensitive in k.lower():
+                                masked_body[k] = "*****"
+                    request_data["body"] = masked_body
+            except:
+                request_data["body"] = "Error parsing JSON body"
+
+        # Add to history with thread safety
+        with _request_lock:
+            _request_history.append(request_data)
+            if len(_request_history) > _max_requests:
+                _request_history.pop(0)
+
+    @app.after_request
+    def track_response(response):
+        """Track API response for debugging purposes."""
+        # Skip tracking for static files and debug endpoints
+        if request.path.startswith("/static/") or request.path.startswith("/debug/"):
+            return response
+
+        # Calculate response time
+        if hasattr(g, "start_time"):
+            duration = time.time() - g.start_time
+
+            # Update the last request with response info
+            with _request_lock:
+                for req in reversed(_request_history):
+                    if req.get("id") == getattr(g, "request_id", None):
+                        req["duration"] = round(duration * 1000, 2)  # in ms
+                        req["status_code"] = response.status_code
+                        req["response_size"] = len(response.get_data())
+                        req["content_type"] = response.content_type
+                        break
+
+            # Update performance metrics
+            endpoint = request.endpoint if request.endpoint else request.path
+            with _performance_lock:
+                if endpoint not in _performance_metrics["endpoints"]:
+                    _performance_metrics["endpoints"][endpoint] = {
+                        "count": 0,
+                        "total_time": 0,
+                        "min_time": float("inf"),
+                        "max_time": 0,
+                        "status_codes": {},
+                        "last_called": None,
+                    }
+
+                metrics = _performance_metrics["endpoints"][endpoint]
+                metrics["count"] += 1
+                metrics["total_time"] += duration
+                metrics["min_time"] = min(metrics["min_time"], duration)
+                metrics["max_time"] = max(metrics["max_time"], duration)
+                metrics["last_called"] = datetime.now().isoformat()
+
+                status = str(response.status_code)
+                metrics["status_codes"][status] = metrics["status_codes"].get(status, 0) + 1
+
+        return response
 
     return app
