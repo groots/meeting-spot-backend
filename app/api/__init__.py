@@ -722,6 +722,137 @@ def fix_production_tables_options():
     return response
 
 
+@debug_bp.route("/check-database")
+def check_database():
+    """Comprehensive check of database status"""
+    try:
+        response_data = {
+            "status": "running checks",
+            "database_info": {},
+            "tables": {},
+            "schema_issues": [],
+            "last_errors": [],
+            "migrations": {},
+        }
+
+        # Basic connection check
+        try:
+            db.session.execute(text("SELECT 1"))
+            response_data["database_info"]["connection"] = "OK"
+        except Exception as e:
+            response_data["database_info"]["connection"] = "FAILED"
+            response_data["database_info"]["connection_error"] = str(e)
+            return jsonify(response_data), 500
+
+        # Get database info
+        try:
+            result = db.session.execute(text("SELECT version()")).scalar()
+            response_data["database_info"]["version"] = result
+        except Exception as e:
+            response_data["database_info"]["version_error"] = str(e)
+
+        # Get current schema name
+        try:
+            result = db.session.execute(text("SELECT current_schema()")).scalar()
+            response_data["database_info"]["current_schema"] = result
+        except Exception as e:
+            response_data["database_info"]["schema_error"] = str(e)
+
+        # List all schemas
+        try:
+            results = db.session.execute(text("SELECT schema_name FROM information_schema.schemata")).fetchall()
+            response_data["database_info"]["schemas"] = [r[0] for r in results]
+        except Exception as e:
+            response_data["database_info"]["schemas_error"] = str(e)
+
+        # Get table list
+        inspector = inspect(db.engine)
+        tables = inspector.get_table_names()
+        response_data["tables"]["list"] = tables
+
+        # Get data about crucial tables
+        crucial_tables = ["users", "password_resets", "contacts", "meeting_requests", "subscriptions"]
+        for table in crucial_tables:
+            if table in tables:
+                try:
+                    # Get column info
+                    columns = inspector.get_columns(table)
+                    col_info = [
+                        {"name": col["name"], "type": str(col["type"]), "nullable": col["nullable"]} for col in columns
+                    ]
+
+                    # Get foreign keys
+                    fks = inspector.get_foreign_keys(table)
+
+                    # Get row count
+                    count = db.session.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+
+                    response_data["tables"][table] = {
+                        "exists": True,
+                        "columns": col_info,
+                        "foreign_keys": fks,
+                        "row_count": count,
+                    }
+                except Exception as e:
+                    response_data["tables"][table] = {"exists": True, "error": str(e)}
+            else:
+                response_data["tables"][table] = {"exists": False}
+                response_data["schema_issues"].append(f"Missing table: {table}")
+
+        # Check migrations
+        try:
+            # Check alembic_version table
+            if "alembic_version" in tables:
+                version = db.session.execute(text("SELECT version_num FROM alembic_version")).scalar()
+                response_data["migrations"]["current_version"] = version
+
+                # Get all migration scripts from the filesystem
+                # This won't work in production, but will work in dev
+                try:
+                    migrations_dir = os.path.join(
+                        os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "migrations", "versions"
+                    )
+                    migration_files = os.listdir(migrations_dir) if os.path.exists(migrations_dir) else []
+                    response_data["migrations"]["available_files"] = migration_files
+                except Exception as e:
+                    response_data["migrations"]["files_error"] = str(e)
+            else:
+                response_data["migrations"]["error"] = "alembic_version table does not exist"
+                response_data["schema_issues"].append("Missing alembic_version table")
+        except Exception as e:
+            response_data["migrations"]["error"] = str(e)
+
+        # Check recent application logs
+        try:
+            # Only works if running in a container or VM where logs are accessible
+            log_path = os.environ.get("APP_LOG_PATH", "/var/log/app.log")
+            if os.path.exists(log_path):
+                with open(log_path, "r") as f:
+                    # Get last 20 lines with ERROR or CRITICAL
+                    error_lines = []
+                    for line in f.readlines()[-1000:]:
+                        if "ERROR" in line or "CRITICAL" in line:
+                            error_lines.append(line.strip())
+                    response_data["last_errors"] = error_lines[-20:] if error_lines else []
+        except Exception as e:
+            response_data["log_error"] = str(e)
+
+        # Return response
+        response = jsonify(response_data)
+
+        # Add CORS headers
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+
+        return response
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Failed to check database", "error": str(e)}), 500
+
+
 # Register debug blueprint with the app
 def init_app(app):
     """Initialize API blueprints with the Flask app."""
