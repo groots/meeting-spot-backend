@@ -1029,6 +1029,198 @@ def sql_fix():
         return jsonify({"status": "error", "message": "Failed to apply SQL fixes", "error": str(e)}), 500
 
 
+@debug_bp.route("/emergency-fix")
+def emergency_fix():
+    """Last-resort fix for critical database issues with detailed error logging."""
+    results = {"status": "success", "steps": [], "details": {}}
+
+    try:
+        # Step 1: Get database connection info
+        try:
+            conn_info = db.engine.url
+            results["details"]["connection"] = str(conn_info).replace(
+                conn_info.password, "*****" if conn_info.password else ""
+            )
+            results["steps"].append({"step": "check_connection", "status": "success"})
+        except Exception as e:
+            results["steps"].append({"step": "check_connection", "status": "error", "message": str(e)})
+
+        # Step 2: Check if we can execute basic SQL
+        try:
+            test_sql = db.session.execute(text("SELECT 1 as test")).scalar()
+            results["details"]["basic_sql"] = test_sql
+            results["steps"].append({"step": "basic_sql", "status": "success"})
+        except Exception as e:
+            results["steps"].append({"step": "basic_sql", "status": "error", "message": str(e)})
+
+        # Step 3: Get current user role & permissions
+        try:
+            role_info = db.session.execute(text("SELECT current_user, current_database(), session_user")).fetchone()
+            results["details"]["current_user"] = role_info[0]
+            results["details"]["current_database"] = role_info[1]
+            results["details"]["session_user"] = role_info[2]
+            results["steps"].append({"step": "check_role", "status": "success"})
+        except Exception as e:
+            results["steps"].append({"step": "check_role", "status": "error", "message": str(e)})
+
+        # Step 4: Check users table
+        try:
+            users_info = db.session.execute(
+                text(
+                    """
+                SELECT column_name, data_type, character_maximum_length
+                FROM information_schema.columns
+                WHERE table_name = 'users' AND column_name = 'password_hash'
+            """
+                )
+            ).fetchone()
+
+            if users_info:
+                results["details"]["password_hash_info"] = {"data_type": users_info[1], "max_length": users_info[2]}
+
+                # If password_hash column is too small, try to fix it
+                if users_info[2] < 256:
+                    try:
+                        # First try with ALTER command
+                        db.session.execute(text("ALTER TABLE users ALTER COLUMN password_hash TYPE varchar(256)"))
+                        db.session.commit()
+                        results["steps"].append({"step": "fix_password_hash", "status": "success", "method": "alter"})
+                    except Exception as e1:
+                        # If ALTER fails, try with a function that creates a new column
+                        try:
+                            # Roll back the failed transaction
+                            db.session.rollback()
+
+                            # Create a function to handle the column size increase
+                            db.session.execute(
+                                text(
+                                    """
+                                CREATE OR REPLACE FUNCTION increase_password_hash_length() RETURNS void AS $$
+                                BEGIN
+                                    -- Add a new column
+                                    ALTER TABLE users ADD COLUMN password_hash_new VARCHAR(256);
+
+                                    -- Copy data
+                                    UPDATE users SET password_hash_new = password_hash;
+
+                                    -- Drop old column
+                                    ALTER TABLE users DROP COLUMN password_hash;
+
+                                    -- Rename new column
+                                    ALTER TABLE users RENAME COLUMN password_hash_new TO password_hash;
+                                END;
+                                $$ LANGUAGE plpgsql;
+                            """
+                                )
+                            )
+
+                            # Execute the function
+                            db.session.execute(text("SELECT increase_password_hash_length()"))
+                            db.session.commit()
+
+                            # Drop the function
+                            db.session.execute(text("DROP FUNCTION increase_password_hash_length()"))
+                            db.session.commit()
+
+                            results["steps"].append(
+                                {"step": "fix_password_hash", "status": "success", "method": "function"}
+                            )
+                        except Exception as e2:
+                            db.session.rollback()
+                            results["steps"].append(
+                                {
+                                    "step": "fix_password_hash",
+                                    "status": "error",
+                                    "message": f"ALTER error: {str(e1)}, Function error: {str(e2)}",
+                                }
+                            )
+            else:
+                results["steps"].append(
+                    {"step": "check_users_table", "status": "error", "message": "password_hash column not found"}
+                )
+        except Exception as e:
+            results["steps"].append({"step": "check_users_table", "status": "error", "message": str(e)})
+
+        # Step 5: Create password_resets table if missing
+        try:
+            tables = db.session.execute(
+                text(
+                    """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'password_resets'
+            """
+                )
+            ).fetchone()
+
+            if not tables:
+                try:
+                    db.session.execute(
+                        text(
+                            """
+                        CREATE TABLE IF NOT EXISTS password_resets (
+                            id UUID PRIMARY KEY,
+                            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            token VARCHAR(255) UNIQUE NOT NULL,
+                            created_at TIMESTAMP DEFAULT NOW(),
+                            expires_at TIMESTAMP NOT NULL,
+                            used BOOLEAN DEFAULT FALSE NOT NULL
+                        )
+                    """
+                        )
+                    )
+                    db.session.commit()
+                    results["steps"].append({"step": "create_password_resets", "status": "success"})
+                except Exception as e:
+                    db.session.rollback()
+                    results["steps"].append({"step": "create_password_resets", "status": "error", "message": str(e)})
+            else:
+                results["steps"].append(
+                    {"step": "check_password_resets", "status": "success", "message": "Table exists"}
+                )
+        except Exception as e:
+            results["steps"].append({"step": "check_password_resets", "status": "error", "message": str(e)})
+
+        # Step 6: Check final schema state
+        try:
+            # Get updated password_hash info
+            updated_info = db.session.execute(
+                text(
+                    """
+                SELECT column_name, data_type, character_maximum_length
+                FROM information_schema.columns
+                WHERE table_name = 'users' AND column_name = 'password_hash'
+            """
+                )
+            ).fetchone()
+
+            if updated_info:
+                results["details"]["updated_password_hash"] = {
+                    "data_type": updated_info[1],
+                    "max_length": updated_info[2],
+                }
+
+            # Check all tables
+            tables = db.session.execute(
+                text(
+                    """
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = 'public'
+            """
+                )
+            ).fetchall()
+
+            results["details"]["tables"] = [t[0] for t in tables]
+            results["steps"].append({"step": "final_check", "status": "success"})
+        except Exception as e:
+            results["steps"].append({"step": "final_check", "status": "error", "message": str(e)})
+
+        return jsonify(results)
+    except Exception as e:
+        results["status"] = "error"
+        results["error"] = str(e)
+        return jsonify(results)
+
+
 # Register debug blueprint with the app
 def init_app(app):
     """Initialize API blueprints with the Flask app."""
