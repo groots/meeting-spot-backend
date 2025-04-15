@@ -482,9 +482,42 @@ def fix_production_tables():
         tables_before = inspector.get_table_names()
         current_app.logger.info(f"Tables before: {tables_before}")
 
+        # Check if users table exists
+        if "users" not in tables_before:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Critical error: 'users' table not found in database",
+                        "error": "The 'users' table must exist before other tables can be created. Please ensure the initial migration that creates the users table has been applied.",
+                        "tables_found": tables_before,
+                    }
+                ),
+                500,
+            )
+
         # Create metadata for new tables
-        metadata = MetaData()
+        metadata = MetaData(schema=None)  # Explicitly use default schema
         engine = db.engine
+
+        # First, check the structure of the users table to get the correct column types
+        users_columns = inspector.get_columns("users")
+        users_column_names = [col["name"] for col in users_columns]
+        users_pk = inspector.get_pk_constraint("users")
+        users_pk_cols = users_pk.get("constrained_columns", [])
+
+        current_app.logger.info(f"Users table columns: {users_column_names}")
+        current_app.logger.info(f"Users primary key: {users_pk_cols}")
+
+        # Is 'id' the primary key?
+        if "id" not in users_pk_cols:
+            current_app.logger.warning(
+                f"Warning: 'id' is not the primary key in users table. Primary key is: {users_pk_cols}"
+            )
+
+        # Check if the id column is a UUID
+        id_column_type = next((col["type"] for col in users_columns if col["name"] == "id"), None)
+        current_app.logger.info(f"Users table 'id' column type: {id_column_type}")
 
         # Define tables that need to be created
         tables_to_create = []
@@ -502,7 +535,7 @@ def fix_production_tables():
                 Column("phone", String(50), nullable=True),
                 Column("company", String(255), nullable=True),
                 Column("notes", Text, nullable=True),
-                Column("created_at", DateTime(timezone=True), nullable=False),
+                Column("created_at", DateTime(timezone=True), nullable=False, server_default=db.func.now()),
                 Column("updated_at", DateTime(timezone=True), nullable=True),
             )
             tables_to_create.append(contacts)
@@ -516,7 +549,7 @@ def fix_production_tables():
                 Column("id", UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
                 Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
                 Column("token", String(255), unique=True, nullable=False),
-                Column("created_at", DateTime, nullable=False),
+                Column("created_at", DateTime, nullable=False, server_default=db.func.now()),
                 Column("expires_at", DateTime, nullable=False),
                 Column("used", Boolean, default=False, nullable=False),
             )
@@ -537,7 +570,7 @@ def fix_production_tables():
                 Column(
                     "suggested_by_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
                 ),
-                Column("created_at", DateTime(timezone=True), nullable=False),
+                Column("created_at", DateTime(timezone=True), nullable=False, server_default=db.func.now()),
                 Column("updated_at", DateTime(timezone=True), nullable=True),
             )
             tables_to_create.append(places)
@@ -557,55 +590,70 @@ def fix_production_tables():
                 Column("current_period_start", DateTime(timezone=True), nullable=True),
                 Column("current_period_end", DateTime(timezone=True), nullable=True),
                 Column("cancel_at_period_end", Boolean, default=False),
-                Column("created_at", DateTime(timezone=True), nullable=False),
-                Column("updated_at", DateTime(timezone=True), nullable=False),
+                Column("created_at", DateTime(timezone=True), nullable=False, server_default=db.func.now()),
+                Column("updated_at", DateTime(timezone=True), nullable=False, server_default=db.func.now()),
             )
             tables_to_create.append(subscriptions)
 
-        # 5. Now that contacts exists, create meeting_contacts table
-        if "contacts" in tables_before or "contacts" in [t.name for t in tables_to_create]:
-            if "meeting_contacts" not in tables_before:
-                current_app.logger.info("Creating meeting_contacts table")
-                meeting_contacts = Table(
-                    "meeting_contacts",
-                    metadata,
-                    Column(
-                        "meeting_request_id",
-                        UUID(as_uuid=True),
-                        ForeignKey("meeting_requests.request_id", ondelete="CASCADE"),
-                        primary_key=True,
-                    ),
-                    Column(
-                        "contact_id",
-                        UUID(as_uuid=True),
-                        ForeignKey("contacts.id", ondelete="CASCADE"),
-                        primary_key=True,
-                    ),
-                    Column("created_at", DateTime(timezone=True), nullable=False),
-                )
-                tables_to_create.append(meeting_contacts)
+        # 5. Now that we know contacts exists, create meeting_contacts table
+        if "meeting_requests" in tables_before:
+            if "contacts" in tables_before or "contacts" in [t.name for t in tables_to_create]:
+                if "meeting_contacts" not in tables_before:
+                    current_app.logger.info("Creating meeting_contacts table")
+                    meeting_contacts = Table(
+                        "meeting_contacts",
+                        metadata,
+                        Column(
+                            "meeting_request_id",
+                            UUID(as_uuid=True),
+                            ForeignKey("meeting_requests.request_id", ondelete="CASCADE"),
+                            primary_key=True,
+                        ),
+                        Column(
+                            "contact_id",
+                            UUID(as_uuid=True),
+                            ForeignKey("contacts.id", ondelete="CASCADE"),
+                            primary_key=True,
+                        ),
+                        Column("created_at", DateTime(timezone=True), nullable=False, server_default=db.func.now()),
+                    )
+                    tables_to_create.append(meeting_contacts)
+        else:
+            current_app.logger.warning(
+                "Cannot create meeting_contacts table because meeting_requests table does not exist"
+            )
 
         # 6. Create meeting_request_suggested_places table if needed
-        if "places" in tables_before or "places" in [t.name for t in tables_to_create]:
-            if "meeting_request_suggested_places" not in tables_before:
-                current_app.logger.info("Creating meeting_request_suggested_places table")
-                meeting_request_suggested_places = Table(
-                    "meeting_request_suggested_places",
-                    metadata,
-                    Column(
-                        "meeting_request_id",
-                        UUID(as_uuid=True),
-                        ForeignKey("meeting_requests.request_id", ondelete="CASCADE"),
-                    ),
-                    Column("place_id", UUID(as_uuid=True), ForeignKey("places.id", ondelete="CASCADE")),
-                    Column("created_at", DateTime, server_default=db.func.now()),
-                )
-                tables_to_create.append(meeting_request_suggested_places)
+        if "meeting_requests" in tables_before:
+            if "places" in tables_before or "places" in [t.name for t in tables_to_create]:
+                if "meeting_request_suggested_places" not in tables_before:
+                    current_app.logger.info("Creating meeting_request_suggested_places table")
+                    meeting_request_suggested_places = Table(
+                        "meeting_request_suggested_places",
+                        metadata,
+                        Column(
+                            "meeting_request_id",
+                            UUID(as_uuid=True),
+                            ForeignKey("meeting_requests.request_id", ondelete="CASCADE"),
+                        ),
+                        Column("place_id", UUID(as_uuid=True), ForeignKey("places.id", ondelete="CASCADE")),
+                        Column("created_at", DateTime, server_default=db.func.now()),
+                    )
+                    tables_to_create.append(meeting_request_suggested_places)
+        else:
+            current_app.logger.warning(
+                "Cannot create meeting_request_suggested_places table because meeting_requests table does not exist"
+            )
 
         # Create the tables in the order they were added
         for table in tables_to_create:
             current_app.logger.info(f"Creating table: {table.name}")
-            table.create(engine, checkfirst=True)
+            try:
+                table.create(engine, checkfirst=True)
+                current_app.logger.info(f"Successfully created table: {table.name}")
+            except Exception as e:
+                current_app.logger.error(f"Error creating table {table.name}: {str(e)}")
+                # Continue with other tables even if one fails
 
         # Get updated table status
         inspector = inspect(db.engine)
@@ -621,12 +669,13 @@ def fix_production_tables():
                 "after": tables_after,
                 "new_tables": [t for t in tables_after if t not in tables_before],
             },
+            "users_table_info": {"columns": users_column_names, "primary_key": users_pk_cols},
         }
 
         current_app.logger.info(f"Tables fixed successfully: {response_data['tables_created']}")
 
         # Update alembic_version table to mark these migrations as applied
-        if tables_to_create:
+        if tables_to_create and len(response_data["new_tables"]) > 0:
             try:
                 with engine.connect() as conn:
                     # Use the latest migration revision as the current version
