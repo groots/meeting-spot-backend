@@ -62,6 +62,10 @@ def token_required(func):
 
             return func(*args, current_user=current_user, **kwargs)
         except Exception as e:
+            # Pass through specific abort exceptions (like 402 Payment Required)
+            if hasattr(e, "code") and 402 <= e.code < 600:
+                raise
+            # Handle authentication errors with 401
             abort(401, f"Authentication error: {str(e)}")
 
     return wrapped

@@ -237,8 +237,12 @@ class CreateContactFromMeeting(Resource):
     @token_required
     def post(self, meeting_id, current_user):
         """Create a contact from a meeting participant."""
+        print(f"Processing request for meeting ID: {meeting_id}")
+        print(f"Current user ID: {current_user.id}")
+
         # Check if contacts management is a premium feature
         if is_premium_feature("contacts") and not current_user.is_premium():
+            print("User doesn't have premium subscription")
             abort(
                 402,
                 "This feature requires a premium subscription. Please upgrade your plan to use contacts management.",
@@ -246,19 +250,26 @@ class CreateContactFromMeeting(Resource):
 
         try:
             meeting_uuid = uuid.UUID(meeting_id)
-        except ValueError:
+            print(f"Parsed meeting UUID: {meeting_uuid}")
+        except ValueError as e:
+            print(f"Invalid meeting ID format: {e}")
             abort(400, "Invalid meeting ID format")
 
         # Find the meeting request
-        meeting = MeetingRequest.query.filter_by(id=meeting_uuid).first_or_404(
+        meeting = MeetingRequest.query.filter_by(request_id=meeting_uuid).first_or_404(
             description=f"Meeting request {meeting_id} not found"
         )
+        print(f"Found meeting: {meeting}")
+        print(f"Meeting user_a_id: {meeting.user_a_id}")
+        print(f"Meeting user_b_email: {meeting.user_b_email}")
 
         # Check if the user is authorized to access this meeting
         if meeting.user_a_id != current_user.id:
+            print(f"Authorization failed: {meeting.user_a_id} != {current_user.id}")
             abort(403, "You are not authorized to access this meeting request")
 
         data = request.json
+        print(f"Contact data: {data}")
 
         # Create the contact
         contact = Contact(

@@ -172,6 +172,8 @@ def test_meeting_request(app_context, test_user, db_session) -> None:
         location_type="cafe",
         user_b_contact_type=ContactType.EMAIL,
         user_b_contact="test@example.com",  # Use the property to handle encryption
+        user_b_email="test@example.com",  # Add this field for contact creation
+        location_a={"address": "123 Test St, San Francisco, CA", "latitude": 37.7749, "longitude": -122.4194},
         token_b=uuid.uuid4().hex,
         status=MeetingRequestStatus.PENDING_B_ADDRESS,
         created_at=datetime.now(timezone.utc),
