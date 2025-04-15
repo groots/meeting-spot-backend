@@ -139,7 +139,7 @@ def client(app) -> None:
 
 
 @pytest.fixture
-def test_user(app_context, _session) -> None:
+def test_user(app_context, db_session) -> None:
     """Create a test user."""
     test_id = uuid.uuid4()
     user = User(
@@ -149,8 +149,8 @@ def test_user(app_context, _session) -> None:
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
-    _session.add(user)
-    _session.commit()
+    db_session.add(user)
+    db_session.commit()
 
     # Verify the user was created correctly
     queried_user = User.query.get(test_id)
@@ -161,7 +161,7 @@ def test_user(app_context, _session) -> None:
 
 
 @pytest.fixture
-def test_meeting_request(app_context, test_user, _session) -> None:
+def test_meeting_request(app_context, test_user, db_session) -> None:
     """Create a test meeting request."""
     request_id = uuid.uuid4()
     request = MeetingRequest(
@@ -178,8 +178,8 @@ def test_meeting_request(app_context, test_user, _session) -> None:
         updated_at=datetime.now(timezone.utc),
         expires_at=datetime.now(timezone.utc) + timedelta(days=7),
     )
-    _session.add(request)
-    _session.commit()
+    db_session.add(request)
+    db_session.commit()
 
     # Verify the request was created correctly
     queried_request = MeetingRequest.query.get(request_id)
@@ -223,3 +223,27 @@ def mock_process_meeting_request():
 
         mock_process.side_effect = side_effect
         yield mock_process
+
+
+@pytest.fixture
+def db_session(app):
+    """Create a separate testing session per function.
+    This allows us to commit data without affecting other tests.
+    """
+    with app.app_context():
+        # Connect to the database and create a new transaction
+        connection = db.engine.connect()
+        transaction = connection.begin()
+
+        # Bind a new session to the transaction
+        # options={"bind": connection, "binds": {}}
+        session = db.session.registry()
+        db.session.configure(bind=connection)
+
+        # Return the session
+        yield db.session
+
+        # Clean up the session
+        db.session.remove()
+        transaction.rollback()
+        connection.close()

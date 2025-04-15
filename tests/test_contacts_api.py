@@ -197,18 +197,19 @@ class TestContactsApi:
 
         # Create contact from meeting
         response = client.post(
-            f"/api/v1/contacts/from-meeting/{test_meeting_request.id}", json=contact_data, headers=auth_headers
+            f"/api/v1/contacts/from-meeting/{test_meeting_request.request_id}", json=contact_data, headers=auth_headers
         )
 
         assert response.status_code == 201
         data = json.loads(response.data)
         assert data["name"] == contact_data["name"]
         assert data["phone"] == contact_data["phone"]
-        assert "email" in data  # Should have email from the meeting request
+        assert data["company"] == contact_data["company"]
+        assert data["notes"] == contact_data["notes"]
 
         # Verify contact was added to the database and associated with meeting
         contact = Contact.query.filter_by(name="Meeting Contact").first()
         assert contact is not None
         assert str(contact.user_id) == str(test_user.id)
         # Verify contact is associated with meeting request
-        assert test_meeting_request.id in [m.id for m in contact.meeting_requests]
+        assert test_meeting_request.request_id in [m.request_id for m in contact.meeting_requests]

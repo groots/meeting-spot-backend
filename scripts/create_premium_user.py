@@ -1,70 +1,62 @@
 #!/usr/bin/env python3
-
+import os
+import sys
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
-from sqlalchemy import text
+# Add the parent directory to the path so we can import the app
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app import create_app, db
+from app.models.subscription import Subscription
 from app.models.user import User
 
 
 def create_premium_user():
-    """Create or update a premium user for testing purposes"""
-    app = create_app()
+    """
+    Create or update a premium user for testing purposes
+    """
+    app = create_app("development")
     with app.app_context():
+        # Check if the premium user already exists
         email = "premium@example.com"
-        password = "premium123"
+        existing_user = User.query.filter_by(email=email).first()
 
-        # First see if we can get a user object without querying all fields
-        connection = db.session.connection()
-        result = connection.execute(text(f"SELECT id FROM users WHERE email = '{email}'")).fetchone()
-
-        if not result:
-            # Create new user with direct SQL to avoid ORM issues
-            user_id = uuid.uuid4()
-            now = datetime.now(timezone.utc).isoformat()
-            connection.execute(
-                text(
-                    f"""
-                INSERT INTO users
-                (id, email, created_at, updated_at, subscription_plan, subscription_status, subscription_end_date)
-                VALUES
-                ('{user_id}', '{email}', '{now}', '{now}', 'premium', 'active', '{(datetime.now(timezone.utc) + timedelta(days=365)).isoformat()}')
-                """
-                )
-            )
-
-            # Set password with a separate query
-            user = User.query.get(user_id)
-            user.set_password(password)
-            db.session.commit()
-
-            print(f"Premium user created: {email}, ID: {user_id}")
+        if existing_user:
+            print(f"Premium user already exists with email: {email}")
+            user = existing_user
         else:
-            # Update existing user
-            user_id = result[0]
-            end_date = (datetime.now(timezone.utc) + timedelta(days=365)).isoformat()
-            connection.execute(
-                text(
-                    f"""
-                UPDATE users
-                SET subscription_plan = 'premium',
-                    subscription_status = 'active',
-                    subscription_end_date = '{end_date}'
-                WHERE id = '{user_id}'
-                """
-                )
-            )
-
-            # Set password with a separate query
-            user = User.query.get(user_id)
-            user.set_password(password)
+            # Create a new premium user
+            user = User(email=email)
+            user.set_password("premium123")
+            db.session.add(user)
             db.session.commit()
+            print(f"Created new premium user with email: {email}")
+            print(f"Login credentials: {email} / premium123")
 
-            print(f"Premium user updated: {email}, ID: {user_id}")
+        # Check if user already has an active subscription
+        existing_subscription = Subscription.query.filter_by(user_id=user.id, status="active").first()
 
-        print(f"Login credentials: {email} / {password}")
+        if existing_subscription:
+            print(f"User already has an active {existing_subscription.plan_id} subscription")
+        else:
+            # Create a new subscription for the user
+            subscription = Subscription(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                plan_id="premium",
+                status="active",
+                current_period_start=datetime.utcnow(),
+                current_period_end=datetime.utcnow() + timedelta(days=365),  # 1 year subscription
+                stripe_customer_id="manual_customer",
+                stripe_subscription_id="manual_subscription",
+                cancel_at_period_end=False,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            db.session.add(subscription)
+            db.session.commit()
+            print(f"Created new premium subscription for user: {email}")
 
 
 if __name__ == "__main__":

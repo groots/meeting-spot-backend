@@ -172,11 +172,6 @@ class SubscriptionList(Resource):
             cancel_at_period_end=False,
         )
 
-        # Update user's subscription info
-        current_user.subscription_plan = data["plan_id"]
-        current_user.subscription_status = "active"
-        current_user.subscription_end_date = None
-
         db.session.add(new_subscription)
         db.session.commit()
 
@@ -228,10 +223,6 @@ class SubscriptionResource(Resource):
             subscription.status = "canceled"
             subscription.cancel_at_period_end = True
             subscription.updated_at = datetime.now(timezone.utc)
-
-            # Update user's subscription status
-            current_user.subscription_status = "canceled"
-
             db.session.commit()
 
         return subscription.to_dict()

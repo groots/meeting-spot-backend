@@ -100,13 +100,6 @@ def create_subscription_record(user_id, stripe_subscription, stripe_customer_id)
         cancel_at_period_end=stripe_subscription.cancel_at_period_end,
     )
 
-    # Update the user's subscription info
-    user = User.query.get(user_id)
-    if user:
-        user.subscription_plan = subscription.plan_id
-        user.subscription_status = subscription.status
-        user.subscription_end_date = subscription.current_period_end
-
     db.session.add(subscription)
     db.session.commit()
 
@@ -132,11 +125,6 @@ def cancel_subscription(subscription_id):
         subscription.cancel_at_period_end = True
         subscription.status = "active"  # Stripe keeps it active until period end
         subscription.updated_at = datetime.now(timezone.utc)
-
-        # Update user
-        user = User.query.get(subscription.user_id)
-        if user:
-            user.subscription_status = "canceled"
 
         db.session.commit()
         return True, "Subscription will be canceled at the end of the billing period"
@@ -184,13 +172,6 @@ def handle_subscription_updated(subscription):
     local_subscription.current_period_end = datetime.fromtimestamp(subscription.current_period_end, tz=timezone.utc)
     local_subscription.cancel_at_period_end = subscription.cancel_at_period_end
     local_subscription.updated_at = datetime.now(timezone.utc)
-
-    # Update user
-    user = User.query.get(local_subscription.user_id)
-    if user:
-        user.subscription_plan = local_subscription.plan_id
-        user.subscription_status = subscription.status
-        user.subscription_end_date = local_subscription.current_period_end
 
     db.session.commit()
 

@@ -33,13 +33,13 @@ class MeetingRequest(db.Model):
     request_id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
 
     # Foreign Key to User who initiated the request (can be null for anonymous)
-    user_a_id = Column(UUIDType(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_a_id = Column(UUIDType(), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     user_a = relationship("User", back_populates="requests_initiated")
 
     # User B contact info
     user_b_contact_type = Column(db.Enum(ContactType), nullable=False)
     user_b_contact_encrypted = Column(db.String(255), nullable=False)  # Store encrypted email/phone
-    user_b_email = Column(db.String(120), nullable=False)
+    user_b_email = Column(db.String(120), nullable=True)
     user_b_name = Column(db.String(255), nullable=True)  # New field for user B's name
 
     # Request details
@@ -187,7 +187,12 @@ class MeetingRequest(db.Model):
         """Check if the meeting request has expired."""
         if not self.expires_at:
             return False
-        return datetime.now(timezone.utc) > self.expires_at
+
+        # Convert both to naive UTC datetimes for comparison
+        current_time = datetime.utcnow()
+        expires_at_naive = self.expires_at.replace(tzinfo=None) if self.expires_at.tzinfo else self.expires_at
+
+        return current_time > expires_at_naive
 
     @staticmethod
     def create_from_dict(data: Dict[str, Any], user_id: uuid.UUID) -> "MeetingRequest":
