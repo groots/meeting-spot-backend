@@ -1567,6 +1567,242 @@ def debug_gcp_logs():
         return jsonify({"status": "error", "message": "Failed to fetch GCP logs", "error": str(e)}), 500
 
 
+@debug_bp.route("/dashboard")
+def debug_dashboard():
+    """Render a simple dashboard with links to all debug endpoints."""
+    base_url = request.url_root.rstrip("/") + "/debug"
+
+    # List of all debug endpoints with descriptions
+    endpoints = [
+        {
+            "path": "/health",
+            "name": "Health Check",
+            "description": "Comprehensive health check of the application, database and system resources.",
+        },
+        {
+            "path": "/db-check",
+            "name": "Database Check",
+            "description": "Check database connectivity and configuration.",
+        },
+        {"path": "/check-tables", "name": "Check Tables", "description": "Check if specific database tables exist."},
+        {"path": "/apply-migrations", "name": "Apply Migrations", "description": "Apply missing database migrations."},
+        {"path": "/fix-schema", "name": "Fix Schema", "description": "Fix database schema by adding missing columns."},
+        {
+            "path": "/fix-production-tables",
+            "name": "Fix Production Tables",
+            "description": "Fix production database tables by creating them in the correct order.",
+        },
+        {"path": "/check-database", "name": "Check Database", "description": "Comprehensive check of database status."},
+        {
+            "path": "/sql-fix",
+            "name": "SQL Fix",
+            "description": "Apply direct SQL fixes to fix critical database issues.",
+        },
+        {
+            "path": "/emergency-fix",
+            "name": "Emergency Fix",
+            "description": "Last-resort fix for critical database issues.",
+        },
+        {
+            "path": "/debug-reset-password",
+            "name": "Debug Reset Password",
+            "description": "Debug the reset-password endpoint flow.",
+        },
+        {"path": "/debug-register", "name": "Debug Register", "description": "Debug the register endpoint flow."},
+        {
+            "path": "/debug-gcp-logs",
+            "name": "Debug GCP Logs",
+            "description": "Fetch recent logs from Google Cloud Logging.",
+        },
+        {"path": "/test-email", "name": "Test Email", "description": "Send a test email."},
+        {
+            "path": "/dashboard",
+            "name": "Debug Dashboard",
+            "description": "This page - dashboard of all debug endpoints.",
+        },
+    ]
+
+    # Generate HTML page
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Debug Dashboard - Find a Meeting Spot</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                max-width: 1000px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+            h1 {
+                color: #2c3e50;
+                border-bottom: 2px solid #3498db;
+                padding-bottom: 10px;
+            }
+            h2 {
+                color: #3498db;
+            }
+            .endpoints {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                gap: 20px;
+                margin: 20px 0;
+            }
+            .endpoint-card {
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                padding: 15px;
+                transition: transform 0.2s, box-shadow 0.2s;
+                background-color: #f8f9fa;
+            }
+            .endpoint-card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            }
+            .endpoint-title {
+                font-weight: bold;
+                color: #2980b9;
+                margin-bottom: 5px;
+            }
+            .endpoint-path {
+                color: #16a085;
+                font-family: monospace;
+                padding: 3px 6px;
+                background-color: #e8f4f8;
+                border-radius: 4px;
+                display: inline-block;
+                margin-bottom: 8px;
+            }
+            .endpoint-description {
+                color: #555;
+                font-size: 0.9em;
+            }
+            .action-buttons {
+                margin-top: 10px;
+                display: flex;
+                gap: 10px;
+            }
+            .btn {
+                display: inline-block;
+                padding: 8px 15px;
+                background-color: #3498db;
+                color: white;
+                text-decoration: none;
+                border-radius: 4px;
+                font-size: 0.9em;
+                transition: background-color 0.2s;
+            }
+            .btn:hover {
+                background-color: #2980b9;
+            }
+            .copy-btn {
+                background-color: #7f8c8d;
+            }
+            .copy-btn:hover {
+                background-color: #5f6c6d;
+            }
+            .note {
+                background-color: #f8f4e5;
+                border-left: 4px solid #f1c40f;
+                padding: 10px 15px;
+                margin: 20px 0;
+                border-radius: 0 4px 4px 0;
+            }
+            .footer {
+                margin-top: 30px;
+                text-align: center;
+                color: #7f8c8d;
+                font-size: 0.8em;
+            }
+            @media (max-width: 768px) {
+                .endpoints {
+                    grid-template-columns: 1fr;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Debug Dashboard</h1>
+        <p>
+            This dashboard provides access to various debug endpoints for the Find a Meeting Spot application.
+            Use these tools to diagnose and fix issues in the application.
+        </p>
+
+        <div class="note">
+            <strong>Note:</strong> These endpoints are for debugging purposes only and should not be exposed in production.
+        </div>
+
+        <h2>Available Endpoints</h2>
+        <div class="endpoints">
+    """
+
+    # Add each endpoint to the HTML
+    for endpoint in endpoints:
+        full_url = base_url + endpoint["path"]
+        html += f"""
+            <div class="endpoint-card">
+                <div class="endpoint-title">{endpoint["name"]}</div>
+                <div class="endpoint-path">{endpoint["path"]}</div>
+                <div class="endpoint-description">{endpoint["description"]}</div>
+                <div class="action-buttons">
+                    <a href="{full_url}" class="btn" target="_blank">Visit</a>
+                    <button class="btn copy-btn" onclick="navigator.clipboard.writeText('{full_url}')">Copy URL</button>
+                </div>
+            </div>
+        """
+
+    # Complete the HTML
+    html += (
+        """
+        </div>
+
+        <div class="note">
+            <strong>GCP Logs Usage:</strong> For the GCP logs endpoint, you can add query parameters:
+            <ul>
+                <li><code>?limit=100</code> - Get 100 logs (default is 50)</li>
+                <li><code>?type=all</code> - Get all log types (default is 'error')</li>
+                <li><code>?service=auth</code> - Filter logs for a specific service (default is 'registration')</li>
+            </ul>
+            Example: <code>/debug/debug-gcp-logs?type=all&limit=20&service=auth</code>
+        </div>
+
+        <div class="footer">
+            <p>Find a Meeting Spot - Debug Dashboard - Generated at """
+        + datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        + """</p>
+        </div>
+
+        <script>
+            // Add a success message when copy button is clicked
+            document.addEventListener('DOMContentLoaded', function() {
+                const copyButtons = document.querySelectorAll('.copy-btn');
+                copyButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const originalText = this.innerText;
+                        this.innerText = 'Copied!';
+                        setTimeout(() => {
+                            this.innerText = originalText;
+                        }, 1500);
+                    });
+                });
+            });
+        </script>
+    </body>
+    </html>
+    """
+    )
+
+    # Return HTML response
+    response = current_app.response_class(response=html, status=200, mimetype="text/html")
+
+    return response
+
+
 # Register debug blueprint with the app
 def init_app(app):
     """Initialize API blueprints with the Flask app."""
