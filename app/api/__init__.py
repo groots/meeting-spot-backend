@@ -9,7 +9,7 @@ from flask import Blueprint, current_app, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_restx import Api
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from .. import db
@@ -331,6 +331,139 @@ def fix_schema():
             ),
             500,
         )
+
+
+@debug_bp.route("/check-tables")
+def check_tables():
+    """Check if specific database tables exist."""
+    try:
+        # Get all table names in the public schema
+        inspector = inspect(db.engine)
+        tables = inspector.get_table_names()
+
+        # Create response with table existence information
+        response_data = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "tables": tables,
+            "table_exists": {
+                "password_resets": "password_resets" in tables,
+                "meeting_contacts": "meeting_contacts" in tables,
+                "users": "users" in tables,
+                "subscriptions": "subscriptions" in tables,
+                "meeting_requests": "meeting_requests" in tables,
+                "contacts": "contacts" in tables,
+                "places": "places" in tables,
+            },
+            "database_info": {
+                "uri": current_app.config.get("SQLALCHEMY_DATABASE_URI", "Not set").replace(
+                    # Mask password in the returned URL for security
+                    ":" + current_app.config.get("SQLALCHEMY_DATABASE_URI", "").split(":")[2].split("@")[0] + "@",
+                    ":*****@",
+                )
+                if ":" in current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
+                else "Not set"
+            },
+        }
+
+        # If password_resets table doesn't exist, add migration information
+        if not response_data["table_exists"]["password_resets"]:
+            response_data["migration_help"] = {
+                "message": "The password_resets table is missing. This is likely because the migration that creates this table hasn't been applied.",
+                "suggested_fix": "Run 'flask db upgrade' to apply all pending migrations.",
+            }
+
+        response = jsonify(response_data)
+
+        # Add CORS headers directly to this response
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+
+        return response
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@debug_bp.route("/check-tables", methods=["OPTIONS"])
+def check_tables_options():
+    """Handle OPTIONS requests for the check-tables endpoint."""
+    response = jsonify({"status": "ok"})
+
+    # Add CORS headers
+    origin = request.headers.get("Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Max-Age"] = "3600"
+
+    return response
+
+
+@debug_bp.route("/apply-migrations")
+def apply_migrations():
+    """Apply missing database migrations."""
+    try:
+        from flask_migrate import upgrade
+
+        # Log before starting
+        current_app.logger.info("Starting migration application via debug endpoint")
+
+        # Get current migration status
+        inspector = inspect(db.engine)
+        tables_before = inspector.get_table_names()
+
+        # Apply all migrations
+        with current_app.app_context():
+            upgrade()
+
+        # Check what changed
+        inspector = inspect(db.engine)
+        tables_after = inspector.get_table_names()
+        new_tables = [table for table in tables_after if table not in tables_before]
+
+        # Build response
+        response_data = {
+            "status": "success",
+            "message": "Migrations applied successfully",
+            "tables": {"before": tables_before, "after": tables_after, "new_tables": new_tables},
+        }
+
+        response = jsonify(response_data)
+
+        # Add CORS headers directly to this response
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+
+        return response
+    except Exception as e:
+        current_app.logger.error(f"Error applying migrations: {str(e)}")
+        return jsonify({"status": "error", "message": "Failed to apply migrations", "error": str(e)}), 500
+
+
+@debug_bp.route("/apply-migrations", methods=["OPTIONS"])
+def apply_migrations_options():
+    """Handle OPTIONS requests for the apply-migrations endpoint."""
+    response = jsonify({"status": "ok"})
+
+    # Add CORS headers
+    origin = request.headers.get("Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Max-Age"] = "3600"
+
+    return response
 
 
 # Register debug blueprint with the app
