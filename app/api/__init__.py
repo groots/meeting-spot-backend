@@ -466,6 +466,213 @@ def apply_migrations_options():
     return response
 
 
+@debug_bp.route("/fix-production-tables")
+def fix_production_tables():
+    """Fix production database tables by creating them in the correct order."""
+    try:
+        import uuid
+
+        from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, MetaData, String, Table, Text
+        from sqlalchemy.dialects.postgresql import UUID
+
+        current_app.logger.info("Starting fix-production-tables process")
+
+        # Get current table status
+        inspector = inspect(db.engine)
+        tables_before = inspector.get_table_names()
+        current_app.logger.info(f"Tables before: {tables_before}")
+
+        # Create metadata for new tables
+        metadata = MetaData()
+        engine = db.engine
+
+        # Define tables that need to be created
+        tables_to_create = []
+
+        # 1. First check and create contacts table if it doesn't exist
+        if "contacts" not in tables_before:
+            current_app.logger.info("Creating contacts table")
+            contacts = Table(
+                "contacts",
+                metadata,
+                Column("id", UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
+                Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+                Column("name", String(255), nullable=False),
+                Column("email", String(255), nullable=True),
+                Column("phone", String(50), nullable=True),
+                Column("company", String(255), nullable=True),
+                Column("notes", Text, nullable=True),
+                Column("created_at", DateTime(timezone=True), nullable=False),
+                Column("updated_at", DateTime(timezone=True), nullable=True),
+            )
+            tables_to_create.append(contacts)
+
+        # 2. Check and create password_resets table
+        if "password_resets" not in tables_before:
+            current_app.logger.info("Creating password_resets table")
+            password_resets = Table(
+                "password_resets",
+                metadata,
+                Column("id", UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
+                Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+                Column("token", String(255), unique=True, nullable=False),
+                Column("created_at", DateTime, nullable=False),
+                Column("expires_at", DateTime, nullable=False),
+                Column("used", Boolean, default=False, nullable=False),
+            )
+            tables_to_create.append(password_resets)
+
+        # 3. Check and create places table
+        if "places" not in tables_before:
+            current_app.logger.info("Creating places table")
+            places = Table(
+                "places",
+                metadata,
+                Column("id", UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
+                Column("name", String(255), nullable=False),
+                Column("address", String(255), nullable=False),
+                Column("latitude", Float, nullable=False),
+                Column("longitude", Float, nullable=False),
+                Column("google_place_id", String(255), unique=True, nullable=True),
+                Column(
+                    "suggested_by_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+                ),
+                Column("created_at", DateTime(timezone=True), nullable=False),
+                Column("updated_at", DateTime(timezone=True), nullable=True),
+            )
+            tables_to_create.append(places)
+
+        # 4. Check and create subscriptions table
+        if "subscriptions" not in tables_before:
+            current_app.logger.info("Creating subscriptions table")
+            subscriptions = Table(
+                "subscriptions",
+                metadata,
+                Column("id", UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
+                Column("user_id", UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+                Column("stripe_subscription_id", String(255), unique=True, nullable=True),
+                Column("stripe_customer_id", String(255), nullable=True),
+                Column("plan_id", String(50), nullable=False),
+                Column("status", String(50), nullable=False),
+                Column("current_period_start", DateTime(timezone=True), nullable=True),
+                Column("current_period_end", DateTime(timezone=True), nullable=True),
+                Column("cancel_at_period_end", Boolean, default=False),
+                Column("created_at", DateTime(timezone=True), nullable=False),
+                Column("updated_at", DateTime(timezone=True), nullable=False),
+            )
+            tables_to_create.append(subscriptions)
+
+        # 5. Now that contacts exists, create meeting_contacts table
+        if "contacts" in tables_before or "contacts" in [t.name for t in tables_to_create]:
+            if "meeting_contacts" not in tables_before:
+                current_app.logger.info("Creating meeting_contacts table")
+                meeting_contacts = Table(
+                    "meeting_contacts",
+                    metadata,
+                    Column(
+                        "meeting_request_id",
+                        UUID(as_uuid=True),
+                        ForeignKey("meeting_requests.request_id", ondelete="CASCADE"),
+                        primary_key=True,
+                    ),
+                    Column(
+                        "contact_id",
+                        UUID(as_uuid=True),
+                        ForeignKey("contacts.id", ondelete="CASCADE"),
+                        primary_key=True,
+                    ),
+                    Column("created_at", DateTime(timezone=True), nullable=False),
+                )
+                tables_to_create.append(meeting_contacts)
+
+        # 6. Create meeting_request_suggested_places table if needed
+        if "places" in tables_before or "places" in [t.name for t in tables_to_create]:
+            if "meeting_request_suggested_places" not in tables_before:
+                current_app.logger.info("Creating meeting_request_suggested_places table")
+                meeting_request_suggested_places = Table(
+                    "meeting_request_suggested_places",
+                    metadata,
+                    Column(
+                        "meeting_request_id",
+                        UUID(as_uuid=True),
+                        ForeignKey("meeting_requests.request_id", ondelete="CASCADE"),
+                    ),
+                    Column("place_id", UUID(as_uuid=True), ForeignKey("places.id", ondelete="CASCADE")),
+                    Column("created_at", DateTime, server_default=db.func.now()),
+                )
+                tables_to_create.append(meeting_request_suggested_places)
+
+        # Create the tables in the order they were added
+        for table in tables_to_create:
+            current_app.logger.info(f"Creating table: {table.name}")
+            table.create(engine, checkfirst=True)
+
+        # Get updated table status
+        inspector = inspect(db.engine)
+        tables_after = inspector.get_table_names()
+
+        # Build response
+        response_data = {
+            "status": "success",
+            "message": "Database tables fixed successfully",
+            "tables_created": [t.name for t in tables_to_create],
+            "tables": {
+                "before": tables_before,
+                "after": tables_after,
+                "new_tables": [t for t in tables_after if t not in tables_before],
+            },
+        }
+
+        current_app.logger.info(f"Tables fixed successfully: {response_data['tables_created']}")
+
+        # Update alembic_version table to mark these migrations as applied
+        if tables_to_create:
+            try:
+                with engine.connect() as conn:
+                    # Use the latest migration revision as the current version
+                    # This will mark all migrations as applied
+                    conn.execute(text("UPDATE alembic_version SET version_num = '84151472c340'"))
+                    conn.commit()
+                    response_data["alembic_version_updated"] = True
+                    current_app.logger.info("Updated alembic_version table to latest revision")
+            except Exception as e:
+                current_app.logger.error(f"Error updating alembic_version: {str(e)}")
+                response_data["alembic_version_updated"] = False
+                response_data["alembic_error"] = str(e)
+
+        response = jsonify(response_data)
+
+        # Add CORS headers
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+
+        return response
+    except Exception as e:
+        current_app.logger.error(f"Error fixing production tables: {str(e)}")
+        return jsonify({"status": "error", "message": "Failed to fix production tables", "error": str(e)}), 500
+
+
+@debug_bp.route("/fix-production-tables", methods=["OPTIONS"])
+def fix_production_tables_options():
+    """Handle OPTIONS requests for the fix-production-tables endpoint."""
+    response = jsonify({"status": "ok"})
+
+    # Add CORS headers
+    origin = request.headers.get("Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Max-Age"] = "3600"
+
+    return response
+
+
 # Register debug blueprint with the app
 def init_app(app):
     """Initialize API blueprints with the Flask app."""
