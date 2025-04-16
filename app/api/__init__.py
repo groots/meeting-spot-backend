@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 import psutil
 from flask import Blueprint, Response, current_app, g, jsonify, request
+from flask_jwt_extended import get_jwt_identity, jwt_required
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_restx import Api
@@ -20,7 +21,7 @@ from sqlalchemy import MetaData, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from .. import db
-from ..models import ContactType, MeetingRequest, MeetingRequestStatus
+from ..models import ContactType, MeetingRequest, MeetingRequestStatus, User
 from ..utils.notifications import send_email
 from .auth import api as auth_ns
 from .contacts import api as contacts_ns
@@ -2519,6 +2520,159 @@ def debug_registration_troubleshoot():
             ),
             500,
         )
+
+
+@debug_bp.route("/test-meeting-request", methods=["POST"])
+@jwt_required()
+def test_meeting_request_creation():
+    """Debug endpoint to test meeting request creation process."""
+    try:
+        # Step 1: Get and validate the request data
+        data = request.get_json()
+        step_results = {"step1_data_received": True, "data": {k: v for k, v in data.items() if k != "user_b_contact"}}
+
+        # Protect sensitive data in logs
+        if "user_b_contact" in data:
+            step_results["data"]["user_b_contact"] = f"{data['user_b_contact'][:3]}...{data['user_b_contact'][-3:]}"
+
+        # Step 2: Get user from JWT token
+        user_id = get_jwt_identity()
+        user = User.get_by_token_identity(user_id)
+        step_results["step2_user_found"] = bool(user)
+        if not user:
+            step_results["error"] = "User not found"
+            return jsonify(step_results), 404
+
+        step_results["user_email"] = user.email
+
+        # Step 3: Validate required fields
+        required_fields = [
+            "address_a",
+            "location_type",
+            "user_b_contact_type",
+            "user_b_contact",
+        ]
+        missing_fields = [field for field in required_fields if field not in data]
+        step_results["step3_required_fields"] = {
+            "all_fields_present": len(missing_fields) == 0,
+            "missing_fields": missing_fields,
+        }
+
+        if missing_fields:
+            step_results["error"] = f"Missing required fields: {missing_fields}"
+            return jsonify(step_results), 400
+
+        # Step 4: Process coordinates
+        step_results["step4_coordinates"] = {}
+        try:
+            if "address_a_lat" in data and "address_a_lon" in data:
+                address_a_lat = float(data["address_a_lat"])
+                address_a_lon = float(data["address_a_lon"])
+
+                # Validate coordinate ranges
+                valid_coords = (-90 <= address_a_lat <= 90) and (-180 <= address_a_lon <= 180)
+                step_results["step4_coordinates"]["explicit_coords_provided"] = True
+                step_results["step4_coordinates"]["valid_range"] = valid_coords
+                step_results["step4_coordinates"]["values"] = {"lat": address_a_lat, "lon": address_a_lon}
+
+                if not valid_coords:
+                    step_results["error"] = "Invalid coordinates range"
+                    return jsonify(step_results), 400
+            else:
+                # Using default coordinates as per the original implementation
+                address_a_lat = 37.7749
+                address_a_lon = -122.4194
+                step_results["step4_coordinates"]["using_defaults"] = True
+                step_results["step4_coordinates"]["values"] = {"lat": address_a_lat, "lon": address_a_lon}
+        except (ValueError, TypeError) as e:
+            step_results["step4_coordinates"]["error"] = str(e)
+            step_results["error"] = f"Invalid coordinate format: {str(e)}"
+            return jsonify(step_results), 400
+
+        # Step 5: Create model instance (without saving)
+        step_results["step5_create_model"] = {}
+        try:
+            user_b_email = data["user_b_contact"] if data["user_b_contact_type"].lower() == "email" else None
+            user_b_name = data.get("user_b_name", "")
+
+            # Create location data
+            location_a = {"address": data["address_a"], "latitude": address_a_lat, "longitude": address_a_lon}
+
+            # Test if we can create enum values
+            contact_type_enum = ContactType(data["user_b_contact_type"].lower())
+            status_enum = MeetingRequestStatus.PENDING_B_ADDRESS
+
+            step_results["step5_create_model"]["enums_created"] = {
+                "contact_type": contact_type_enum.value,
+                "status": status_enum.value,
+            }
+
+            # Create the object but don't commit to database
+            token_b = uuid.uuid4().hex
+            expires_at = datetime.now(timezone.utc) + timedelta(days=1)
+
+            # Test object creation without database insertion
+            test_obj = MeetingRequest(
+                user_a_id=user.id,
+                address_a_lat=address_a_lat,
+                address_a_lon=address_a_lon,
+                location_a=location_a,
+                location_type=data["location_type"],
+                user_b_contact_type=contact_type_enum,
+                user_b_contact=data["user_b_contact"],
+                user_b_email=user_b_email,
+                user_b_name=user_b_name,
+                token_b=token_b,
+                status=status_enum,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+                expires_at=expires_at,
+            )
+
+            step_results["step5_create_model"]["object_created"] = True
+            step_results["step5_create_model"]["request_id"] = str(test_obj.request_id)
+
+            # Try serializing with to_dict to ensure the model works correctly
+            test_dict = test_obj.to_dict()
+            step_results["step5_create_model"]["to_dict_works"] = True
+
+        except Exception as e:
+            step_results["step5_create_model"]["error"] = str(e)
+            step_results["step5_create_model"]["traceback"] = traceback.format_exc()
+            step_results["error"] = f"Error creating model instance: {str(e)}"
+            return jsonify(step_results), 500
+
+        # Step 6: Test database session but don't commit
+        step_results["step6_database"] = {}
+        try:
+            # Add to session but roll back
+            db.session.add(test_obj)
+            db.session.flush()  # This will simulate the commit without actually committing
+
+            step_results["step6_database"]["session_flush_success"] = True
+
+            # Now roll back the transaction
+            db.session.rollback()
+            step_results["step6_database"]["rollback_success"] = True
+
+        except Exception as e:
+            db.session.rollback()
+            step_results["step6_database"]["error"] = str(e)
+            step_results["step6_database"]["traceback"] = traceback.format_exc()
+            step_results["error"] = f"Database error: {str(e)}"
+            return jsonify(step_results), 500
+
+        return jsonify(
+            {
+                "success": True,
+                "message": "All steps passed - meeting request creation should work",
+                "details": step_results,
+            }
+        )
+
+    except Exception as e:
+        current_app.logger.exception(f"Error in test-meeting-request endpoint: {str(e)}")
+        return jsonify({"success": False, "error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 # Register debug blueprint with the app
