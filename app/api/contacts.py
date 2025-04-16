@@ -84,6 +84,13 @@ class ContactList(Resource):
     @token_required
     def get(self, current_user):
         """List all contacts for the current user."""
+        # Check if contacts management is a premium feature
+        if is_premium_feature("contacts") and not current_user.is_premium():
+            abort(
+                402,
+                "This feature requires a premium subscription. Please upgrade your plan to use contacts management.",
+            )
+
         return [contact.to_dict() for contact in current_user.contacts]
 
     @api.doc("create_contact")
@@ -292,9 +299,8 @@ class CreateContactFromMeeting(Resource):
         return contact.to_dict(), 201
 
 
-@api.route("/", methods=["OPTIONS"])
+@api.route("/", doc=False)
 class ContactsOptions(Resource):
-    @api.doc("contacts_options")
     def options(self):
         """Handle OPTIONS requests for the contacts endpoint."""
         response = current_app.make_default_options_response()
@@ -304,4 +310,35 @@ class ContactsOptions(Resource):
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
             response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+        return response
+
+
+@api.route("/<string:id>", doc=False)
+class ContactIdOptions(Resource):
+    def options(self, id):
+        """Handle OPTIONS requests for individual contact endpoints."""
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, PUT, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+        return response
+
+
+@api.route("/from-meeting/<string:meeting_id>", doc=False)
+class MeetingContactOptions(Resource):
+    def options(self, meeting_id):
+        """Handle OPTIONS requests for creating contacts from meeting endpoint."""
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
         return response
