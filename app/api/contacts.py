@@ -78,6 +78,7 @@ contact_with_meetings_model = api.model(
 
 
 @api.route("/")
+@api.route("")
 class ContactList(Resource):
     @api.doc("list_contacts")
     @api.marshal_list_with(contact_model)
@@ -88,6 +89,7 @@ class ContactList(Resource):
         current_app.logger.info(f"ContactList.get called for user {current_user.id} ({current_user.email})")
         current_app.logger.info(f"TESTING flag: {current_app.config.get('TESTING')}")
         current_app.logger.info(f"User is_premium: {current_user.is_premium()}")
+        current_app.logger.info(f"Request path: {request.path}")
         current_app.logger.info(f"Request headers: {request.headers}")
 
         try:
@@ -322,15 +324,15 @@ class CreateContactFromMeeting(Resource):
         return contact.to_dict(), 201
 
 
-@api.route("/", doc=False)
-class ContactsOptions(Resource):
+@api.route("", doc=False)
+class ContactsRootOptions(Resource):
     def options(self):
-        """Handle OPTIONS requests for the contacts endpoint."""
+        """Handle OPTIONS requests for the contacts endpoint without trailing slash."""
         response = current_app.make_default_options_response()
         origin = request.headers.get("Origin")
 
         # Log detailed information for debugging
-        current_app.logger.info(f"OPTIONS request for contacts/ endpoint")
+        current_app.logger.info(f"OPTIONS request for contacts endpoint without trailing slash")
         current_app.logger.info(f"Request origin: {origin}")
         current_app.logger.info(f"Request headers: {request.headers}")
 

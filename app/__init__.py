@@ -57,6 +57,9 @@ def create_app(config_name="development"):
     """
     app = Flask(__name__)
 
+    # Disable automatic redirects for trailing slashes
+    app.url_map.strict_slashes = False
+
     # Load config
     env = os.getenv("FLASK_ENV", config_name)
     app.logger.info(f"Using environment: {env}")
