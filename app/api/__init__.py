@@ -2309,6 +2309,206 @@ def request_inspector():
         return jsonify({"status": "error", "message": "Failed to get request history", "error": str(e)}), 500
 
 
+@debug_bp.route("/debug-registration-troubleshoot")
+def debug_registration_troubleshoot():
+    """Comprehensive troubleshooting for registration issues"""
+    try:
+        from flask_jwt_extended import create_access_token
+
+        from app.api.auth import RegisterSchema
+        from app.models.user import User
+
+        results = {"status": "success", "checks": {}, "logs": [], "database": {}, "auth_config": {}}
+
+        # Check 1: Database connectivity
+        try:
+            # Test database connection
+            engine = db.engine
+            connection = engine.connect()
+            connection.execute(text("SELECT 1"))
+            connection.close()
+            results["checks"]["database_connection"] = "success"
+        except Exception as e:
+            results["checks"]["database_connection"] = {"status": "failed", "error": str(e)}
+
+        # Check 2: User table existence and structure
+        try:
+            inspector = inspect(db.engine)
+            if "users" in inspector.get_table_names():
+                columns = inspector.get_columns("users")
+                col_names = [col["name"] for col in columns]
+                required_cols = ["id", "email", "password_hash", "created_at", "updated_at"]
+                missing_cols = [col for col in required_cols if col not in col_names]
+
+                results["checks"]["user_table"] = {
+                    "status": "success" if not missing_cols else "warning",
+                    "columns": col_names,
+                    "missing_columns": missing_cols,
+                }
+            else:
+                results["checks"]["user_table"] = {"status": "failed", "error": "Users table does not exist"}
+        except Exception as e:
+            results["checks"]["user_table"] = {"status": "failed", "error": str(e)}
+
+        # Check 3: User count and latest users
+        try:
+            user_count = User.query.count()
+            recent_users = User.query.order_by(User.created_at.desc()).limit(5).all()
+            results["database"]["user_count"] = user_count
+            results["database"]["recent_users"] = [
+                {
+                    "id": str(user.id),
+                    "email": user.email,
+                    "created_at": user.created_at.isoformat()
+                    if hasattr(user, "created_at") and user.created_at
+                    else None,
+                    "has_password": bool(user.password_hash),
+                }
+                for user in recent_users
+            ]
+        except Exception as e:
+            results["database"]["error"] = str(e)
+
+        # Check 4: Register endpoint and schema
+        try:
+            schema = RegisterSchema()
+            results["checks"]["register_schema"] = {
+                "status": "success",
+                "fields": list(schema.fields.keys()) if hasattr(schema, "fields") else [],
+            }
+        except Exception as e:
+            results["checks"]["register_schema"] = {"status": "failed", "error": str(e)}
+
+        # Check 5: JWT configuration
+        try:
+            # Check JWT configuration
+            jwt_config = {}
+            for key in current_app.config:
+                if key.startswith("JWT_"):
+                    if key == "JWT_SECRET_KEY":
+                        jwt_config[key] = "REDACTED"
+                    else:
+                        jwt_config[key] = current_app.config[key]
+
+            # Test token creation
+            token = create_access_token(identity={"test": True})
+
+            results["auth_config"]["jwt"] = {
+                "status": "success",
+                "config": jwt_config,
+                "test_token_created": bool(token),
+            }
+        except Exception as e:
+            results["auth_config"]["jwt"] = {"status": "failed", "error": str(e)}
+
+        # Check 6: Registration logs (broader search)
+        try:
+            # Try to search logs with different terms
+            from google.cloud import logging as gcp_logging
+
+            client = gcp_logging.Client()
+
+            # Try different search terms related to registration
+            search_terms = ["register", "signup", "user created", "new user", "auth"]
+
+            all_logs = []
+
+            for term in search_terms:
+                try:
+                    entries = client.list_entries(
+                        filter_=f"textPayload:*{term}*", order_by="timestamp desc", page_size=10
+                    )
+
+                    for entry in entries:
+                        log_entry = {
+                            "timestamp": entry.timestamp.isoformat()
+                            if hasattr(entry, "timestamp") and entry.timestamp
+                            else None,
+                            "severity": entry.severity,
+                            "search_term": term,
+                            "payload": entry.text_payload
+                            if hasattr(entry, "text_payload") and entry.text_payload
+                            else str(entry.payload)
+                            if hasattr(entry, "payload") and entry.payload
+                            else "No payload",
+                        }
+                        all_logs.append(log_entry)
+                except Exception as e:
+                    continue
+
+            # Search for errors of any kind (not just registration-related)
+            try:
+                error_entries = client.list_entries(filter_="severity>=ERROR", order_by="timestamp desc", page_size=10)
+
+                for entry in error_entries:
+                    log_entry = {
+                        "timestamp": entry.timestamp.isoformat()
+                        if hasattr(entry, "timestamp") and entry.timestamp
+                        else None,
+                        "severity": entry.severity,
+                        "search_term": "any_error",
+                        "payload": entry.text_payload
+                        if hasattr(entry, "text_payload") and entry.text_payload
+                        else str(entry.payload)
+                        if hasattr(entry, "payload") and entry.payload
+                        else "No payload",
+                    }
+                    all_logs.append(log_entry)
+            except Exception as e:
+                results["logs"]["error_search_error"] = str(e)
+
+            # Remove duplicates
+            unique_logs = []
+            seen_payloads = set()
+
+            for log in all_logs:
+                payload_str = str(log.get("payload", ""))
+                if payload_str not in seen_payloads:
+                    seen_payloads.add(payload_str)
+                    unique_logs.append(log)
+
+            results["logs"] = unique_logs
+
+        except Exception as e:
+            results["logs"] = {"status": "failed", "error": str(e)}
+
+        # Check 7: Test registration with dummy data (no commit)
+        try:
+            # Create a test user without committing
+            test_email = f"test_{uuid.uuid4()}@example.com"
+            test_password = "Password123!"
+            test_user = User(email=test_email)
+            test_user.set_password(test_password)
+
+            # Add to session but don't commit
+            db.session.add(test_user)
+            db.session.flush()  # Test if it would work without actually committing
+            test_id = test_user.id
+            db.session.rollback()  # Don't actually create the user
+
+            results["checks"]["test_user_creation"] = {
+                "status": "success",
+                "test_id": str(test_id) if test_id else None,
+            }
+        except Exception as e:
+            results["checks"]["test_user_creation"] = {"status": "failed", "error": str(e)}
+            db.session.rollback()
+
+        return jsonify(results)
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "Failed to troubleshoot registration",
+                    "error": str(e),
+                    "traceback": traceback.format_exc(),
+                }
+            ),
+            500,
+        )
+
+
 # Register debug blueprint with the app
 def init_app(app):
     """Initialize API blueprints with the Flask app."""
