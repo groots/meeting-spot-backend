@@ -2632,3 +2632,34 @@ def init_app(app):
         return response
 
     return app
+
+
+@debug_bp.route("/simple-test")
+def simple_test():
+    """A simple endpoint that doesn't require database access to test basic API functionality"""
+    return jsonify(
+        {
+            "status": "success",
+            "message": "API is working",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "python_version": sys.version,
+            "environment": {
+                "flask_env": os.environ.get("FLASK_ENV", "not set"),
+                "debug": current_app.debug,
+                "testing": current_app.testing,
+            },
+        }
+    )
+
+
+@debug_bp.route("/simple-test", methods=["OPTIONS"])
+def simple_test_options():
+    """CORS preflight response for simple test endpoint"""
+    response = current_app.make_default_options_response()
+    origin = request.headers.get("Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response

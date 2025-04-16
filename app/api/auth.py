@@ -1,3 +1,4 @@
+import traceback
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
@@ -96,18 +97,25 @@ class Register(Resource):
             return {"message": "User already exists"}, 409
 
         try:
+            # Log registration attempt for debugging
+            current_app.logger.info(f"Registration attempt for email: {data['email']}")
+
             # Create new user
             user = User(email=data["email"])
             user.set_password(data["password"])
 
-            # Note: 'name' field is ignored as it's not in the User model
+            # Log user object created
+            current_app.logger.info(f"User object created with ID: {user.id}")
 
             # Add and commit to database
             db.session.add(user)
+            current_app.logger.info("User added to session, about to commit")
             db.session.commit()
+            current_app.logger.info("User committed to database successfully")
 
             # Generate access token
             access_token = create_access_token(identity=str(user.id))
+            current_app.logger.info(f"Access token generated for user {user.id}")
 
             return {
                 "message": "User registered successfully",
@@ -117,9 +125,14 @@ class Register(Resource):
 
         except Exception as e:
             db.session.rollback()
-            # Log the actual error for debugging
-            current_app.logger.error(f"Error registering user: {str(e)}")
-            return {"message": "Error registering user"}, 500
+            # Enhanced error logging
+            error_details = {
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+                "data": {k: v if k != "password" else "[REDACTED]" for k, v in data.items()} if data else None,
+            }
+            current_app.logger.error(f"Error registering user: {error_details}")
+            return {"message": "Error registering user", "error_type": type(e).__name__}, 500
 
 
 @api.route("/me")
