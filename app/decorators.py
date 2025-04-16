@@ -2,7 +2,7 @@
 
 from functools import wraps
 
-from flask import g, jsonify, request
+from flask import current_app, g, jsonify, request
 from flask_jwt_extended import get_jwt_identity, verify_jwt_in_request
 from flask_restx import abort
 
@@ -53,20 +53,37 @@ def token_required(func):
     @wraps(func)
     def wrapped(*args, **kwargs):
         try:
+            # Verify JWT token is present and valid
             verify_jwt_in_request()
+
+            # Get the user identity from the token
             user_id = get_jwt_identity()
+
+            # Get the user from the database
             current_user = User.get_by_token_identity(user_id)
 
+            # Check if user exists
             if not current_user:
+                current_app.logger.error(f"User with ID {user_id} not found")
                 abort(401, "User not found")
 
-            # Forward the request to the decorated function with the current user
+            # Special handling for testing
+            if current_app.config.get("TESTING") and current_user.email == "test@example.com":
+                current_app.logger.info(f"TEST mode: Authenticated user {current_user.email}")
+            else:
+                current_app.logger.info(f"Authenticated user {current_user.email}")
+
+            # Call the decorated function with the user
             return func(*args, current_user=current_user, **kwargs)
+
         except Exception as e:
-            # For HTTP exceptions raised by abort(), let them pass through
+            # Handle HTTP exceptions (like those raised by abort())
             if hasattr(e, "code") and hasattr(e, "description"):
+                current_app.logger.error(f"HTTP exception in token_required: {e.code} - {e.description}")
                 raise
-            # Handle authentication errors with 401
+
+            # Otherwise, it's an authentication error
+            current_app.logger.error(f"Authentication error in token_required: {str(e)}")
             abort(401, f"Authentication error: {str(e)}")
 
     return wrapped

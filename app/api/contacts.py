@@ -84,13 +84,19 @@ class ContactList(Resource):
     @token_required
     def get(self, current_user):
         """List all contacts for the current user."""
+        # Debug logging
+        current_app.logger.info(f"ContactList.get called for user {current_user.id} ({current_user.email})")
+        current_app.logger.info(f"TESTING flag: {current_app.config.get('TESTING')}")
+        current_app.logger.info(f"User is_premium: {current_user.is_premium()}")
+
         # Special handling for tests - test users with test@example.com should always be considered premium
         if current_app.config.get("TESTING"):
-            print(f"TEST MODE: User email is {current_user.email}")
+            current_app.logger.info("Using test mode - bypassing premium check")
             return [contact.to_dict() for contact in current_user.contacts]
 
         # Check if contacts management is a premium feature
         if is_premium_feature("contacts") and not current_user.is_premium():
+            current_app.logger.info("User does not have premium subscription")
             abort(
                 402,
                 "This feature requires a premium subscription. Please upgrade your plan to use contacts management.",

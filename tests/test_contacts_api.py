@@ -27,6 +27,19 @@ class TestContactsApi:
 
     def test_list_contacts(self, client, db_session, test_user, auth_headers):
         """Test listing user contacts."""
+        # Create a premium subscription for the test user
+        subscription = Subscription(
+            user_id=test_user.id,
+            plan_id="premium",
+            status="active",
+            current_period_start=datetime.now(timezone.utc),
+            current_period_end=datetime.now(timezone.utc) + timedelta(days=30),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
         # Create some contacts for the test user
         contacts = []
         for i in range(3):
