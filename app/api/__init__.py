@@ -2074,3 +2074,104 @@ def debug_contacts():
         log_entry["traceback"] = traceback.format_exc()
 
         return jsonify({"status": "error", "debug_info": log_entry}), 500
+
+
+@debug_bp.route("/fix-contacts-table")
+def fix_contacts_table():
+    """Create the contacts table if it doesn't exist."""
+    log_entry = {}
+
+    try:
+        # Check if contacts table exists
+        from sqlalchemy import inspect, text
+        from sqlalchemy.dialects import postgresql
+
+        from app import db
+
+        inspector = inspect(db.engine)
+        exists = "contacts" in inspector.get_table_names()
+        log_entry["contacts_table_exists"] = exists
+
+        # If it already exists, we're done
+        if exists:
+            return jsonify(
+                {"status": "no_action_needed", "message": "Contacts table already exists", "details": log_entry}
+            )
+
+        # Create the contacts table directly using SQL
+        with db.engine.begin() as conn:
+            # Create contacts table
+            conn.execute(
+                text(
+                    """
+                CREATE TABLE IF NOT EXISTS contacts (
+                    id UUID PRIMARY KEY,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    email VARCHAR(255),
+                    phone VARCHAR(50),
+                    company VARCHAR(255),
+                    notes TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                )
+            """
+                )
+            )
+
+            # Create indexes
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_contacts_user_id ON contacts(user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_contacts_email ON contacts(email)"))
+
+            # Check if meeting_contacts table should also be created
+            if "meeting_contacts" not in inspector.get_table_names():
+                conn.execute(
+                    text(
+                        """
+                    CREATE TABLE IF NOT EXISTS meeting_contacts (
+                        meeting_request_id UUID NOT NULL REFERENCES meeting_requests(request_id) ON DELETE CASCADE,
+                        contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+                        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        PRIMARY KEY (meeting_request_id, contact_id)
+                    )
+                """
+                    )
+                )
+
+                conn.execute(
+                    text("CREATE INDEX IF NOT EXISTS ix_meeting_contacts_contact_id ON meeting_contacts(contact_id)")
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_meeting_contacts_meeting_request_id ON meeting_contacts(meeting_request_id)"
+                    )
+                )
+
+                log_entry["meeting_contacts_table_created"] = True
+
+            # Update alembic_version to reflect our changes if it exists
+            if "alembic_version" in inspector.get_table_names():
+                # Set to latest migration version (our new contacts table migration)
+                conn.execute(text("UPDATE alembic_version SET version_num = 'a4b2c3d5e6f7'"))
+                log_entry["alembic_version_updated"] = True
+
+        # Verify tables were created
+        inspector = inspect(db.engine)
+        contacts_exists = "contacts" in inspector.get_table_names()
+        meeting_contacts_exists = "meeting_contacts" in inspector.get_table_names()
+
+        log_entry["contacts_table_created"] = contacts_exists
+        log_entry["meeting_contacts_table_exists"] = meeting_contacts_exists
+
+        if contacts_exists:
+            log_entry["contacts_columns"] = [col["name"] for col in inspector.get_columns("contacts")]
+
+        return jsonify({"status": "success", "message": "Successfully created missing tables", "details": log_entry})
+
+    except Exception as e:
+        import traceback
+
+        log_entry["error"] = str(e)
+        log_entry["traceback"] = traceback.format_exc()
+
+        return jsonify({"status": "error", "message": "Error creating tables: " + str(e), "details": log_entry}), 500
