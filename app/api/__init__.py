@@ -2175,3 +2175,85 @@ def fix_contacts_table():
         log_entry["traceback"] = traceback.format_exc()
 
         return jsonify({"status": "error", "message": "Error creating tables: " + str(e), "details": log_entry}), 500
+
+
+@debug_bp.route("/basic-register", methods=["OPTIONS"])
+def basic_register_options():
+    """Handle OPTIONS requests for the basic-register endpoint."""
+    response = current_app.make_default_options_response()
+    origin = request.headers.get("Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
+
+
+@debug_bp.route("/basic-register", methods=["POST"])
+def basic_register():
+    """Simplified registration endpoint with detailed logging and error handling."""
+    try:
+        from app.models.user import User
+
+        data = request.get_json()
+        current_app.logger.info(
+            f"Basic register attempt with data: {json.dumps({k: '***' if k == 'password' else v for k, v in data.items()})}"
+        )
+
+        # Validate required fields
+        if not data.get("email") or not data.get("password"):
+            current_app.logger.error("Missing required fields in basic register")
+            return jsonify({"status": "error", "message": "Email and password are required"}), 400
+
+        # Check if user already exists
+        existing_user = User.query.filter_by(email=data["email"]).first()
+        if existing_user:
+            current_app.logger.info(f"User already exists: {data['email']}")
+            return jsonify({"status": "error", "message": "User already exists"}), 409
+
+        try:
+            # Create new user with detailed logging
+            current_app.logger.info(f"Creating new user for email: {data['email']}")
+
+            user = User(email=data["email"])
+            user.set_password(data["password"])
+            current_app.logger.info(f"User object created with ID: {user.id}")
+
+            # Add to database
+            db.session.add(user)
+            current_app.logger.info("User added to session, about to commit")
+            db.session.commit()
+            current_app.logger.info(f"User committed to database successfully with ID: {user.id}")
+
+            # Generate access token
+            from flask_jwt_extended import create_access_token
+
+            access_token = create_access_token(identity=str(user.id))
+            current_app.logger.info(f"Access token generated for user {user.id}")
+
+            # Return success response
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": "User registered successfully",
+                        "access_token": access_token,
+                        "user": user.to_dict(),
+                    }
+                ),
+                201,
+            )
+
+        except Exception as e:
+            db.session.rollback()
+            tb = traceback.format_exc()
+            current_app.logger.error(f"Error in basic registration: {str(e)}")
+            current_app.logger.error(f"Traceback: {tb}")
+            return jsonify({"status": "error", "message": "Error registering user", "error": str(e)}), 500
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        current_app.logger.error(f"Critical error in basic registration endpoint: {str(e)}")
+        current_app.logger.error(f"Traceback: {tb}")
+        return jsonify({"status": "error", "message": "Server error", "error": str(e)}), 500

@@ -3,12 +3,12 @@
 import uuid
 from datetime import datetime, timezone
 
-from flask import current_app, request
+from flask import current_app, jsonify, reques
 from flask_restx import Namespace, Resource, abort, fields
 
 from app import db
 from app.decorators import token_required
-from app.models import Contact, MeetingRequest
+from app.models import Contact, MeetingReques
 from app.utils.stripe_helpers import is_premium_feature
 
 api = Namespace("contacts", description="Contact management operations")
@@ -101,10 +101,12 @@ class ContactList(Resource):
             # Check if contacts management is a premium feature
             if is_premium_feature("contacts") and not current_user.is_premium():
                 current_app.logger.info("User does not have premium subscription")
-                abort(
-                    402,
-                    "This feature requires a premium subscription. Please upgrade your plan to use contacts management.",
-                )
+                # Instead of aborting with 402, return an empty array with a 200 status code
+                # The premium feature requirement will be indicated in the header
+                response = jsonify([])
+                response.headers["X-Premium-Required"] = "true"
+                response.headers["X-Premium-Feature"] = "contacts"
+                return response
 
             # Log the number of contacts found
             contact_count = len(current_user.contacts)
@@ -189,11 +191,11 @@ class ContactResource(Resource):
 
             result["meetings"] = meetings
         else:
-            # For non-premium users, only include meeting count
+            # For non-premium users, only include meeting coun
             result["meeting_count"] = len(contact.meeting_requests)
             result["premium_required"] = True
 
-        return result
+        return resul
 
     @api.doc("update_contact")
     @api.expect(contact_update_model)
@@ -287,7 +289,7 @@ class CreateContactFromMeeting(Resource):
             print(f"Invalid meeting ID format: {e}")
             abort(400, "Invalid meeting ID format")
 
-        # Find the meeting request
+        # Find the meeting reques
         meeting = MeetingRequest.query.filter_by(request_id=meeting_uuid).first_or_404(
             description=f"Meeting request {meeting_id} not found"
         )
@@ -303,11 +305,11 @@ class CreateContactFromMeeting(Resource):
         data = request.json
         print(f"Contact data: {data}")
 
-        # Create the contact
+        # Create the contac
         contact = Contact(
             user_id=current_user.id,
             name=data.get("name", ""),
-            email=meeting.user_b_email,  # Use email from meeting request
+            email=meeting.user_b_email,  # Use email from meeting reques
             phone=data.get("phone"),
             company=data.get("company"),
             notes=data.get("notes"),
@@ -316,7 +318,7 @@ class CreateContactFromMeeting(Resource):
         # Add the contact to the database
         db.session.add(contact)
 
-        # Associate the contact with the meeting request
+        # Associate the contact with the meeting reques
         meeting.contacts.append(contact)
 
         db.session.commit()
