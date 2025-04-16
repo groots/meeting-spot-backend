@@ -6,11 +6,15 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from cryptography.fernet import Fernet
+from dotenv import load_dotenv
 from sqlalchemy import inspect, text
 from sqlalchemy.pool import StaticPool
 
 from app import create_app, db
 from app.models import ContactType, MeetingRequest, MeetingRequestStatus, User
+
+# Load test environment variables
+load_dotenv(".env.test")
 
 
 @pytest.fixture(scope="session")
@@ -27,21 +31,28 @@ def app() -> None:
         "TEST_DATABASE_URL", "sqlite:///:memory:"
     )  # Use in-memory SQLite if no URL provided
 
-    app = create_app(
-        {
-            "TESTING": True,  # Explicitly set TESTING to True
-            "DEBUG": False,
-            "SQLALCHEMY_DATABASE_URI": TEST_DATABASE_URL,
-            "SQLALCHEMY_TRACK_MODIFICATIONS": False,
-            "SECRET_KEY": "test-key",
-            "ENCRYPTION_KEY": os.environ.get("ENCRYPTION_KEY", "test-encryption-key"),
-            "JWT_SECRET_KEY": "test-jwt-secret-key",
-            "GOOGLE_MAPS_API_KEY": "test-maps-api-key",
-            "SERVER_NAME": "localhost:5000",
-            "APPLICATION_ROOT": "/",
-            "PREFERRED_URL_SCHEME": "http",
-        }
-    )
+    print(f"Using test database URL: {TEST_DATABASE_URL}")  # Debug print
+
+    # Ensure environment is set to testing
+    os.environ["FLASK_ENV"] = "testing"
+
+    # Create app with testing config to ensure correct config is loaded
+    app = create_app("testing")
+
+    # Override specific config values to ensure they work for tests
+    app.config["TESTING"] = True
+    app.config["DEBUG"] = False
+    app.config["SQLALCHEMY_DATABASE_URI"] = TEST_DATABASE_URL
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "poolclass": StaticPool,
+        "connect_args": {"check_same_thread": False},
+    }
+    app.config["SECRET_KEY"] = "test-key"
+    app.config["ENCRYPTION_KEY"] = os.environ.get("ENCRYPTION_KEY", "test-encryption-key")
+    app.config["JWT_SECRET_KEY"] = "test-jwt-secret-key"
+    app.config["GOOGLE_MAPS_API_KEY"] = "test-maps-api-key"
+    app.config["SERVER_NAME"] = None
 
     # Push an application context that will be used for the entire test session
     ctx = app.app_context()
