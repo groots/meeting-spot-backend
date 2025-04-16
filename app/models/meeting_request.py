@@ -5,7 +5,8 @@ from typing import Any, Dict, List, Optional, Union
 from flask import current_app
 from sqlalchemy import Column, ForeignKey, Index, Table, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import column_property, relationship
 
 from app.utils.encryption import decrypt_data, encrypt_data
 
@@ -40,6 +41,22 @@ class MeetingRequest(db.Model):
     user_b_contact_type = Column(db.Enum(ContactType), nullable=False)
     user_b_contact_encrypted = Column(db.String(255), nullable=False)  # Store encrypted email/phone
     user_b_name = Column(db.String(255), nullable=True)  # New field for user B's name
+
+    # Add user_b_email as a hybrid property that doesn't create DB column
+    # but maintains backward compatibility with tests
+    @hybrid_property
+    def user_b_email(self) -> Optional[str]:
+        """Get user B's email (if contact type is email)."""
+        if self.user_b_contact_type == ContactType.EMAIL:
+            return self.user_b_contact
+        return None
+
+    @user_b_email.setter
+    def user_b_email(self, value: Optional[str]) -> None:
+        """Set user B's email and contact type."""
+        if value:
+            self.user_b_contact_type = ContactType.EMAIL
+            self.user_b_contact = value
 
     # Request details
     location_type = Column(db.String(50), nullable=False)  # e.g., "Restaurant / Food"
@@ -149,6 +166,7 @@ class MeetingRequest(db.Model):
             "user_b_contact_type": self.user_b_contact_type.value,
             "user_b_contact_encrypted": self.user_b_contact_encrypted,
             "user_b_name": self.user_b_name,
+            "user_b_email": self.user_b_email,  # Include for backwards compatibility
             "location_type": self.location_type,
             "address_a_lat": self.address_a_lat,
             "address_a_lon": self.address_a_lon,
@@ -205,17 +223,41 @@ class MeetingRequest(db.Model):
 
         categories = data.get("categories", None)
 
-        return MeetingRequest(
-            user_a_id=user_id,
-            user_b_email=data["user_b_email"].lower(),
-            user_b_name=data.get("user_b_name", ""),
-            location_a=location_a,
-            location_type=data.get("location_type", ""),
-            address_a_lat=data.get("location_a", {}).get("latitude"),
-            address_a_lon=data.get("location_a", {}).get("longitude"),
-            address_b_lat=data.get("location_b", {}).get("latitude"),
-            address_b_lon=data.get("location_b", {}).get("longitude"),
-            status=data.get("status", MeetingRequestStatus.PENDING_B_ADDRESS),
-            expires_at=expires_at,
-            categories=categories,
-        )
+        # Get user_b_email for backward compatibility
+        user_b_email = data.get("user_b_email", "").lower() if "user_b_email" in data else None
+
+        # Create instance with either user_b_contact or user_b_email
+        if user_b_email:
+            mr = MeetingRequest(
+                user_a_id=user_id,
+                user_b_email=user_b_email,  # This will set user_b_contact and user_b_contact_type
+                user_b_name=data.get("user_b_name", ""),
+                location_a=location_a,
+                location_type=data.get("location_type", ""),
+                address_a_lat=data.get("location_a", {}).get("latitude"),
+                address_a_lon=data.get("location_a", {}).get("longitude"),
+                address_b_lat=data.get("location_b", {}).get("latitude"),
+                address_b_lon=data.get("location_b", {}).get("longitude"),
+                status=data.get("status", MeetingRequestStatus.PENDING_B_ADDRESS),
+                expires_at=expires_at,
+                token_b=uuid.uuid4().hex,  # Ensure token_b is always set
+            )
+        else:
+            # Handle case without user_b_email (not expected but robust)
+            mr = MeetingRequest(
+                user_a_id=user_id,
+                user_b_contact_type=ContactType.EMAIL,  # Default
+                user_b_contact=data.get("user_b_contact", ""),
+                user_b_name=data.get("user_b_name", ""),
+                location_a=location_a,
+                location_type=data.get("location_type", ""),
+                address_a_lat=data.get("location_a", {}).get("latitude"),
+                address_a_lon=data.get("location_a", {}).get("longitude"),
+                address_b_lat=data.get("location_b", {}).get("latitude"),
+                address_b_lon=data.get("location_b", {}).get("longitude"),
+                status=data.get("status", MeetingRequestStatus.PENDING_B_ADDRESS),
+                expires_at=expires_at,
+                token_b=uuid.uuid4().hex,  # Ensure token_b is always set
+            )
+
+        return mr
