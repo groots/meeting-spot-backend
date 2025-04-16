@@ -1,35 +1,19 @@
 #!/bin/bash
-set -e
+# Script to run tests with proper environment variables
 
-# Set environment to testing
+# Set test environment variables
 export FLASK_ENV=testing
-export FLASK_DEBUG=1
-export FLASK_APP=app
-export DATABASE_URL=sqlite:///:memory:
-export TESTING=True
-export GOOGLE_MAPS_API_KEY=test_key
+export FLASK_APP=run.py
+export SQLALCHEMY_DATABASE_URI=sqlite:///:memory:
+export ENCRYPTION_KEY=test-encryption-key-for-testing-only
+export JWT_SECRET_KEY=test-jwt-secret-key-for-testing-only
+export GOOGLE_MAPS_API_KEY=test-maps-api-key
 
-# Create a virtual environment if it doesn't exist
-if [ ! -d "venv" ]; then
-  echo "Creating virtual environment..."
-  python3 -m venv venv
+# Run the tests
+if [ $# -eq 0 ]; then
+  # If no arguments provided, run all tests
+  pytest
+else
+  # Run with provided arguments
+  pytest "$@"
 fi
-
-# Activate virtual environment
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run tests with coverage
-echo "Running unit tests..."
-python -m pytest tests/unit -v
-
-echo "Running integration tests..."
-python -m pytest tests/integration -v
-
-# Generate coverage report
-echo "Generating coverage report..."
-python -m pytest --cov=app tests/
-
-echo "All tests completed!"
