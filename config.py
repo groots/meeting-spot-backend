@@ -60,7 +60,8 @@ class Config:
     ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY")
 
     # JWT Configuration (for authentication)
-    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "another_dev_secret_jwt_key")
+    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", SECRET_KEY)
+    JWT_ACCESS_TOKEN_EXPIRES = 60 * 60 * 8  # 8 hours instead of default 15 minutes
     # Add other JWT settings like algorithm, expiry time etc. as needed
 
     # Frontend URL (for generating links)

@@ -83,43 +83,33 @@ class MeetingRequestList(Resource):
             return {"error": "Missing required fields"}, 400
 
         try:
-            # Check if explicit coordinates are provided in the request
+            # Encrypt user_b_contact for storage
+            user_b_contact = data["user_b_contact"]
+            contact_type = ContactType(data["user_b_contact_type"].lower())
+
+            # Get location data
+            address_a = data["address_a"]
             if "address_a_lat" in data and "address_a_lon" in data:
                 address_a_lat = float(data["address_a_lat"])
                 address_a_lon = float(data["address_a_lon"])
-
-                # Validate coordinate ranges
-                if not (-90 <= address_a_lat <= 90) or not (-180 <= address_a_lon <= 180):
-                    return {
-                        "error": "Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180"
-                    }, 400
-
-                current_app.logger.info(f"Using provided coordinates for address_a: ({address_a_lat}, {address_a_lon})")
             else:
-                # TODO: Implement proper geocoding here
-                # For now, using default coordinates as a fallback
-                address_a_lat = 37.7749
-                address_a_lon = -122.4194
-                current_app.logger.warning(
-                    f"No coordinates provided for address_a, using defaults: ({address_a_lat}, {address_a_lon})"
-                )
+                # If coordinates are not provided, use default coordinates for now
+                address_a_lat = 37.7749  # Default SF latitude
+                address_a_lon = -122.4194  # Default SF longitude
 
-            # Create new request with additional fields
-            user_b_email = data["user_b_contact"] if data["user_b_contact_type"].lower() == "email" else None
+            location_a = {"address": address_a, "latitude": address_a_lat, "longitude": address_a_lon}
+
+            # Create meeting request
             user_b_name = data.get("user_b_name", "")
-
-            # Create location data in JSON format
-            location_a = {"address": data["address_a"], "latitude": address_a_lat, "longitude": address_a_lon}
-
+            # Remove the user_b_email field that doesn't exist in the database
             new_request = MeetingRequest(
-                user_a_id=user.id,
+                user_a_id=user.id if user else None,
                 address_a_lat=address_a_lat,
                 address_a_lon=address_a_lon,
                 location_a=location_a,
                 location_type=data["location_type"],
-                user_b_contact_type=ContactType(data["user_b_contact_type"].lower()),
-                user_b_contact=data["user_b_contact"],
-                user_b_email=user_b_email,
+                user_b_contact_type=contact_type,
+                user_b_contact=user_b_contact,
                 user_b_name=user_b_name,
                 token_b=uuid.uuid4().hex,
                 status=MeetingRequestStatus.PENDING_B_ADDRESS,
@@ -142,8 +132,8 @@ class MeetingRequestList(Resource):
                     }, 402
 
                 # Check if contact with this email already exists
-                if user_b_email:
-                    existing_contact = Contact.query.filter_by(user_id=user.id, email=user_b_email).first()
+                if user_b_name:
+                    existing_contact = Contact.query.filter_by(user_id=user.id, email=user_b_name).first()
 
                     if existing_contact:
                         # Update existing contact with new info if provided
@@ -158,7 +148,7 @@ class MeetingRequestList(Resource):
                         contact = Contact(
                             user_id=user.id,
                             name=user_b_name or "Unknown",
-                            email=user_b_email,
+                            email=user_b_name,
                         )
                         db.session.add(contact)
 
@@ -190,7 +180,7 @@ This link will expire in 24 hours.
 Best regards,
 Find a Meeting Spot Team
 """
-            send_email(new_request.user_b_contact, subject, body)
+            send_email(user_b_name, subject, body)
 
         response_data = new_request.to_dict()
         # Add request_id to the response for backward compatibility

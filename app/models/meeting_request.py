@@ -39,7 +39,6 @@ class MeetingRequest(db.Model):
     # User B contact info
     user_b_contact_type = Column(db.Enum(ContactType), nullable=False)
     user_b_contact_encrypted = Column(db.String(255), nullable=False)  # Store encrypted email/phone
-    user_b_email = Column(db.String(120), nullable=True)
     user_b_name = Column(db.String(255), nullable=True)  # New field for user B's name
 
     # Request details
@@ -149,7 +148,6 @@ class MeetingRequest(db.Model):
             "user_a_id": str(self.user_a_id) if self.user_a_id else None,
             "user_b_contact_type": self.user_b_contact_type.value,
             "user_b_contact_encrypted": self.user_b_contact_encrypted,
-            "user_b_email": self.user_b_email,
             "user_b_name": self.user_b_name,
             "location_type": self.location_type,
             "address_a_lat": self.address_a_lat,
