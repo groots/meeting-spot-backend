@@ -102,7 +102,8 @@ class MeetingRequestList(Resource):
 
             # Create meeting request
             user_b_name = data.get("user_b_name", "")
-            # Remove the user_b_email field that doesn't exist in the database
+
+            # Create a new meeting request - avoid setting user_b_name in constructor if database doesn't have the column
             new_request = MeetingRequest(
                 user_a_id=user.id if user else None,
                 address_a_lat=address_a_lat,
@@ -111,13 +112,16 @@ class MeetingRequestList(Resource):
                 location_type=data["location_type"],
                 user_b_contact_type=contact_type,
                 user_b_contact=user_b_contact,
-                user_b_name=user_b_name,
                 token_b=uuid.uuid4().hex,
                 status=MeetingRequestStatus.PENDING_B_ADDRESS,
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
                 expires_at=datetime.now(timezone.utc) + timedelta(days=1),
             )
+
+            # Set user_b_name after creation to use the hybrid property
+            if user_b_name:
+                new_request.user_b_name = user_b_name
 
             db.session.add(new_request)
 

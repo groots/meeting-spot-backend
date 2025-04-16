@@ -40,7 +40,6 @@ class MeetingRequest(db.Model):
     # User B contact info
     user_b_contact_type = Column(db.Enum(ContactType), nullable=False)
     user_b_contact_encrypted = Column(db.String(255), nullable=False)  # Store encrypted email/phone
-    user_b_name = Column(db.String(255), nullable=True)  # New field for user B's name
 
     # Add user_b_email as a hybrid property that doesn't create DB column
     # but maintains backward compatibility with tests
@@ -57,6 +56,29 @@ class MeetingRequest(db.Model):
         if value:
             self.user_b_contact_type = ContactType.EMAIL
             self.user_b_contact = value
+
+    # Add user_b_name as a hybrid property that doesn't create a DB column
+    # It will store the name in the encrypted contact data or in the associated contact
+    _user_b_name_value = None
+
+    @hybrid_property
+    def user_b_name(self) -> Optional[str]:
+        """Get user B's name."""
+        # Try to get from runtime-stored value
+        if self._user_b_name_value:
+            return self._user_b_name_value
+
+        # Try to get from associated contact if any
+        for contact in self.contacts:
+            if contact.email == self.user_b_email:
+                return contact.name
+
+        return ""
+
+    @user_b_name.setter
+    def user_b_name(self, value: Optional[str]) -> None:
+        """Set user B's name."""
+        self._user_b_name_value = value or ""
 
     # Request details
     location_type = Column(db.String(50), nullable=False)  # e.g., "Restaurant / Food"

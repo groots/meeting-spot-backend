@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Meeting Request Creator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 1px solid #ccc;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            white-space: pre-wrap;
+        }
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Debug Meeting Request Creator</h1>
+        <p>This form creates a meeting request using raw SQL to bypass ORM issues.</p>
+
+        <div class="form-group">
+            <label for="token">JWT Token:</label>
+            <input type="text" id="token" placeholder="Enter your JWT token here">
+        </div>
+
+        <form id="meetingRequestForm">
+            <div class="form-group">
+                <label for="address_a">Your Address:</label>
+                <input type="text" id="address_a" name="address_a" value="San Francisco, CA">
+            </div>
+
+            <div class="form-group">
+                <label for="address_a_lat">Latitude (optional):</label>
+                <input type="text" id="address_a_lat" name="address_a_lat" value="37.7749">
+            </div>
+
+            <div class="form-group">
+                <label for="address_a_lon">Longitude (optional):</label>
+                <input type="text" id="address_a_lon" name="address_a_lon" value="-122.4194">
+            </div>
+
+            <div class="form-group">
+                <label for="location_type">Location Type:</label>
+                <select id="location_type" name="location_type">
+                    <option value="midpoint">Midpoint</option>
+                    <option value="user_a">My Location</option>
+                    <option value="user_b">Other Person's Location</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="user_b_contact_type">Contact Type:</label>
+                <select id="user_b_contact_type" name="user_b_contact_type">
+                    <option value="email">Email</option>
+                    <option value="phone">Phone</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="user_b_contact">Contact (Email/Phone):</label>
+                <input type="text" id="user_b_contact" name="user_b_contact" value="test@example.com">
+            </div>
+
+            <div class="form-group">
+                <label for="user_b_name">Other Person's Name (optional):</label>
+                <input type="text" id="user_b_name" name="user_b_name" value="Test User">
+            </div>
+
+            <div class="form-group">
+                <label for="save_as_contact">Save as Contact:</label>
+                <select id="save_as_contact" name="save_as_contact">
+                    <option value="true">Yes</option>
+                    <option value="false" selected>No</option>
+                </select>
+            </div>
+
+            <button type="submit">Create Meeting Request</button>
+        </form>
+
+        <div id="result" class="result" style="display: none;"></div>
+    </div>
+
+    <script>
+        document.getElementById('meetingRequestForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const token = document.getElementById('token').value;
+            if (!token) {
+                alert('Please enter a JWT token');
+                return;
+            }
+
+            const formData = {
+                address_a: document.getElementById('address_a').value,
+                address_a_lat: parseFloat(document.getElementById('address_a_lat').value || "0"),
+                address_a_lon: parseFloat(document.getElementById('address_a_lon').value || "0"),
+                location_type: document.getElementById('location_type').value,
+                user_b_contact_type: document.getElementById('user_b_contact_type').value,
+                user_b_contact: document.getElementById('user_b_contact').value,
+                user_b_name: document.getElementById('user_b_name').value,
+                save_as_contact: document.getElementById('save_as_contact').value === 'true'
+            };
+
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Submitting...';
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result';
+
+            fetch('/debug/create-meeting-request', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify(formData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                resultDiv.textContent = JSON.stringify(data, null, 2);
+                if (data.status === 'error') {
+                    resultDiv.className = 'result error';
+                }
+            })
+            .catch(error => {
+                resultDiv.textContent = 'Error: ' + error.message;
+                resultDiv.className = 'result error';
+            });
+        });
+    </script>
+</body>
+</html>
