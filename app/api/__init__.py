@@ -1972,3 +1972,25 @@ def debug_dashboard():
 """
 
     return html
+
+
+def init_app(app):
+    """Initialize API and register blueprints with the Flask application.
+
+    Args:
+        app: Flask application instance
+    """
+    # Register API v1 blueprint
+    app.register_blueprint(api_v1_bp)
+
+    # Register API v2 blueprint
+    app.register_blueprint(api_v2_bp)
+
+    # Register debug blueprint
+    app.register_blueprint(debug_bp)
+
+    # Initialize limiter with app if it exists
+    if limiter:
+        limiter.init_app(app)
+
+    return app
