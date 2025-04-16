@@ -1994,3 +1994,83 @@ def init_app(app):
         limiter.init_app(app)
 
     return app
+
+
+@debug_bp.route("/debug-contacts")
+def debug_contacts():
+    """Debug endpoint for contacts API issues."""
+    log_entry = {}
+
+    try:
+        # Import the Contact model
+        from app.models import Contact
+
+        log_entry["import_contact_model"] = "success"
+
+        # Check if Contact model is properly defined
+        log_entry["contact_model_attributes"] = {
+            "has_id": hasattr(Contact, "id"),
+            "has_user_id": hasattr(Contact, "user_id"),
+            "has_name": hasattr(Contact, "name"),
+            "has_tablename": hasattr(Contact, "__tablename__"),
+            "tablename": getattr(Contact, "__tablename__", None),
+        }
+
+        # Check if table exists
+        from sqlalchemy import inspect
+
+        from app import db
+
+        inspector = inspect(db.engine)
+        log_entry["contact_table_exists"] = "contacts" in inspector.get_table_names()
+
+        if log_entry["contact_table_exists"]:
+            log_entry["contact_table_columns"] = [col["name"] for col in inspector.get_columns("contacts")]
+
+        # Check relationships
+        log_entry["relationship_check"] = {
+            "has_user_relationship": hasattr(Contact, "user"),
+            "has_meeting_requests_relationship": hasattr(Contact, "meeting_requests"),
+        }
+
+        # Check auth functionality
+        from flask import request
+
+        auth_header = request.headers.get("Authorization")
+        log_entry["auth_header_exists"] = auth_header is not None
+
+        if auth_header:
+            from app.decorators import decode_token
+
+            try:
+                token = auth_header.split(" ")[1]
+                decoded = decode_token(token)
+                log_entry["token_decode"] = "success"
+                log_entry["token_payload"] = {
+                    "sub": decoded.get("sub"),
+                    "exp": decoded.get("exp"),
+                    "iat": decoded.get("iat"),
+                }
+            except Exception as e:
+                log_entry["token_decode"] = "failed"
+                log_entry["token_error"] = str(e)
+
+        # Check for existing contacts
+        from app.models import User
+
+        contact_counts = db.session.query(db.func.count(Contact.id)).scalar()
+        user_counts = db.session.query(db.func.count(User.id)).scalar()
+        log_entry["db_counts"] = {
+            "contacts": contact_counts,
+            "users": user_counts,
+        }
+
+        return jsonify({"status": "success", "debug_info": log_entry})
+
+    except Exception as e:
+        import traceback
+
+        log_entry["error"] = str(e)
+        log_entry["traceback"] = traceback.format_exc()
+
+        return jsonify({"status": "error", "debug_info": log_entry}), 500

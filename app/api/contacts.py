@@ -88,21 +88,33 @@ class ContactList(Resource):
         current_app.logger.info(f"ContactList.get called for user {current_user.id} ({current_user.email})")
         current_app.logger.info(f"TESTING flag: {current_app.config.get('TESTING')}")
         current_app.logger.info(f"User is_premium: {current_user.is_premium()}")
+        current_app.logger.info(f"Request headers: {request.headers}")
 
-        # Special handling for tests - test users with test@example.com should always be considered premium
-        if current_app.config.get("TESTING"):
-            current_app.logger.info("Using test mode - bypassing premium check")
+        try:
+            # Special handling for tests - test users with test@example.com should always be considered premium
+            if current_app.config.get("TESTING"):
+                current_app.logger.info("Using test mode - bypassing premium check")
+                return [contact.to_dict() for contact in current_user.contacts]
+
+            # Check if contacts management is a premium feature
+            if is_premium_feature("contacts") and not current_user.is_premium():
+                current_app.logger.info("User does not have premium subscription")
+                abort(
+                    402,
+                    "This feature requires a premium subscription. Please upgrade your plan to use contacts management.",
+                )
+
+            # Log the number of contacts found
+            contact_count = len(current_user.contacts)
+            current_app.logger.info(f"Found {contact_count} contacts for user {current_user.id}")
+
+            # Return contacts
             return [contact.to_dict() for contact in current_user.contacts]
 
-        # Check if contacts management is a premium feature
-        if is_premium_feature("contacts") and not current_user.is_premium():
-            current_app.logger.info("User does not have premium subscription")
-            abort(
-                402,
-                "This feature requires a premium subscription. Please upgrade your plan to use contacts management.",
-            )
-
-        return [contact.to_dict() for contact in current_user.contacts]
+        except Exception as e:
+            current_app.logger.error(f"Error in ContactList.get: {str(e)}")
+            current_app.logger.exception(e)
+            abort(500, f"Server error: {str(e)}")
 
     @api.doc("create_contact")
     @api.expect(contact_create_model)
@@ -316,12 +328,25 @@ class ContactsOptions(Resource):
         """Handle OPTIONS requests for the contacts endpoint."""
         response = current_app.make_default_options_response()
         origin = request.headers.get("Origin")
+
+        # Log detailed information for debugging
+        current_app.logger.info(f"OPTIONS request for contacts/ endpoint")
+        current_app.logger.info(f"Request origin: {origin}")
+        current_app.logger.info(f"Request headers: {request.headers}")
+
+        # Always allow Origin for test/debug
         if origin:
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept"
             response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers["Access-Control-Max-Age"] = "3600"
+
+            # Log response headers
+            current_app.logger.info(f"Response headers: {response.headers}")
+        else:
+            current_app.logger.warning("No Origin header in request")
+
         return response
 
 
