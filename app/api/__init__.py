@@ -2663,3 +2663,61 @@ def simple_test_options():
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
+
+
+@debug_bp.route("/basic-register", methods=["POST"])
+def basic_register():
+    """A simplified registration endpoint that doesn't rely on subscriptions or contacts tables."""
+    try:
+        from app.models.user import User
+
+        data = request.json
+        if not data:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+
+        email = data.get("email")
+        password = data.get("password")
+
+        if not email or not password:
+            return jsonify({"status": "error", "message": "Email and password are required"}), 400
+
+        # Check if user already exists
+        existing_user = User.query.filter_by(email=email).first()
+        if existing_user:
+            return jsonify({"status": "error", "message": "User already exists"}), 409
+
+        # Create a new user
+        current_app.logger.info(f"Creating new user with email: {email}")
+        user = User(email=email)
+        user.set_password(password)
+
+        # Add to database
+        db.session.add(user)
+        db.session.commit()
+
+        # Generate token
+        from flask_jwt_extended import create_access_token
+
+        access_token = create_access_token(identity=str(user.id))
+
+        # Return success
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "message": "User registered successfully",
+                    "user_id": str(user.id),
+                    "email": user.email,
+                    "access_token": access_token,
+                }
+            ),
+            201,
+        )
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error in basic register: {str(e)}")
+        return (
+            jsonify({"status": "error", "message": "Registration failed", "error": str(e), "type": type(e).__name__}),
+            500,
+        )
