@@ -2315,7 +2315,7 @@ def debug_registration_troubleshoot():
     try:
         from flask_jwt_extended import create_access_token
 
-        from app.api.auth import RegisterSchema
+        from app.api.auth import register_model
         from app.models.user import User
 
         results = {"status": "success", "checks": {}, "logs": [], "database": {}, "auth_config": {}}
@@ -2369,15 +2369,27 @@ def debug_registration_troubleshoot():
         except Exception as e:
             results["database"]["error"] = str(e)
 
-        # Check 4: Register endpoint and schema
+        # Check 4: Register endpoint and model
         try:
-            schema = RegisterSchema()
-            results["checks"]["register_schema"] = {
-                "status": "success",
-                "fields": list(schema.fields.keys()) if hasattr(schema, "fields") else [],
+            # Check registration model
+            from app.api.auth import Register, api
+
+            # Get registration model fields
+            reg_fields = {}
+            if hasattr(register_model, "fields"):
+                reg_fields = {
+                    field: {"type": str(type(field_obj))} for field, field_obj in register_model.fields.items()
+                }
+
+            results["checks"]["register_model"] = {"status": "success", "fields": reg_fields}
+
+            # Check registration API endpoint
+            results["checks"]["register_endpoint"] = {
+                "exists": hasattr(Register, "post"),
+                "methods": ["POST"] if hasattr(Register, "post") else [],
             }
         except Exception as e:
-            results["checks"]["register_schema"] = {"status": "failed", "error": str(e)}
+            results["checks"]["register_model"] = {"status": "failed", "error": str(e)}
 
         # Check 5: JWT configuration
         try:
