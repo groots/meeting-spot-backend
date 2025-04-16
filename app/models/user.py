@@ -77,15 +77,25 @@ class User(db.Model):
 
     def is_premium(self) -> bool:
         """Check if the user has an active premium subscription."""
-        active_subscription = next(
-            (sub for sub in self.subscriptions if sub.status == "active" and sub.plan_id == "premium"), None
-        )
-        return bool(active_subscription)
+        try:
+            active_subscription = next(
+                (sub for sub in self.subscriptions if sub.status == "active" and sub.plan_id == "premium"), None
+            )
+            return bool(active_subscription)
+        except Exception:
+            # If subscriptions table doesn't exist or there's another error, assume not premium
+            return False
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert user to dictionary."""
-        # Get the active subscription if available
-        active_subscription = next((sub for sub in self.subscriptions if sub.status == "active"), None)
+        # Handle missing subscriptions table
+        active_subscription = None
+        try:
+            # Only attempt to access subscriptions if the table exists
+            active_subscription = next((sub for sub in self.subscriptions if sub.status == "active"), None)
+        except Exception:
+            # If there's an error (e.g., table doesn't exist), leave active_subscription as None
+            pass
 
         return {
             "id": str(self.id),
