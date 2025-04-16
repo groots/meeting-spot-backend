@@ -290,3 +290,18 @@ class CreateContactFromMeeting(Resource):
         db.session.commit()
 
         return contact.to_dict(), 201
+
+
+@api.route("/", methods=["OPTIONS"])
+class ContactsOptions(Resource):
+    @api.doc("contacts_options")
+    def options(self):
+        """Handle OPTIONS requests for the contacts endpoint."""
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
