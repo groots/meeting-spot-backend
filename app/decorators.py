@@ -60,10 +60,11 @@ def token_required(func):
             if not current_user:
                 abort(401, "User not found")
 
+            # Forward the request to the decorated function with the current user
             return func(*args, current_user=current_user, **kwargs)
         except Exception as e:
-            # Pass through specific abort exceptions (like 402 Payment Required)
-            if hasattr(e, "code") and 402 <= e.code < 600:
+            # For HTTP exceptions raised by abort(), let them pass through
+            if hasattr(e, "code") and hasattr(e, "description"):
                 raise
             # Handle authentication errors with 401
             abort(401, f"Authentication error: {str(e)}")

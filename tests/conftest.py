@@ -21,32 +21,20 @@ def test_key() -> bytes:
 
 @pytest.fixture(scope="session")
 def app() -> None:
-    """Create and configure a new app instance for each test."""
-    # Generate a test encryption key and store it as a string
-    encryption_key = Fernet.generate_key()
-    encryption_key_str = encryption_key.decode()
+    """Create a Flask app for testing."""
+    # Set up the test database URI
+    TEST_DATABASE_URL = os.environ.get(
+        "TEST_DATABASE_URL", "sqlite:///:memory:"
+    )  # Use in-memory SQLite if no URL provided
 
-    # Set up test environment variables
-    os.environ["ENCRYPTION_KEY"] = encryption_key_str
-    os.environ["JWT_SECRET_KEY"] = "test-jwt-secret-key"
-    # Force SQLite for testing
-    os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-    # Add test Google Maps API key
-    os.environ["GOOGLE_MAPS_API_KEY"] = "test-maps-api-key"
-
-    app = create_app("testing")  # Use testing config
-
-    # Configure SQLite to use in-memory database
-    app.config.update(
+    app = create_app(
         {
-            "ENCRYPTION_KEY": encryption_key_str,  # Store as string in config
-            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "TESTING": True,  # Explicitly set TESTING to True
+            "DEBUG": False,
+            "SQLALCHEMY_DATABASE_URI": TEST_DATABASE_URL,
             "SQLALCHEMY_TRACK_MODIFICATIONS": False,
-            "SQLALCHEMY_ENGINE_OPTIONS": {
-                "poolclass": StaticPool,
-                "connect_args": {"check_same_thread": False},
-            },
-            "TESTING": True,
+            "SECRET_KEY": "test-key",
+            "ENCRYPTION_KEY": os.environ.get("ENCRYPTION_KEY", "test-encryption-key"),
             "JWT_SECRET_KEY": "test-jwt-secret-key",
             "GOOGLE_MAPS_API_KEY": "test-maps-api-key",
             "SERVER_NAME": "localhost:5000",
