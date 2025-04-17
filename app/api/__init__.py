@@ -10,6 +10,7 @@ import time
 import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Type, Union
 
 import psutil
 from flask import Blueprint, Response, current_app, g, jsonify, render_template, request
@@ -2257,3 +2258,63 @@ def basic_register():
         current_app.logger.error(f"Critical error in basic registration endpoint: {str(e)}")
         current_app.logger.error(f"Traceback: {tb}")
         return jsonify({"status": "error", "message": "Server error", "error": str(e)}), 500
+
+
+@debug_bp.route("/google-auth-debug", methods=["GET", "OPTIONS"])
+def google_auth_debug():
+    """Debug endpoint for checking Google OAuth configuration"""
+    if request.method == "OPTIONS":
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+
+    try:
+        # Check Google OAuth configuration
+        google_client_id = current_app.config.get("GOOGLE_CLIENT_ID")
+        google_client_id_mask = "Not set"
+
+        if google_client_id:
+            if len(google_client_id) > 20:
+                google_client_id_mask = f"{google_client_id[:10]}...{google_client_id[-5:]}"
+            else:
+                google_client_id_mask = google_client_id
+
+        result = {
+            "status": "success",
+            "message": "Google OAuth debug information",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "google_auth": {
+                "client_id_configured": bool(google_client_id),
+                "client_id_mask": google_client_id_mask,
+                "google_auth_module_available": "google.oauth2" in sys.modules,
+                "id_token_module_available": hasattr(sys.modules.get("google.oauth2", {}), "id_token"),
+            },
+            "environment": current_app.config.get("ENV", "unknown"),
+            "debug_mode": current_app.config.get("DEBUG", False),
+        }
+
+        # Get the Google-related environment variables for debugging
+        env_vars = {}
+        for key in os.environ:
+            if key.startswith("GOOGLE_") and "SECRET" not in key.upper():
+                env_vars[key] = os.environ[key]
+
+        result["environment_variables"] = env_vars
+
+        return jsonify(result)
+    except Exception as e:
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": f"Error checking Google OAuth configuration: {str(e)}",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            ),
+            500,
+        )
