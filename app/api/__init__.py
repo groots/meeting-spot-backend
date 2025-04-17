@@ -2318,3 +2318,86 @@ def google_auth_debug():
             ),
             500,
         )
+
+
+@debug_bp.route("/test-google-token", methods=["POST", "OPTIONS"])
+def test_google_token():
+    """Test endpoint that directly tries to verify a Google token"""
+    if request.method == "OPTIONS":
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+
+    try:
+        # Get the token from the request
+        data = request.get_json()
+        if not data or "token" not in data:
+            return jsonify({"error": "Missing token parameter"}), 400
+
+        token = data["token"]
+        token_length = len(token)
+
+        # Check if GOOGLE_CLIENT_ID is configured
+        google_client_id = current_app.config.get("GOOGLE_CLIENT_ID")
+        if not google_client_id:
+            return (
+                jsonify({"status": "error", "message": "Google Client ID not configured", "client_id_present": False}),
+                500,
+            )
+
+        # Log details for debugging without exposing sensitive info
+        current_app.logger.info(f"Token received with length: {token_length}")
+        current_app.logger.info(f"Google Client ID configured with length: {len(google_client_id)}")
+
+        # Try and import the required modules
+        try:
+            import google.auth.transport.requests
+            from google.oauth2 import id_token
+
+            # Try to verify the token
+            verification_result = {"status": "processing", "modules_loaded": True}
+
+            try:
+                # Verify the token
+                idinfo = id_token.verify_oauth2_token(token, google.auth.transport.requests.Request(), google_client_id)
+
+                # Don't include the full user info in logs
+                sub = idinfo.get("sub", "")
+                email = idinfo.get("email", "")
+
+                current_app.logger.info(f"Token verification successful for email: {email}")
+
+                # Return success
+                verification_result["status"] = "success"
+                verification_result["message"] = "Token verified successfully"
+                verification_result["sub"] = sub
+                verification_result["email"] = email
+
+            except ValueError as e:
+                # Token verification failed
+                verification_result["status"] = "error"
+                verification_result["message"] = f"Token verification failed: {str(e)}"
+                current_app.logger.error(f"Token verification failed: {str(e)}")
+
+            except Exception as e:
+                # Other error
+                verification_result["status"] = "error"
+                verification_result["message"] = f"Unexpected error: {str(e)}"
+                current_app.logger.error(f"Unexpected error during token verification: {str(e)}")
+
+            return jsonify(verification_result)
+
+        except ImportError as e:
+            # Module import error
+            current_app.logger.error(f"Import error: {str(e)}")
+            return jsonify({"status": "error", "message": f"Import error: {str(e)}", "modules_loaded": False}), 500
+
+    except Exception as e:
+        # Catch all other errors
+        current_app.logger.error(f"Error in test-google-token endpoint: {str(e)}")
+        return jsonify({"status": "error", "message": f"Server error: {str(e)}"}), 500
