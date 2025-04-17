@@ -3,12 +3,12 @@
 import uuid
 from datetime import datetime, timezone
 
-from flask import current_app, jsonify, reques
+from flask import current_app, jsonify, request
 from flask_restx import Namespace, Resource, abort, fields
 
 from app import db
 from app.decorators import token_required
-from app.models import Contact, MeetingReques
+from app.models import Contact, MeetingRequest
 from app.utils.stripe_helpers import is_premium_feature
 
 api = Namespace("contacts", description="Contact management operations")
@@ -191,11 +191,11 @@ class ContactResource(Resource):
 
             result["meetings"] = meetings
         else:
-            # For non-premium users, only include meeting coun
+            # For non-premium users, only include meeting count
             result["meeting_count"] = len(contact.meeting_requests)
             result["premium_required"] = True
 
-        return resul
+        return result
 
     @api.doc("update_contact")
     @api.expect(contact_update_model)
@@ -289,7 +289,7 @@ class CreateContactFromMeeting(Resource):
             print(f"Invalid meeting ID format: {e}")
             abort(400, "Invalid meeting ID format")
 
-        # Find the meeting reques
+        # Find the meeting request
         meeting = MeetingRequest.query.filter_by(request_id=meeting_uuid).first_or_404(
             description=f"Meeting request {meeting_id} not found"
         )
@@ -305,11 +305,11 @@ class CreateContactFromMeeting(Resource):
         data = request.json
         print(f"Contact data: {data}")
 
-        # Create the contac
+        # Create the contact
         contact = Contact(
             user_id=current_user.id,
             name=data.get("name", ""),
-            email=meeting.user_b_email,  # Use email from meeting reques
+            email=meeting.user_b_email,  # Use email from meeting request
             phone=data.get("phone"),
             company=data.get("company"),
             notes=data.get("notes"),
@@ -318,7 +318,7 @@ class CreateContactFromMeeting(Resource):
         # Add the contact to the database
         db.session.add(contact)
 
-        # Associate the contact with the meeting reques
+        # Associate the contact with the meeting request
         meeting.contacts.append(contact)
 
         db.session.commit()
