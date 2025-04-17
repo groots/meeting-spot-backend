@@ -1,3 +1,5 @@
+import os
+import sys
 import traceback
 import uuid
 from datetime import datetime, timezone
@@ -207,14 +209,37 @@ class GoogleCallback(Resource):
             if not data or not data.get("token"):
                 return {"message": "Token is required"}, 400
 
-            # Verify the Google token
-            idinfo = id_token.verify_oauth2_token(
-                data["token"], google.auth.transport.requests.Request(), current_app.config["GOOGLE_CLIENT_ID"]
+            # Log received token length for debugging (without exposing token)
+            token_length = len(data["token"]) if data.get("token") else 0
+            current_app.logger.info(f"Received Google token of length: {token_length}")
+
+            # Check if GOOGLE_CLIENT_ID is configured
+            google_client_id = current_app.config.get("GOOGLE_CLIENT_ID")
+            if not google_client_id:
+                current_app.logger.error("GOOGLE_CLIENT_ID is not configured in application settings")
+                return {"message": "Google OAuth is not properly configured"}, 500
+
+            current_app.logger.info(
+                f"Using Google Client ID: {google_client_id[:10]}...{google_client_id[-10:] if len(google_client_id) > 20 else ''}"
             )
+
+            # Verify the Google token
+            try:
+                idinfo = id_token.verify_oauth2_token(
+                    data["token"], google.auth.transport.requests.Request(), google_client_id
+                )
+
+                # Log successful token verification
+                current_app.logger.info("Google token successfully verified")
+
+            except Exception as token_error:
+                current_app.logger.error(f"Error verifying Google token: {str(token_error)}")
+                return {"message": f"Invalid token: {str(token_error)}"}, 400
 
             # Get user info from the token
             google_id = idinfo["sub"]
             email = idinfo["email"]
+            current_app.logger.info(f"Extracted email from token: {email}")
 
             # Check if user exists
             user = User.query.filter_by(google_oauth_id=google_id).first()
@@ -223,16 +248,21 @@ class GoogleCallback(Resource):
                 user = User.query.filter_by(email=email).first()
                 if user:
                     # Link Google account to existing user
+                    current_app.logger.info(f"Linking Google account to existing user: {email}")
                     user.google_oauth_id = google_id
                 else:
                     # Create new user
+                    current_app.logger.info(f"Creating new user with Google OAuth: {email}")
                     user = User(email=email, google_oauth_id=google_id)
                     db.session.add(user)
 
                 db.session.commit()
+            else:
+                current_app.logger.info(f"Found existing Google-linked user: {email}")
 
             # Generate access token
             access_token = create_access_token(identity=user.id)
+            current_app.logger.info(f"Generated access token for user {user.id}")
 
             return {
                 "message": "Google authentication successful",
@@ -243,11 +273,52 @@ class GoogleCallback(Resource):
         except ValueError as e:
             # Invalid token
             current_app.logger.error(f"Invalid Google token: {str(e)}")
-            return {"message": "Invalid token"}, 400
+            current_app.logger.error(f"Token validation error details: {traceback.format_exc()}")
+            return {"message": f"Invalid token: {str(e)}"}, 400
         except Exception as e:
             # Other errors
             current_app.logger.error(f"Google authentication error: {str(e)}")
-            return {"message": "Authentication failed"}, 500
+            current_app.logger.error(f"Google auth error details: {traceback.format_exc()}")
+            return {"message": f"Authentication failed: {str(e)}"}, 500
+
+
+@api.route("/debug/google-config")
+class GoogleConfigDebug(Resource):
+    def get(self):
+        """Debug endpoint to check Google OAuth configuration"""
+        try:
+            response = {
+                "google_client_id_configured": bool(current_app.config.get("GOOGLE_CLIENT_ID")),
+                "google_client_id_length": len(current_app.config.get("GOOGLE_CLIENT_ID", "")),
+                "google_client_id_prefix": current_app.config.get("GOOGLE_CLIENT_ID", "")[:10] + "..."
+                if current_app.config.get("GOOGLE_CLIENT_ID")
+                else "Not set",
+                "config_source": current_app.config.get("CONFIG_SOURCE", "Unknown"),
+                "environment": current_app.config.get("ENV", "Unknown"),
+                "development_config_loaded": hasattr(current_app, "_development_config_loaded")
+                and current_app._development_config_loaded,
+                "google_auth_module_available": "google.oauth2" in sys.modules,
+                "missing_required_configs": [],
+            }
+
+            # Check for required configurations
+            required_configs = ["GOOGLE_CLIENT_ID", "JWT_SECRET_KEY"]
+            for config in required_configs:
+                if not current_app.config.get(config):
+                    response["missing_required_configs"].append(config)
+
+            # Add environment variables that might help with debugging
+            env_prefix = "GOOGLE_"
+            env_vars = {k: v for k, v in os.environ.items() if k.startswith(env_prefix) and "secret" not in k.lower()}
+            response["relevant_env_vars"] = env_vars
+
+            return response, 200
+
+        except Exception as e:
+            return {
+                "error": f"Error retrieving Google OAuth configuration: {str(e)}",
+                "traceback": traceback.format_exc(),
+            }, 500
 
 
 @api.route("/forgot-password")

@@ -16,6 +16,11 @@ class Config:
     # Google Cloud Project
     GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "find-a-meeting-spot")
 
+    # Google OAuth Configuration
+    GOOGLE_CLIENT_ID = os.getenv(
+        "GOOGLE_CLIENT_ID", "270814322595-hueraif6brli58po5gishfvcmocv6n04.apps.googleusercontent.com"
+    )
+
     # Google Maps API Key
     GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
