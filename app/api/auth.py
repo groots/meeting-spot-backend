@@ -282,43 +282,36 @@ class GoogleCallback(Resource):
             return {"message": f"Authentication failed: {str(e)}"}, 500
 
 
-@api.route("/debug/google-config")
-class GoogleConfigDebug(Resource):
+@api.route("/debug-google")
+class GoogleConfigDebugSimple(Resource):
+    @api.doc("debug_google_config")
     def get(self):
-        """Debug endpoint to check Google OAuth configuration"""
+        """Simple debug endpoint to check Google OAuth configuration"""
         try:
-            response = {
-                "google_client_id_configured": bool(current_app.config.get("GOOGLE_CLIENT_ID")),
-                "google_client_id_length": len(current_app.config.get("GOOGLE_CLIENT_ID", "")),
-                "google_client_id_prefix": current_app.config.get("GOOGLE_CLIENT_ID", "")[:10] + "..."
-                if current_app.config.get("GOOGLE_CLIENT_ID")
-                else "Not set",
-                "config_source": current_app.config.get("CONFIG_SOURCE", "Unknown"),
-                "environment": current_app.config.get("ENV", "Unknown"),
-                "development_config_loaded": hasattr(current_app, "_development_config_loaded")
-                and current_app._development_config_loaded,
-                "google_auth_module_available": "google.oauth2" in sys.modules,
-                "missing_required_configs": [],
-            }
-
-            # Check for required configurations
-            required_configs = ["GOOGLE_CLIENT_ID", "JWT_SECRET_KEY"]
-            for config in required_configs:
-                if not current_app.config.get(config):
-                    response["missing_required_configs"].append(config)
-
-            # Add environment variables that might help with debugging
-            env_prefix = "GOOGLE_"
-            env_vars = {k: v for k, v in os.environ.items() if k.startswith(env_prefix) and "secret" not in k.lower()}
-            response["relevant_env_vars"] = env_vars
-
-            return response, 200
-
-        except Exception as e:
             return {
-                "error": f"Error retrieving Google OAuth configuration: {str(e)}",
-                "traceback": traceback.format_exc(),
-            }, 500
+                "message": "Debug endpoint working",
+                "google_client_id_configured": bool(current_app.config.get("GOOGLE_CLIENT_ID")),
+                "time": datetime.now().isoformat(),
+            }, 200
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+    def options(self):
+        """Handle OPTIONS requests for CORS"""
+        response = current_app.make_default_options_response()
+
+        # Get the origin from the request
+        origin = request.headers.get("Origin")
+
+        # Set CORS headers
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+
+        return response
 
 
 @api.route("/forgot-password")
