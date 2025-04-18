@@ -110,6 +110,15 @@ def create_app(config_name="development"):
     # Log the configured CORS origins for debugging
     app.logger.info(f"Configured CORS origins: {app.config.get('CORS_ORIGINS', [])}")
 
+    # Google OAuth settings
+    app.config["GOOGLE_CLIENT_ID"] = os.getenv("GOOGLE_CLIENT_ID", "")
+
+    # Facebook OAuth settings
+    app.config["FACEBOOK_APP_ID"] = os.getenv("FACEBOOK_APP_ID", "")
+
+    # Configure rate limiting
+    app.config["RATELIMIT_DEFAULT"] = "100 per minute"
+
     # Set up logging
     setup_logging(app)
 

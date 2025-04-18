@@ -42,6 +42,13 @@ google_callback_model = api.model(
     },
 )
 
+facebook_callback_model = api.model(
+    "FacebookCallback",
+    {
+        "access_token": fields.String(required=True, description="Facebook access token"),
+    },
+)
+
 forgot_password_model = api.model(
     "ForgotPassword",
     {
@@ -503,3 +510,103 @@ class ResetPasswordConfirm(Resource):
             db.session.rollback()
             current_app.logger.error(f"Error resetting password: {str(e)}")
             return {"message": "An error occurred while resetting your password"}, 500
+
+
+@api.route("/facebook/callback")
+class FacebookCallback(Resource):
+    @api.expect(facebook_callback_model)
+    @api.doc(
+        "facebook_callback",
+        responses={
+            200: "Login successful",
+            400: "Invalid token",
+            500: "Server error",
+        },
+    )
+    def post(self):
+        """Handle Facebook OAuth callback"""
+        try:
+            data = request.get_json()
+            if not data or not data.get("access_token"):
+                return {"message": "Access token is required"}, 400
+
+            # Log received token length for debugging (without exposing token)
+            token_length = len(data["access_token"]) if data.get("access_token") else 0
+            current_app.logger.info(f"Received Facebook token of length: {token_length}")
+
+            # Check if FACEBOOK_APP_ID is configured
+            facebook_app_id = current_app.config.get("FACEBOOK_APP_ID")
+            if not facebook_app_id:
+                current_app.logger.error("FACEBOOK_APP_ID is not configured in application settings")
+                return {"message": "Facebook OAuth is not properly configured"}, 500
+
+            # Validate the Facebook token by making a request to the Facebook Graph API
+            import requests
+
+            try:
+                fb_response = requests.get(
+                    f"https://graph.facebook.com/me?fields=id,email&access_token={data['access_token']}"
+                )
+                if not fb_response.ok:
+                    current_app.logger.error(f"Error validating Facebook token: {fb_response.text}")
+                    return {"message": "Invalid Facebook token"}, 400
+
+                fb_data = fb_response.json()
+                current_app.logger.info(f"Facebook token validated successfully for user: {fb_data.get('id')}")
+            except Exception as token_error:
+                current_app.logger.error(f"Error validating Facebook token: {str(token_error)}")
+                current_app.logger.error(f"Token validation error details: {traceback.format_exc()}")
+                return {"message": f"Invalid token: {str(token_error)}"}, 400
+
+            # Get user info from Facebook response
+            facebook_id = fb_data.get("id")
+            email = fb_data.get("email")
+
+            if not facebook_id:
+                current_app.logger.error("Facebook ID not found in response")
+                return {"message": "Failed to get user ID from Facebook"}, 400
+
+            if not email:
+                current_app.logger.error("Email not found in Facebook response")
+                # We could either fail or create a user without email
+                # For security, let's require an email
+                return {
+                    "message": "Email not provided by Facebook. Please ensure your Facebook account has a verified email."
+                }, 400
+
+            current_app.logger.info(f"Extracted email from Facebook: {email}")
+
+            # Check if user exists by Facebook ID
+            user = User.query.filter_by(facebook_oauth_id=facebook_id).first()
+            if not user:
+                # Check if email is already registered
+                user = User.query.filter_by(email=email).first()
+                if user:
+                    # Link Facebook account to existing user
+                    current_app.logger.info(f"Linking Facebook account to existing user: {email}")
+                    user.facebook_oauth_id = facebook_id
+                else:
+                    # Create new user
+                    current_app.logger.info(f"Creating new user with Facebook OAuth: {email}")
+                    user = User(email=email, facebook_oauth_id=facebook_id)
+                    db.session.add(user)
+
+                db.session.commit()
+            else:
+                current_app.logger.info(f"Found existing Facebook-linked user: {email}")
+
+            # Generate access token
+            access_token = create_access_token(identity=user.id)
+            current_app.logger.info(f"Generated access token for user {user.id}")
+
+            return {
+                "message": "Facebook authentication successful",
+                "access_token": access_token,
+                "user": user.to_dict(),
+            }, 200
+
+        except Exception as e:
+            # Other errors
+            current_app.logger.error(f"Facebook authentication error: {str(e)}")
+            current_app.logger.error(f"Facebook auth error details: {traceback.format_exc()}")
+            return {"message": f"Authentication failed: {str(e)}"}, 500

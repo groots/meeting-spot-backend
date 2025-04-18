@@ -2184,10 +2184,20 @@ def basic_register_options():
     response = current_app.make_default_options_response()
     origin = request.headers.get("Origin")
     if origin:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
+        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
+        if "*" in allowed_origins or origin in allowed_origins or True:  # Temporarily allow all origins for testing
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            response.headers[
+                "Access-Control-Allow-Headers"
+            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+            current_app.logger.info(
+                f"Added CORS headers to OPTIONS response for /debug/basic-register, origin: {origin}"
+            )
+        else:
+            current_app.logger.info(f"Origin not allowed for basic-register OPTIONS: {origin}")
     return response
 
 

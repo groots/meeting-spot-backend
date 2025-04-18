@@ -22,6 +22,7 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(256))
     google_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
+    facebook_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False)
 
@@ -106,7 +107,7 @@ class User(db.Model):
             "email": self.email,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
-            "is_oauth_user": bool(self.google_oauth_id),
+            "is_oauth_user": bool(self.google_oauth_id) or bool(self.facebook_oauth_id),
             "is_premium": self.is_premium(),
             "subscription": active_subscription.to_dict() if active_subscription else None,
         }
