@@ -2411,3 +2411,149 @@ def test_google_token():
         # Catch all other errors
         current_app.logger.error(f"Error in test-google-token endpoint: {str(e)}")
         return jsonify({"status": "error", "message": f"Server error: {str(e)}"}), 500
+
+
+@debug_bp.route("/debug-login", methods=["POST", "OPTIONS"])
+def debug_login():
+    """Debug login endpoint to diagnose login issues"""
+    if request.method == "OPTIONS":
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            response.headers[
+                "Access-Control-Allow-Headers"
+            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+        return response
+
+    try:
+        from werkzeug.security import check_password_hash
+
+        from app.models.user import User
+
+        data = request.get_json()
+        results = {
+            "status": "processing",
+            "steps": [],
+            "request_data": {
+                "email": data.get("email", ""),
+                "password_provided": bool(data.get("password")),
+            },
+        }
+
+        # Step 1: Validate input
+        if not data or not data.get("email") or not data.get("password"):
+            results["steps"].append({"step": "validate_input", "status": "error", "message": "Missing required fields"})
+            results["status"] = "error"
+            return jsonify(results), 400
+
+        results["steps"].append({"step": "validate_input", "status": "success"})
+
+        # Step 2: Find user
+        user = User.query.filter_by(email=data["email"]).first()
+        if not user:
+            results["steps"].append({"step": "find_user", "status": "error", "message": "User not found"})
+            results["status"] = "error"
+            return jsonify(results), 401
+
+        results["steps"].append(
+            {
+                "step": "find_user",
+                "status": "success",
+                "user_info": {
+                    "id": str(user.id),
+                    "email": user.email,
+                    "password_hash_exists": bool(user.password_hash),
+                    "password_hash_length": len(user.password_hash) if user.password_hash else 0,
+                    "is_oauth_user": bool(user.google_oauth_id) or bool(getattr(user, "facebook_oauth_id", None)),
+                },
+            }
+        )
+
+        # Step 3: Check password
+        try:
+            password_valid = user.check_password(data["password"])
+            if not password_valid:
+                results["steps"].append({"step": "check_password", "status": "error", "message": "Invalid password"})
+                results["status"] = "error"
+                return jsonify(results), 401
+
+            results["steps"].append({"step": "check_password", "status": "success"})
+        except Exception as e:
+            results["steps"].append(
+                {
+                    "step": "check_password",
+                    "status": "error",
+                    "message": f"Error during password check: {str(e)}",
+                    "error_type": type(e).__name__,
+                }
+            )
+            results["status"] = "error"
+            return jsonify(results), 500
+
+        # Step 4: Generate token
+        try:
+            from flask_jwt_extended import create_access_token
+
+            access_token = create_access_token(identity=str(user.id))
+            results["steps"].append({"step": "create_token", "status": "success", "token_length": len(access_token)})
+        except Exception as e:
+            results["steps"].append(
+                {
+                    "step": "create_token",
+                    "status": "error",
+                    "message": f"Error generating token: {str(e)}",
+                    "error_type": type(e).__name__,
+                }
+            )
+            results["status"] = "error"
+            return jsonify(results), 500
+
+        # Step 5: Prepare user data
+        try:
+            user_dict = user.to_dict()
+            results["steps"].append(
+                {"step": "prepare_user_data", "status": "success", "user_data_keys": list(user_dict.keys())}
+            )
+            results["user"] = user_dict
+        except Exception as e:
+            import traceback
+
+            tb = traceback.format_exc()
+            results["steps"].append(
+                {
+                    "step": "prepare_user_data",
+                    "status": "error",
+                    "message": f"Error preparing user data: {str(e)}",
+                    "error_type": type(e).__name__,
+                    "traceback": tb,
+                }
+            )
+            results["status"] = "error"
+            return jsonify(results), 500
+
+        # Success
+        results["status"] = "success"
+        results["access_token"] = access_token
+        return jsonify(results)
+
+    except Exception as e:
+        import traceback
+
+        tb = traceback.format_exc()
+        current_app.logger.error(f"Debug login error: {str(e)}")
+        current_app.logger.error(f"Traceback: {tb}")
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": f"Server error: {str(e)}",
+                    "error_type": type(e).__name__,
+                    "traceback": tb,
+                }
+            ),
+            500,
+        )
