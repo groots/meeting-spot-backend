@@ -130,6 +130,24 @@ def create_app(config_name="development"):
     jwt.init_app(app)
     migrate.init_app(app, db)
 
+    # Automatically add facebook_oauth_id column if it doesn't exist
+    @app.before_first_request
+    def apply_facebook_column_migration():
+        try:
+            from sqlalchemy import inspect
+
+            inspector = inspect(db.engine)
+            if "users" in inspector.get_table_names():
+                columns = [column["name"] for column in inspector.get_columns("users")]
+                if "facebook_oauth_id" not in columns:
+                    app.logger.info("Adding facebook_oauth_id column to users table")
+                    with db.engine.begin() as conn:
+                        conn.execute("ALTER TABLE users ADD COLUMN facebook_oauth_id VARCHAR(255) UNIQUE")
+                        conn.execute("CREATE INDEX ix_users_facebook_oauth_id ON users (facebook_oauth_id)")
+                    app.logger.info("Successfully added facebook_oauth_id column")
+        except Exception as e:
+            app.logger.error(f"Error applying facebook column migration: {str(e)}")
+
     # Add a root route handler for the welcome page
     @app.route("/")
     def index():

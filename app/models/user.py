@@ -102,12 +102,20 @@ class User(db.Model):
             # If there's an error (e.g., table doesn't exist), leave active_subscription as None
             pass
 
+        # Check if facebook_oauth_id attribute exists
+        is_facebook_user = False
+        try:
+            is_facebook_user = bool(self.facebook_oauth_id)
+        except Exception:
+            # If the attribute doesn't exist, it's not a Facebook user
+            pass
+
         return {
             "id": str(self.id),
             "email": self.email,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
-            "is_oauth_user": bool(self.google_oauth_id) or bool(self.facebook_oauth_id),
+            "is_oauth_user": bool(self.google_oauth_id) or is_facebook_user,
             "is_premium": self.is_premium(),
             "subscription": active_subscription.to_dict() if active_subscription else None,
         }

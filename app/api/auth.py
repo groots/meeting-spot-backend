@@ -610,3 +610,70 @@ class FacebookCallback(Resource):
             current_app.logger.error(f"Facebook authentication error: {str(e)}")
             current_app.logger.error(f"Facebook auth error details: {traceback.format_exc()}")
             return {"message": f"Authentication failed: {str(e)}"}, 500
+
+
+@api.route("/facebook/deauthorize")
+class FacebookDeauthorize(Resource):
+    @api.doc(
+        "facebook_deauthorize",
+        responses={
+            200: "Deauthorization handled successfully",
+            400: "Invalid request",
+            500: "Server error",
+        },
+    )
+    def post(self):
+        """Handle Facebook app deauthorization callback
+
+        This endpoint is called by Facebook when a user removes the app
+        from their Facebook account. It should remove Facebook connection
+        from the user account but keep the account itself.
+        """
+        try:
+            # Facebook sends a signed_request parameter that contains user_id
+            signed_request = request.form.get("signed_request")
+            if not signed_request:
+                current_app.logger.error("No signed_request in Facebook deauthorize callback")
+                return {"success": True}, 200  # Return 200 even for errors to acknowledge receipt
+
+            # Parse the signed request from Facebook
+            # Format: encoded_signature.encoded_payload
+            try:
+                encoded_signature, encoded_payload = signed_request.split(".")
+                import base64
+                import json
+
+                # Decode the payload (we don't validate the signature in this implementation)
+                # In production, you should validate the signature using your app secret
+                # Padding the base64 string if needed
+                payload = encoded_payload.replace("-", "+").replace("_", "/")
+                payload += "=" * (4 - len(payload) % 4) if len(payload) % 4 else ""
+
+                payload_data = json.loads(base64.b64decode(payload).decode("utf-8"))
+                current_app.logger.info(f"Received deauthorize request: {json.dumps(payload_data)}")
+
+                user_id = payload_data.get("user_id")
+                if not user_id:
+                    current_app.logger.error("No user_id in Facebook deauthorize payload")
+                    return {"success": True}, 200
+
+                # Find the user by Facebook ID and remove the connection
+                user = User.query.filter_by(facebook_oauth_id=user_id).first()
+                if user:
+                    current_app.logger.info(f"Removing Facebook connection for user {user.email}")
+                    user.facebook_oauth_id = None
+                    db.session.commit()
+                else:
+                    current_app.logger.info(f"No user found with Facebook ID {user_id}")
+
+                return {"success": True}, 200
+
+            except Exception as e:
+                current_app.logger.error(f"Error parsing Facebook signed request: {str(e)}")
+                current_app.logger.error(traceback.format_exc())
+                return {"success": True}, 200
+
+        except Exception as e:
+            current_app.logger.error(f"Facebook deauthorize error: {str(e)}")
+            current_app.logger.error(traceback.format_exc())
+            return {"success": True}, 200  # Always acknowledge receipt to Facebook

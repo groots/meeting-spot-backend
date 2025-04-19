@@ -55,78 +55,43 @@ _performance_lock = threading.Lock()
 
 @debug_bp.route("/health")
 def health_check():
-    """Comprehensive health check endpoint."""
+    """Check application health."""
     health_data = {
-        "status": "initializing",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": "healthy",
+        "time": datetime.now(timezone.utc).isoformat(),
+        "app_version": current_app.config.get("APP_VERSION", "unknown"),
         "environment": current_app.config.get("ENV", "unknown"),
-        "debug_mode": current_app.debug,
-        "components": {},
+        "sqlalchemy_database_uri_set": bool(current_app.config.get("SQLALCHEMY_DATABASE_URI")),
+        "debug": current_app.debug,
     }
 
-    # Check database connectivity
     try:
-        # Simple query to check database connection
-        db_version = db.session.execute(text("SELECT version()")).scalar()
-        health_data["components"]["database"] = {
-            "status": "healthy",
-            "version": db_version,
-            "uri": current_app.config.get("SQLALCHEMY_DATABASE_URI", "Not set").replace(
-                # Mask password in the returned URL for security
-                ":" + current_app.config.get("SQLALCHEMY_DATABASE_URI", "").split(":")[2].split("@")[0] + "@",
-                ":*****@",
-            )
-            if ":" in current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
-            else "Not set",
-        }
-    except SQLAlchemyError as e:
-        health_data["components"]["database"] = {"status": "unhealthy", "error": str(e)}
-
-    # Check system resources
-    try:
-        health_data["components"]["system"] = {
-            "cpu_usage": psutil.cpu_percent(interval=1),
-            "memory": {
-                "total": psutil.virtual_memory().total,
-                "available": psutil.virtual_memory().available,
-                "percent": psutil.virtual_memory().percent,
-            },
-            "disk": {
-                "total": psutil.disk_usage("/").total,
-                "free": psutil.disk_usage("/").free,
-                "percent": psutil.disk_usage("/").percent,
-            },
-        }
+        # Add information about database
+        if current_app.config.get("SQLALCHEMY_DATABASE_URI"):
+            # Attempt a simple database query to check connectivity
+            try:
+                db_version = db.session.execute(text("SELECT version()")).scalar()
+                health_data["database"] = {
+                    "connected": True,
+                    "version": db_version,
+                }
+            except SQLAlchemyError as e:
+                health_data["database"] = {
+                    "connected": False,
+                    "error": str(e),
+                }
+            except Exception as e:
+                health_data["database"] = {
+                    "connected": False,
+                    "error": f"Unexpected error: {str(e)}",
+                }
+        else:
+            health_data["database"] = {
+                "connected": False,
+                "error": "SQLALCHEMY_DATABASE_URI not set",
+            }
     except Exception as e:
-        health_data["components"]["system"] = {"status": "error", "error": str(e)}
-
-    # Check configuration
-    health_data["components"]["configuration"] = {
-        "cors_origins": current_app.config.get("CORS_ORIGINS"),
-        "encryption_key_set": bool(current_app.config.get("ENCRYPTION_KEY")),
-        "google_maps_api_key_set": bool(current_app.config.get("GOOGLE_MAPS_API_KEY")),
-        "jwt_secret_key_set": bool(current_app.config.get("JWT_SECRET_KEY")),
-        "security_headers": bool(current_app.config.get("SECURITY_HEADERS")),
-    }
-
-    # Check CORS configuration
-    health_data["components"]["cors"] = {
-        "enabled": True,
-        "allowed_origins": current_app.config.get("CORS_ORIGINS"),
-        "allowed_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_credentials": True,
-        "max_age": 3600,
-    }
-
-    # Determine overall status
-    if all(
-        comp.get("status", "healthy") == "healthy"
-        for comp in health_data["components"].values()
-        if isinstance(comp, dict) and "status" in comp
-    ):
-        health_data["status"] = "healthy"
-    else:
-        health_data["status"] = "degraded"
+        health_data["error"] = str(e)
 
     response = jsonify(health_data)
 
@@ -2415,145 +2380,205 @@ def test_google_token():
 
 @debug_bp.route("/debug-login", methods=["POST", "OPTIONS"])
 def debug_login():
-    """Debug login endpoint to diagnose login issues"""
+    """Debug endpoint for login testing."""
     if request.method == "OPTIONS":
         response = current_app.make_default_options_response()
         origin = request.headers.get("Origin")
         if origin:
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-            response.headers[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
             response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
         return response
 
+    # Handle POST request
+    data = request.get_json()
+    if not data or not data.get("email") or not data.get("password"):
+        return jsonify({"status": "error", "message": "Missing email or password"}), 400
+
+    # Create a structured response to provide debugging information
+    debug_response = {
+        "timestamp": datetime.now().isoformat(),
+        "database_uri": current_app.config.get("SQLALCHEMY_DATABASE_URI", "Not set").replace(
+            # Mask password in the returned URL for security
+            ":" + current_app.config.get("SQLALCHEMY_DATABASE_URI", "").split(":")[2].split("@")[0] + "@",
+            ":*****@",
+        )
+        if ":" in current_app.config.get("SQLALCHEMY_DATABASE_URI", "")
+        else current_app.config.get("SQLALCHEMY_DATABASE_URI", "Not set"),
+        "flask_env": current_app.config.get("ENV", "development"),
+        "debug_mode": current_app.debug,
+    }
+
     try:
-        from werkzeug.security import check_password_hash
+        # Check if we can query the user
+        # Use SQLAlchemy's core to create a safe query that won't fail if columns are missing
+        from sqlalchemy import MetaData, Table, select
 
-        from app.models.user import User
+        metadata = MetaData()
+        user_table = Table("users", metadata, autoload_with=db.engine)
 
-        data = request.get_json()
+        # Build query manually to avoid missing column errors
+        query = select(user_table).where(user_table.c.email == data["email"])
+
+        with db.engine.connect() as conn:
+            result = conn.execute(query).fetchone()
+
+        if result:
+            # User exists, check if we can convert it to dict safely
+            user_data = dict(result)
+            debug_response["user_exists"] = True
+            debug_response["user_id"] = str(user_data.get("id"))
+            debug_response["user_email"] = user_data.get("email")
+            debug_response["has_password"] = bool(user_data.get("password_hash"))
+
+            # Try regular login
+            try:
+                login_response = requests.post(
+                    url=f"{request.url_root.rstrip('/')}/api/v1/auth/login",
+                    json={"email": data["email"], "password": data["password"]},
+                    headers={"Content-Type": "application/json"},
+                )
+                debug_response["regular_login"] = {
+                    "status": login_response.status_code,
+                    "ok": login_response.ok,
+                    "data": login_response.json()
+                    if login_response.ok
+                    else login_response.json()
+                    if login_response.content
+                    else {"message": "No content in response"},
+                }
+            except Exception as e:
+                debug_response["regular_login"] = {"error": str(e)}
+
+        else:
+            debug_response["user_exists"] = False
+            debug_response["message"] = "User not found"
+
+    except Exception as e:
+        import traceback
+
+        debug_response["error_type"] = type(e).__name__
+        debug_response["message"] = str(e)
+        debug_response["traceback"] = traceback.format_exc()
+
+    # Add CORS headers to response
+    response = jsonify(debug_response)
+    origin = request.headers.get("Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+
+    return response
+
+
+@debug_bp.route("/fix-facebook-column")
+def fix_facebook_column():
+    """Fix the missing facebook_oauth_id column in the users table."""
+    try:
+        # Check if the column already exists
+        from sqlalchemy import inspect
+
+        inspector = inspect(db.engine)
+        columns = [column["name"] for column in inspector.get_columns("users")]
+
         results = {
             "status": "processing",
+            "existing_columns": columns,
+            "table_exists": "users" in inspector.get_table_names(),
+            "facebook_column_exists": "facebook_oauth_id" in columns,
             "steps": [],
-            "request_data": {
-                "email": data.get("email", ""),
-                "password_provided": bool(data.get("password")),
-            },
         }
 
-        # Step 1: Validate input
-        if not data or not data.get("email") or not data.get("password"):
-            results["steps"].append({"step": "validate_input", "status": "error", "message": "Missing required fields"})
-            results["status"] = "error"
-            return jsonify(results), 400
+        if "facebook_oauth_id" in columns:
+            results["status"] = "success"
+            results["message"] = "facebook_oauth_id column already exists"
+            return jsonify(results)
 
-        results["steps"].append({"step": "validate_input", "status": "success"})
-
-        # Step 2: Find user
-        user = User.query.filter_by(email=data["email"]).first()
-        if not user:
-            results["steps"].append({"step": "find_user", "status": "error", "message": "User not found"})
-            results["status"] = "error"
-            return jsonify(results), 401
-
-        results["steps"].append(
-            {
-                "step": "find_user",
-                "status": "success",
-                "user_info": {
-                    "id": str(user.id),
-                    "email": user.email,
-                    "password_hash_exists": bool(user.password_hash),
-                    "password_hash_length": len(user.password_hash) if user.password_hash else 0,
-                    "is_oauth_user": bool(user.google_oauth_id) or bool(getattr(user, "facebook_oauth_id", None)),
-                },
-            }
-        )
-
-        # Step 3: Check password
+        # Column doesn't exist, add it
         try:
-            password_valid = user.check_password(data["password"])
-            if not password_valid:
-                results["steps"].append({"step": "check_password", "status": "error", "message": "Invalid password"})
+            with db.engine.begin() as conn:
+                conn.execute("ALTER TABLE users ADD COLUMN facebook_oauth_id VARCHAR(255) UNIQUE")
+                results["steps"].append({"step": "add_column", "status": "success"})
+
+                # Add index
+                conn.execute("CREATE INDEX ix_users_facebook_oauth_id ON users (facebook_oauth_id)")
+                results["steps"].append({"step": "create_index", "status": "success"})
+
+            # Verify the column was added
+            inspector = inspect(db.engine)
+            new_columns = [column["name"] for column in inspector.get_columns("users")]
+            results["column_added"] = "facebook_oauth_id" in new_columns
+            results["updated_columns"] = new_columns
+
+            if results["column_added"]:
+                results["status"] = "success"
+                results["message"] = "Successfully added facebook_oauth_id column"
+            else:
                 results["status"] = "error"
-                return jsonify(results), 401
+                results["message"] = "Failed to add column, but no error was raised"
 
-            results["steps"].append({"step": "check_password", "status": "success"})
-        except Exception as e:
-            results["steps"].append(
-                {
-                    "step": "check_password",
-                    "status": "error",
-                    "message": f"Error during password check: {str(e)}",
-                    "error_type": type(e).__name__,
-                }
-            )
-            results["status"] = "error"
-            return jsonify(results), 500
+            return jsonify(results)
 
-        # Step 4: Generate token
-        try:
-            from flask_jwt_extended import create_access_token
-
-            access_token = create_access_token(identity=str(user.id))
-            results["steps"].append({"step": "create_token", "status": "success", "token_length": len(access_token)})
-        except Exception as e:
-            results["steps"].append(
-                {
-                    "step": "create_token",
-                    "status": "error",
-                    "message": f"Error generating token: {str(e)}",
-                    "error_type": type(e).__name__,
-                }
-            )
-            results["status"] = "error"
-            return jsonify(results), 500
-
-        # Step 5: Prepare user data
-        try:
-            user_dict = user.to_dict()
-            results["steps"].append(
-                {"step": "prepare_user_data", "status": "success", "user_data_keys": list(user_dict.keys())}
-            )
-            results["user"] = user_dict
         except Exception as e:
             import traceback
 
             tb = traceback.format_exc()
-            results["steps"].append(
-                {
-                    "step": "prepare_user_data",
-                    "status": "error",
-                    "message": f"Error preparing user data: {str(e)}",
-                    "error_type": type(e).__name__,
-                    "traceback": tb,
-                }
-            )
             results["status"] = "error"
+            results["message"] = f"Error adding column: {str(e)}"
+            results["traceback"] = tb
+            results["steps"].append({"step": "add_column", "status": "error", "error": str(e)})
             return jsonify(results), 500
-
-        # Success
-        results["status"] = "success"
-        results["access_token"] = access_token
-        return jsonify(results)
 
     except Exception as e:
         import traceback
 
         tb = traceback.format_exc()
-        current_app.logger.error(f"Debug login error: {str(e)}")
-        current_app.logger.error(f"Traceback: {tb}")
+        return jsonify({"status": "error", "message": f"Error checking column: {str(e)}", "traceback": tb}), 500
+
+
+@debug_bp.route("/fix-facebook-column-simple")
+def fix_facebook_column_simple():
+    """Simple endpoint to fix the missing facebook_oauth_id column in the users table."""
+    try:
+        # Check if the column already exists using raw SQL
+        with db.engine.connect() as conn:
+            # First check if the column exists
+            try:
+                # Try to select the column - if it works, column exists
+                conn.execute(text("SELECT facebook_oauth_id FROM users LIMIT 1"))
+                return jsonify(
+                    {"status": "success", "message": "facebook_oauth_id column already exists", "action_taken": "none"}
+                )
+            except Exception:
+                # Column doesn't exist, add it
+                try:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN facebook_oauth_id VARCHAR(255) UNIQUE"))
+                    conn.execute(text("CREATE INDEX ix_users_facebook_oauth_id ON users (facebook_oauth_id)"))
+                    return jsonify(
+                        {
+                            "status": "success",
+                            "message": "Successfully added facebook_oauth_id column",
+                            "action_taken": "column_added",
+                        }
+                    )
+                except Exception as add_error:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": f"Failed to add column: {str(add_error)}",
+                                "action_taken": "none",
+                            }
+                        ),
+                        500,
+                    )
+    except Exception as e:
         return (
             jsonify(
-                {
-                    "status": "error",
-                    "message": f"Server error: {str(e)}",
-                    "error_type": type(e).__name__,
-                    "traceback": tb,
-                }
+                {"status": "error", "message": f"Error accessing database: {str(e)}", "error_type": type(e).__name__}
             ),
             500,
         )
