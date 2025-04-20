@@ -103,7 +103,7 @@ class Login(Resource):
 
                 # Build targeted query that doesn't depend on all columns
                 query = select(
-                    [users.c.id, users.c.email, users.c.password_hash, users.c.created_at, users.c.updated_at]
+                    users.c.id, users.c.email, users.c.password_hash, users.c.created_at, users.c.updated_at
                 ).where(users.c.email == data["email"])
 
                 with db.engine.connect() as conn:
@@ -164,7 +164,7 @@ class Login(Resource):
                 try:
                     # Query for active subscription
                     subscription_table = Table("subscriptions", metadata, autoload_with=db.engine)
-                    sub_query = select([subscription_table]).where(
+                    sub_query = select(subscription_table).where(
                         (subscription_table.c.user_id == user_id) & (subscription_table.c.status == "active")
                     )
 
