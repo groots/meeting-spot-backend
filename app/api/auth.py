@@ -84,31 +84,58 @@ class Login(Resource):
             # Log the email (without password) for debugging
             current_app.logger.info(f"Login attempt for email: {data.get('email')}")
 
-            # Check if the user exists
+            # Use a direct SQL approach to avoid ORM issues with missing columns
             try:
-                user = User.query.filter_by(email=data["email"]).first()
-                if not user:
+                from sqlalchemy import Column, MetaData, String, Table, Text, select
+
+                # Get the user safely using core SQL, only selecting needed columns
+                metadata = MetaData()
+                users = Table(
+                    "users",
+                    metadata,
+                    Column("id", String(36), primary_key=True),
+                    Column("email", String(120)),
+                    Column("password_hash", Text),
+                    Column("created_at", Text),
+                    Column("updated_at", Text),
+                    autoload_with=db.engine,
+                )
+
+                # Build targeted query that doesn't depend on all columns
+                query = select(
+                    [users.c.id, users.c.email, users.c.password_hash, users.c.created_at, users.c.updated_at]
+                ).where(users.c.email == data["email"])
+
+                with db.engine.connect() as conn:
+                    result = conn.execute(query).fetchone()
+
+                if not result:
                     current_app.logger.info(f"Login failed: User not found for email {data.get('email')}")
                     return {"error": "Invalid credentials"}, 401
 
-                current_app.logger.info(f"User found with ID: {user.id}")
+                # Create a minimal user object with just what we need
+                user_data = dict(result)
+                user_id = user_data["id"]
+                password_hash = user_data["password_hash"]
+
+                current_app.logger.info(f"User found with ID: {user_id}")
             except Exception as user_error:
                 current_app.logger.error(f"Error querying user: {str(user_error)}")
                 current_app.logger.error(traceback.format_exc())
                 return {"error": "Error querying user database", "error_type": type(user_error).__name__}, 500
 
             # Check if password hash exists
-            if not user.password_hash:
-                current_app.logger.warning(f"Login failed: User {user.id} has no password hash (OAuth user?)")
+            if not password_hash:
+                current_app.logger.warning(f"Login failed: User {user_id} has no password hash (OAuth user?)")
                 return {"error": "This account does not have a password set. Please login with OAuth."}, 401
 
-            # Verify password
+            # Verify password using werkzeug's check_password_hash directly
             try:
-                if not user.check_password(data["password"]):
-                    current_app.logger.info(f"Login failed: Invalid password for user {user.id}")
+                if not check_password_hash(password_hash, data["password"]):
+                    current_app.logger.info(f"Login failed: Invalid password for user {user_id}")
                     return {"error": "Invalid credentials"}, 401
 
-                current_app.logger.info(f"Password verified for user {user.id}")
+                current_app.logger.info(f"Password verified for user {user_id}")
             except Exception as pwd_error:
                 current_app.logger.error(f"Error checking password: {str(pwd_error)}")
                 current_app.logger.error(traceback.format_exc())
@@ -116,31 +143,59 @@ class Login(Resource):
 
             # Generate access token
             try:
-                access_token = create_access_token(identity=str(user.id))
-                current_app.logger.info(f"Access token generated for user {user.id}")
+                access_token = create_access_token(identity=str(user_id))
+                current_app.logger.info(f"Access token generated for user {user_id}")
             except Exception as token_error:
                 current_app.logger.error(f"Error generating token: {str(token_error)}")
                 current_app.logger.error(traceback.format_exc())
                 return {"error": "Error generating access token", "error_type": type(token_error).__name__}, 500
 
-            # Convert user to dict for response
+            # Create a minimal user dictionary with the available data
             try:
-                user_dict = user.to_dict()
-                current_app.logger.info(f"User data retrieved successfully for user {user.id}")
+                user_dict = {
+                    "id": str(user_id),
+                    "email": user_data["email"],
+                    "created_at": user_data["created_at"],
+                    "updated_at": user_data["updated_at"],
+                    "is_oauth_user": False,  # We know this is a password login
+                }
+
+                # Try to get premium status if available
+                try:
+                    # Query for active subscription
+                    subscription_table = Table("subscriptions", metadata, autoload_with=db.engine)
+                    sub_query = select([subscription_table]).where(
+                        (subscription_table.c.user_id == user_id) & (subscription_table.c.status == "active")
+                    )
+
+                    with db.engine.connect() as conn:
+                        sub_result = conn.execute(sub_query).fetchone()
+
+                    user_dict["is_premium"] = bool(sub_result)
+
+                    if sub_result:
+                        sub_data = dict(sub_result)
+                        user_dict["subscription"] = {
+                            "id": str(sub_data.get("id")),
+                            "plan_id": sub_data.get("plan_id"),
+                            "status": sub_data.get("status"),
+                            "current_period_end": sub_data.get("current_period_end"),
+                        }
+                except Exception as sub_error:
+                    current_app.logger.warning(f"Could not fetch subscription data: {str(sub_error)}")
+                    user_dict["is_premium"] = False
+                    user_dict["subscription"] = None
+
+                current_app.logger.info(f"User data retrieved successfully for user {user_id}")
             except Exception as dict_error:
-                current_app.logger.error(f"Error converting user to dict: {str(dict_error)}")
+                current_app.logger.error(f"Error creating user dict: {str(dict_error)}")
                 current_app.logger.error(traceback.format_exc())
 
-                # Try a simplified version if the full conversion fails
-                user_dict = {
-                    "id": str(user.id),
-                    "email": user.email,
-                    "created_at": user.created_at.isoformat() if hasattr(user, "created_at") else None,
-                    "updated_at": user.updated_at.isoformat() if hasattr(user, "updated_at") else None,
-                }
-                current_app.logger.info("Using simplified user dict as fallback")
+                # Use minimal data if there was an error
+                user_dict = {"id": str(user_id), "email": user_data["email"]}
+                current_app.logger.info("Using minimal user dict as fallback")
 
-            current_app.logger.info(f"Login successful for user {user.id}")
+            current_app.logger.info(f"Login successful for user {user_id}")
             return {"access_token": access_token, "user": user_dict}
 
         except Exception as e:
