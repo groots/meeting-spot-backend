@@ -87,33 +87,87 @@ class Login(Resource):
             # Use a direct SQL approach to avoid ORM issues with missing columns
             try:
                 # Use the ORM approach which is simpler and more reliable for testing
-                user = User.query.filter_by(email=data["email"]).first()
+                try:
+                    current_app.logger.info("Attempting to query user with ORM")
+                    from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
 
-                if not user:
-                    current_app.logger.info(f"Login failed: User not found for email {data.get('email')}")
-                    return {"error": "Invalid credentials"}, 401
+                    try:
+                        user = User.query.filter_by(email=data["email"]).first()
+                        current_app.logger.info(f"ORM query successful: user {'found' if user else 'not found'}")
+                    except ProgrammingError as pe:
+                        current_app.logger.error(f"ProgrammingError in user query: {str(pe)}")
+                        current_app.logger.error(f"ProgrammingError details: {traceback.format_exc()}")
+                        # Try a more direct approach if ORM fails
+                        current_app.logger.info("Attempting fallback with direct SQL")
+                        from sqlalchemy import text
 
-                # Check if password hash exists
-                if not user.password_hash:
-                    current_app.logger.warning(f"Login failed: User {user.id} has no password hash (OAuth user?)")
-                    return {"error": "This account does not have a password set. Please login with OAuth."}, 401
+                        sql = text("SELECT id, email, password_hash FROM users WHERE email = :email")
+                        with db.engine.connect() as conn:
+                            result = conn.execute(sql, {"email": data["email"]}).fetchone()
 
-                # Verify password
-                if not check_password_hash(user.password_hash, data["password"]):
-                    current_app.logger.info(f"Login failed: Invalid password for user {user.id}")
-                    return {"error": "Invalid credentials"}, 401
+                        if not result:
+                            current_app.logger.info(f"User not found with direct SQL for email {data.get('email')}")
+                            return {"error": "Invalid credentials"}, 401
 
-                current_app.logger.info(f"Password verified for user {user.id}")
+                        user_id, email, password_hash = result
+                        current_app.logger.info(f"User found with direct SQL: {email}")
 
-                # Generate access token
-                access_token = create_access_token(identity=str(user.id))
-                current_app.logger.info(f"Access token generated for user {user.id}")
+                        # Check password
+                        if not check_password_hash(password_hash, data["password"]):
+                            current_app.logger.info(f"Invalid password for user {user_id}")
+                            return {"error": "Invalid credentials"}, 401
 
-                # Get user data
-                user_dict = user.to_dict()
+                        # Create access token
+                        access_token = create_access_token(identity=str(user_id))
 
-                current_app.logger.info(f"Login successful for user {user.id}")
-                return {"access_token": access_token, "user": user_dict}
+                        # Create minimal user dict for response
+                        user_dict = {
+                            "id": str(user_id),
+                            "email": email,
+                            "is_premium": False,  # Default to false in fallback mode
+                            "is_oauth_user": False,
+                        }
+
+                        current_app.logger.info(f"Login successful using fallback for user {user_id}")
+                        return {"access_token": access_token, "user": user_dict}
+                    except SQLAlchemyError as sqe:
+                        current_app.logger.error(f"SQLAlchemy error in user query: {str(sqe)}")
+                        current_app.logger.error(f"SQLAlchemy error details: {traceback.format_exc()}")
+                        return {"error": f"Database error: {str(sqe)}", "error_type": type(sqe).__name__}, 500
+
+                    if not user:
+                        current_app.logger.info(f"Login failed: User not found for email {data.get('email')}")
+                        return {"error": "Invalid credentials"}, 401
+
+                    # Check if password hash exists
+                    if not user.password_hash:
+                        current_app.logger.warning(f"Login failed: User {user.id} has no password hash (OAuth user?)")
+                        return {"error": "This account does not have a password set. Please login with OAuth."}, 401
+
+                    # Verify password
+                    if not check_password_hash(user.password_hash, data["password"]):
+                        current_app.logger.info(f"Login failed: Invalid password for user {user.id}")
+                        return {"error": "Invalid credentials"}, 401
+
+                    current_app.logger.info(f"Password verified for user {user.id}")
+
+                    # Generate access token
+                    access_token = create_access_token(identity=str(user.id))
+                    current_app.logger.info(f"Access token generated for user {user.id}")
+
+                    # Get user data
+                    user_dict = user.to_dict()
+
+                    current_app.logger.info(f"Login successful for user {user.id}")
+                    return {"access_token": access_token, "user": user_dict}
+
+                except Exception as inner_error:
+                    current_app.logger.error(f"Unexpected inner error during login: {str(inner_error)}")
+                    current_app.logger.error(f"Inner error details: {traceback.format_exc()}")
+                    return {
+                        "error": f"Authentication error: {str(inner_error)}",
+                        "error_type": type(inner_error).__name__,
+                    }, 500
 
             except Exception as user_error:
                 current_app.logger.error(f"Error querying user: {str(user_error)}")
