@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Type, Union
 
 import psutil
+import requests
 from flask import Blueprint, Response, current_app, g, jsonify, render_template, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from flask_limiter import Limiter
@@ -2425,12 +2426,37 @@ def debug_login():
             result = conn.execute(query).fetchone()
 
         if result:
-            # User exists, check if we can convert it to dict safely
-            user_data = dict(result)
-            debug_response["user_exists"] = True
-            debug_response["user_id"] = str(user_data.get("id"))
-            debug_response["user_email"] = user_data.get("email")
-            debug_response["has_password"] = bool(user_data.get("password_hash"))
+            # User exists, create a dict properly from the SQLAlchemy Row object
+            # This approach works with both older and newer versions of SQLAlchemy
+            try:
+                # Method 1: Use the _mapping attribute if available (SQLAlchemy 1.4+)
+                if hasattr(result, "_mapping"):
+                    user_data = dict(result._mapping)
+                # Method 2: Use keys() and loop through columns
+                else:
+                    user_data = {}
+                    for column in user_table.columns:
+                        column_name = column.name
+                        if hasattr(result, column_name):
+                            user_data[column_name] = getattr(result, column_name)
+
+                debug_response["user_exists"] = True
+                debug_response["user_id"] = str(user_data.get("id"))
+                debug_response["user_email"] = user_data.get("email")
+                debug_response["has_password"] = bool(user_data.get("password_hash"))
+            except Exception as dict_error:
+                debug_response["user_exists"] = True
+                debug_response["dict_error"] = str(dict_error)
+                debug_response["result_type"] = str(type(result))
+                # Alternative approach - just get the fields we need directly
+                try:
+                    debug_response["user_id"] = str(result.id) if hasattr(result, "id") else "Unknown"
+                    debug_response["user_email"] = result.email if hasattr(result, "email") else "Unknown"
+                    debug_response["has_password"] = (
+                        bool(result.password_hash) if hasattr(result, "password_hash") else False
+                    )
+                except Exception as e:
+                    debug_response["field_access_error"] = str(e)
 
             # Try regular login
             try:
