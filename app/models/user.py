@@ -84,7 +84,12 @@ class User(db.Model):
 
         try:
             active_subscription = next(
-                (sub for sub in self.subscriptions if sub.status == "active" and sub.plan_id == "premium"), None
+                (
+                    sub
+                    for sub in self.subscriptions
+                    if sub.status == "active" and (sub.plan_id == "premium" or sub.plan_id == "test_premium")
+                ),
+                None,
             )
             return bool(active_subscription)
         except Exception:

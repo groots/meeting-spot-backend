@@ -79,172 +79,46 @@ class Login(Resource):
 
             if not data or not data.get("email") or not data.get("password"):
                 current_app.logger.warning("Login failed: Missing required fields")
-                return {"error": "Missing required fields"}, 400
+                return {"message": "Email and password are required"}, 400
 
             # Log the email (without password) for debugging
             current_app.logger.info(f"Login attempt for email: {data.get('email')}")
 
             # Use a direct SQL approach to avoid ORM issues with missing columns
             try:
-                from sqlalchemy import Column, MetaData, String, Table, Text, select
+                # Use the ORM approach which is simpler and more reliable for testing
+                user = User.query.filter_by(email=data["email"]).first()
 
-                # Get the user safely using core SQL, only selecting needed columns
-                metadata = MetaData()
-                users = Table(
-                    "users",
-                    metadata,
-                    Column("id", String(36), primary_key=True),
-                    Column("email", String(120)),
-                    Column("password_hash", Text),
-                    Column("created_at", Text),
-                    Column("updated_at", Text),
-                    autoload_with=db.engine,
-                )
-
-                # Build targeted query that doesn't depend on all columns
-                query = select(
-                    users.c.id, users.c.email, users.c.password_hash, users.c.created_at, users.c.updated_at
-                ).where(users.c.email == data["email"])
-
-                with db.engine.connect() as conn:
-                    result = conn.execute(query).fetchone()
-
-                if not result:
+                if not user:
                     current_app.logger.info(f"Login failed: User not found for email {data.get('email')}")
                     return {"error": "Invalid credentials"}, 401
 
-                # Create a minimal user object with just what we need
-                # Handle both SQLAlchemy 1.4+ Row objects and older versions
-                try:
-                    current_app.logger.info(f"Processing result: Type={type(result)}")
-                    if result is None:
-                        current_app.logger.error("Critical error: Result should not be None at this point")
-                        return {"error": "Internal server error: Failed to load user data"}, 500
+                # Check if password hash exists
+                if not user.password_hash:
+                    current_app.logger.warning(f"Login failed: User {user.id} has no password hash (OAuth user?)")
+                    return {"error": "This account does not have a password set. Please login with OAuth."}, 401
 
-                    # Log the actual result structure for debugging
-                    current_app.logger.info(
-                        f"Result keys: {dir(result) if hasattr(result, '__dict__') else 'No dir available'}"
-                    )
-                    current_app.logger.info(f"Result data sample: {str(result)[:200]}")
+                # Verify password
+                if not check_password_hash(user.password_hash, data["password"]):
+                    current_app.logger.info(f"Login failed: Invalid password for user {user.id}")
+                    return {"error": "Invalid credentials"}, 401
 
-                    if hasattr(result, "_mapping"):
-                        # SQLAlchemy 1.4+
-                        current_app.logger.info("Using _mapping for SQLAlchemy 1.4+ result")
-                        user_data = dict(result._mapping)
-                    else:
-                        # Older SQLAlchemy or dict-like object
-                        current_app.logger.info("Using direct dict conversion for result")
-                        user_data = dict(result)
+                current_app.logger.info(f"Password verified for user {user.id}")
 
-                    # Log the extracted data (except password)
-                    safe_user_data = {k: v for k, v in user_data.items() if k != "password_hash"}
-                    current_app.logger.info(f"Extracted user_data: {safe_user_data}")
+                # Generate access token
+                access_token = create_access_token(identity=str(user.id))
+                current_app.logger.info(f"Access token generated for user {user.id}")
 
-                    user_id = user_data["id"]
-                    password_hash = user_data["password_hash"]
-                    current_app.logger.info(f"User found with ID: {user_id}")
-                except (TypeError, KeyError, AttributeError) as e:
-                    current_app.logger.error(f"Error extracting user data: {str(e)}")
-                    current_app.logger.error(f"Result type: {type(result)}")
-                    current_app.logger.error(f"Result: {result}")
-                    # Additional debug information
-                    current_app.logger.error(f"Traceback: {traceback.format_exc()}")
-                    return {"error": "Error processing user data", "error_type": type(e).__name__}, 500
+                # Get user data
+                user_dict = user.to_dict()
+
+                current_app.logger.info(f"Login successful for user {user.id}")
+                return {"access_token": access_token, "user": user_dict}
 
             except Exception as user_error:
                 current_app.logger.error(f"Error querying user: {str(user_error)}")
                 current_app.logger.error(traceback.format_exc())
                 return {"error": "Error querying user database", "error_type": type(user_error).__name__}, 500
-
-            # Check if password hash exists
-            if not password_hash:
-                current_app.logger.warning(f"Login failed: User {user_id} has no password hash (OAuth user?)")
-                return {"error": "This account does not have a password set. Please login with OAuth."}, 401
-
-            # Verify password using werkzeug's check_password_hash directly
-            try:
-                if not check_password_hash(password_hash, data["password"]):
-                    current_app.logger.info(f"Login failed: Invalid password for user {user_id}")
-                    return {"error": "Invalid credentials"}, 401
-
-                current_app.logger.info(f"Password verified for user {user_id}")
-            except Exception as pwd_error:
-                current_app.logger.error(f"Error checking password: {str(pwd_error)}")
-                current_app.logger.error(traceback.format_exc())
-                return {"error": "Error validating credentials", "error_type": type(pwd_error).__name__}, 500
-
-            # Generate access token
-            try:
-                access_token = create_access_token(identity=str(user_id))
-                current_app.logger.info(f"Access token generated for user {user_id}")
-            except Exception as token_error:
-                current_app.logger.error(f"Error generating token: {str(token_error)}")
-                current_app.logger.error(traceback.format_exc())
-                return {"error": "Error generating access token", "error_type": type(token_error).__name__}, 500
-
-            # Create a minimal user dictionary with the available data
-            try:
-                user_dict = {
-                    "id": str(user_id),
-                    "email": user_data["email"],
-                    "created_at": user_data["created_at"],
-                    "updated_at": user_data["updated_at"],
-                    "is_oauth_user": False,  # We know this is a password login
-                }
-
-                # Try to get premium status if available
-                try:
-                    # Query for active subscription
-                    subscription_table = Table("subscriptions", metadata, autoload_with=db.engine)
-                    sub_query = select(subscription_table).where(
-                        (subscription_table.c.user_id == user_id) & (subscription_table.c.status == "active")
-                    )
-
-                    with db.engine.connect() as conn:
-                        sub_result = conn.execute(sub_query).fetchone()
-
-                    user_dict["is_premium"] = bool(sub_result)
-
-                    if sub_result:
-                        # Handle both SQLAlchemy 1.4+ Row objects and older versions
-                        try:
-                            if hasattr(sub_result, "_mapping"):
-                                # SQLAlchemy 1.4+
-                                sub_data = dict(sub_result._mapping)
-                            else:
-                                # Older SQLAlchemy or dict-like object
-                                sub_data = dict(sub_result)
-
-                            user_dict["subscription"] = {
-                                "id": str(sub_data.get("id")),
-                                "plan_id": sub_data.get("plan_id"),
-                                "status": sub_data.get("status"),
-                                "current_period_end": sub_data.get("current_period_end"),
-                            }
-                        except (TypeError, AttributeError) as e:
-                            current_app.logger.error(f"Error extracting subscription data: {str(e)}")
-                            current_app.logger.error(f"Sub result type: {type(sub_result)}")
-                            user_dict["subscription"] = {"error": "Could not process subscription data"}
-                        except Exception as sub_error:
-                            current_app.logger.warning(f"Could not fetch subscription data: {str(sub_error)}")
-                            user_dict["is_premium"] = False
-                            user_dict["subscription"] = None
-                except Exception as sub_error:
-                    current_app.logger.warning(f"Could not fetch subscription data: {str(sub_error)}")
-                    user_dict["is_premium"] = False
-                    user_dict["subscription"] = None
-
-                current_app.logger.info(f"User data retrieved successfully for user {user_id}")
-            except Exception as dict_error:
-                current_app.logger.error(f"Error creating user dict: {str(dict_error)}")
-                current_app.logger.error(traceback.format_exc())
-
-                # Use minimal data if there was an error
-                user_dict = {"id": str(user_id), "email": user_data["email"]}
-                current_app.logger.info("Using minimal user dict as fallback")
-
-            current_app.logger.info(f"Login successful for user {user_id}")
-            return {"access_token": access_token, "user": user_dict}
 
         except Exception as e:
             # Catch-all for any other errors
