@@ -73,17 +73,81 @@ class Login(Resource):
     @api.response(401, "Invalid credentials")
     def post(self) -> None:
         """Login user and return access token"""
-        data = request.get_json()
+        try:
+            current_app.logger.info("Login attempt started")
+            data = request.get_json()
 
-        if not data or not data.get("email") or not data.get("password"):
-            return {"error": "Missing required fields"}, 400
+            if not data or not data.get("email") or not data.get("password"):
+                current_app.logger.warning("Login failed: Missing required fields")
+                return {"error": "Missing required fields"}, 400
 
-        user = User.query.filter_by(email=data["email"]).first()
-        if not user or not check_password_hash(user.password_hash, data["password"]):
-            return {"error": "Invalid credentials"}, 401
+            # Log the email (without password) for debugging
+            current_app.logger.info(f"Login attempt for email: {data.get('email')}")
 
-        access_token = create_access_token(identity=str(user.id))
-        return {"access_token": access_token, "user": user.to_dict()}
+            # Check if the user exists
+            try:
+                user = User.query.filter_by(email=data["email"]).first()
+                if not user:
+                    current_app.logger.info(f"Login failed: User not found for email {data.get('email')}")
+                    return {"error": "Invalid credentials"}, 401
+
+                current_app.logger.info(f"User found with ID: {user.id}")
+            except Exception as user_error:
+                current_app.logger.error(f"Error querying user: {str(user_error)}")
+                current_app.logger.error(traceback.format_exc())
+                return {"error": "Error querying user database", "error_type": type(user_error).__name__}, 500
+
+            # Check if password hash exists
+            if not user.password_hash:
+                current_app.logger.warning(f"Login failed: User {user.id} has no password hash (OAuth user?)")
+                return {"error": "This account does not have a password set. Please login with OAuth."}, 401
+
+            # Verify password
+            try:
+                if not user.check_password(data["password"]):
+                    current_app.logger.info(f"Login failed: Invalid password for user {user.id}")
+                    return {"error": "Invalid credentials"}, 401
+
+                current_app.logger.info(f"Password verified for user {user.id}")
+            except Exception as pwd_error:
+                current_app.logger.error(f"Error checking password: {str(pwd_error)}")
+                current_app.logger.error(traceback.format_exc())
+                return {"error": "Error validating credentials", "error_type": type(pwd_error).__name__}, 500
+
+            # Generate access token
+            try:
+                access_token = create_access_token(identity=str(user.id))
+                current_app.logger.info(f"Access token generated for user {user.id}")
+            except Exception as token_error:
+                current_app.logger.error(f"Error generating token: {str(token_error)}")
+                current_app.logger.error(traceback.format_exc())
+                return {"error": "Error generating access token", "error_type": type(token_error).__name__}, 500
+
+            # Convert user to dict for response
+            try:
+                user_dict = user.to_dict()
+                current_app.logger.info(f"User data retrieved successfully for user {user.id}")
+            except Exception as dict_error:
+                current_app.logger.error(f"Error converting user to dict: {str(dict_error)}")
+                current_app.logger.error(traceback.format_exc())
+
+                # Try a simplified version if the full conversion fails
+                user_dict = {
+                    "id": str(user.id),
+                    "email": user.email,
+                    "created_at": user.created_at.isoformat() if hasattr(user, "created_at") else None,
+                    "updated_at": user.updated_at.isoformat() if hasattr(user, "updated_at") else None,
+                }
+                current_app.logger.info("Using simplified user dict as fallback")
+
+            current_app.logger.info(f"Login successful for user {user.id}")
+            return {"access_token": access_token, "user": user_dict}
+
+        except Exception as e:
+            # Catch-all for any other errors
+            current_app.logger.error(f"Unexpected error during login: {str(e)}")
+            current_app.logger.error(traceback.format_exc())
+            return {"error": "An error occurred during login", "error_type": type(e).__name__}, 500
 
 
 @api.route("/register")
