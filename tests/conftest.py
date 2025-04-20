@@ -112,21 +112,21 @@ def _session(app) -> None:
     connection = db.engine.connect()
     transaction = connection.begin()
 
-    # Begin a nested transaction (using SAVEPOINT)
-    session = db.session
-    session.begin_nested()
+    # Configure the session with the connection
+    db.session.configure(bind=connection)
 
-    # Patch the commit method to use flush instead
-    old_commit = session.commit
-    session.commit = session.flush
+    # Store original commit function
+    old_commit = db.session.commit
 
-    yield session
+    # Replace commit with flush to avoid committing the transaction
+    db.session.commit = db.session.flush
+
+    yield db.session
 
     # Restore commit method
-    session.commit = old_commit
+    db.session.commit = old_commit
 
     # Rollback the transaction and close the connection
-    session.close()
     transaction.rollback()
     connection.close()
 

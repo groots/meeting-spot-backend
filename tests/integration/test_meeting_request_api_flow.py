@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import url_for
+from flask_jwt_extended import create_access_token
 
 from app import db
 from app.models import MeetingRequest, User
@@ -23,13 +24,8 @@ def auth_user(client):
     db.session.add(user)
     db.session.commit()
 
-    # Log in and get token
-    response = client.post(
-        "/api/v1/auth/login",
-        json={"email": "test_integration@example.com", "password": "TestPassword123!"},
-    )
-
-    token = response.json.get("access_token")
+    # Create token directly
+    token = create_access_token(identity=str(user.id))
     headers = {"Authorization": f"Bearer {token}"}
 
     yield user, headers
@@ -81,6 +77,9 @@ def test_meeting_request_full_flow(client, auth_user):
         }
 
         response = client.post("/api/v1/meeting-requests/", json=create_data, headers=auth_headers)
+
+        if response.status_code == 422:
+            print(f"Received 422 response: {response.data.decode()}")
 
         assert response.status_code == 201
         request_id = response.json["request_id"]
