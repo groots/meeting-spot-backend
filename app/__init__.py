@@ -130,8 +130,7 @@ def create_app(config_name="development"):
     jwt.init_app(app)
     migrate.init_app(app, db)
 
-    # Automatically add facebook_oauth_id column if it doesn't exist
-    @app.before_first_request
+    # Define function to apply the Facebook column migration
     def apply_facebook_column_migration():
         try:
             from sqlalchemy import inspect
@@ -284,6 +283,13 @@ def create_app(config_name="development"):
         return jsonify(error="Service temporarily unavailable"), 503
 
     with app.app_context():
+        # Apply database migrations
+        try:
+            app.logger.info("Running Facebook column migration check...")
+            apply_facebook_column_migration()
+        except Exception as e:
+            app.logger.error(f"Error during database migration: {str(e)}")
+
         # Register API blueprints
         from app.api import init_app as init_api
 
