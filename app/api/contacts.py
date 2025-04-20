@@ -334,7 +334,7 @@ class ContactsRootOptions(Resource):
         origin = request.headers.get("Origin")
 
         # Log detailed information for debugging
-        current_app.logger.info(f"OPTIONS request for contacts endpoint without trailing slash")
+        current_app.logger.info("OPTIONS request for contacts endpoint without trailing slash")
         current_app.logger.info(f"Request origin: {origin}")
         current_app.logger.info(f"Request headers: {request.headers}")
 

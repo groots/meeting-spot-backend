@@ -114,11 +114,43 @@ class Login(Resource):
                     return {"error": "Invalid credentials"}, 401
 
                 # Create a minimal user object with just what we need
-                user_data = dict(result)
-                user_id = user_data["id"]
-                password_hash = user_data["password_hash"]
+                # Handle both SQLAlchemy 1.4+ Row objects and older versions
+                try:
+                    current_app.logger.info(f"Processing result: Type={type(result)}")
+                    if result is None:
+                        current_app.logger.error("Critical error: Result should not be None at this point")
+                        return {"error": "Internal server error: Failed to load user data"}, 500
 
-                current_app.logger.info(f"User found with ID: {user_id}")
+                    # Log the actual result structure for debugging
+                    current_app.logger.info(
+                        f"Result keys: {dir(result) if hasattr(result, '__dict__') else 'No dir available'}"
+                    )
+                    current_app.logger.info(f"Result data sample: {str(result)[:200]}")
+
+                    if hasattr(result, "_mapping"):
+                        # SQLAlchemy 1.4+
+                        current_app.logger.info("Using _mapping for SQLAlchemy 1.4+ result")
+                        user_data = dict(result._mapping)
+                    else:
+                        # Older SQLAlchemy or dict-like object
+                        current_app.logger.info("Using direct dict conversion for result")
+                        user_data = dict(result)
+
+                    # Log the extracted data (except password)
+                    safe_user_data = {k: v for k, v in user_data.items() if k != "password_hash"}
+                    current_app.logger.info(f"Extracted user_data: {safe_user_data}")
+
+                    user_id = user_data["id"]
+                    password_hash = user_data["password_hash"]
+                    current_app.logger.info(f"User found with ID: {user_id}")
+                except (TypeError, KeyError, AttributeError) as e:
+                    current_app.logger.error(f"Error extracting user data: {str(e)}")
+                    current_app.logger.error(f"Result type: {type(result)}")
+                    current_app.logger.error(f"Result: {result}")
+                    # Additional debug information
+                    current_app.logger.error(f"Traceback: {traceback.format_exc()}")
+                    return {"error": "Error processing user data", "error_type": type(e).__name__}, 500
+
             except Exception as user_error:
                 current_app.logger.error(f"Error querying user: {str(user_error)}")
                 current_app.logger.error(traceback.format_exc())
@@ -174,13 +206,29 @@ class Login(Resource):
                     user_dict["is_premium"] = bool(sub_result)
 
                     if sub_result:
-                        sub_data = dict(sub_result)
-                        user_dict["subscription"] = {
-                            "id": str(sub_data.get("id")),
-                            "plan_id": sub_data.get("plan_id"),
-                            "status": sub_data.get("status"),
-                            "current_period_end": sub_data.get("current_period_end"),
-                        }
+                        # Handle both SQLAlchemy 1.4+ Row objects and older versions
+                        try:
+                            if hasattr(sub_result, "_mapping"):
+                                # SQLAlchemy 1.4+
+                                sub_data = dict(sub_result._mapping)
+                            else:
+                                # Older SQLAlchemy or dict-like object
+                                sub_data = dict(sub_result)
+
+                            user_dict["subscription"] = {
+                                "id": str(sub_data.get("id")),
+                                "plan_id": sub_data.get("plan_id"),
+                                "status": sub_data.get("status"),
+                                "current_period_end": sub_data.get("current_period_end"),
+                            }
+                        except (TypeError, AttributeError) as e:
+                            current_app.logger.error(f"Error extracting subscription data: {str(e)}")
+                            current_app.logger.error(f"Sub result type: {type(sub_result)}")
+                            user_dict["subscription"] = {"error": "Could not process subscription data"}
+                        except Exception as sub_error:
+                            current_app.logger.warning(f"Could not fetch subscription data: {str(sub_error)}")
+                            user_dict["is_premium"] = False
+                            user_dict["subscription"] = None
                 except Exception as sub_error:
                     current_app.logger.warning(f"Could not fetch subscription data: {str(sub_error)}")
                     user_dict["is_premium"] = False
