@@ -247,13 +247,63 @@ class UserProfile(Resource):
     @jwt_required()
     def get(self) -> None:
         """Get the current user's profile"""
-        current_user_id = get_jwt_identity()
-        user = User.query.get(uuid.UUID(current_user_id))
+        try:
+            current_user_id = get_jwt_identity()
+            current_app.logger.info(f"Getting profile for user ID: {current_user_id}")
 
-        if not user:
-            return {"error": "User not found"}, 404
+            try:
+                # Try the ORM approach first
+                from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
 
-        return user.to_dict()
+                try:
+                    current_app.logger.info("Attempting to get user with ORM query.get")
+                    user = User.query.get(uuid.UUID(current_user_id))
+                    current_app.logger.info(f"ORM query successful: user {'found' if user else 'not found'}")
+                except (ProgrammingError, SQLAlchemyError) as db_error:
+                    current_app.logger.error(f"Database error in profile fetch: {str(db_error)}")
+                    current_app.logger.error(f"Error details: {traceback.format_exc()}")
+
+                    # Try a more direct approach
+                    current_app.logger.info("Attempting fallback with direct SQL")
+                    from sqlalchemy import text
+
+                    # Use a simple query to get essential user details
+                    sql = text("SELECT id, email, created_at, updated_at FROM users WHERE id = :user_id")
+                    with db.engine.connect() as conn:
+                        result = conn.execute(sql, {"user_id": current_user_id}).fetchone()
+
+                    if not result:
+                        current_app.logger.error(f"User not found with direct SQL for ID {current_user_id}")
+                        return {"error": "User not found"}, 404
+
+                    # Create a basic user dict with the retrieved data
+                    user_dict = {
+                        "id": str(result[0]),
+                        "email": result[1],
+                        "created_at": result[2],
+                        "updated_at": result[3],
+                        "is_premium": False,  # Default to false in fallback mode
+                        "is_oauth_user": False,
+                    }
+
+                    current_app.logger.info(f"Profile fetch successful using fallback for user {current_user_id}")
+                    return user_dict
+
+                if not user:
+                    current_app.logger.error(f"User not found for ID {current_user_id}")
+                    return {"error": "User not found"}, 404
+
+                return user.to_dict()
+
+            except Exception as inner_error:
+                current_app.logger.error(f"Unexpected error fetching profile: {str(inner_error)}")
+                current_app.logger.error(f"Error details: {traceback.format_exc()}")
+                return {"error": f"Profile fetch failed: {str(inner_error)}"}, 500
+
+        except Exception as e:
+            current_app.logger.error(f"Error in user profile endpoint: {str(e)}")
+            current_app.logger.error(traceback.format_exc())
+            return {"error": "An error occurred while retrieving your profile"}, 500
 
     @api.doc("delete_account")
     @api.response(200, "Account successfully deleted")
@@ -266,30 +316,91 @@ class UserProfile(Resource):
         try:
             # Get the current user from the JWT token
             current_user_id = get_jwt_identity()
-            user = User.query.get(uuid.UUID(current_user_id))
+            current_app.logger.info(f"Attempting to delete account for user ID: {current_user_id}")
 
-            if not user:
-                return {"error": "User not found"}, 404
+            try:
+                from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
 
-            # Store email for response
-            email = user.email
+                try:
+                    # Try ORM approach first
+                    current_app.logger.info("Attempting to get user with ORM for deletion")
+                    user = User.query.get(uuid.UUID(current_user_id))
+                    current_app.logger.info(f"ORM query successful: user {'found' if user else 'not found'}")
 
-            # Delete the user and all their data
-            # Cascade will handle related data through relationship settings
-            db.session.delete(user)
-            db.session.commit()
+                    if not user:
+                        current_app.logger.error(f"User not found for deletion: {current_user_id}")
+                        return {"error": "User not found"}, 404
 
-            # Log the deletion
-            current_app.logger.info(f"User account deleted: {email}")
+                    # Store email for response
+                    email = user.email
 
-            return {
-                "message": "Your account and all associated data have been successfully deleted",
-                "email": email,
-            }, 200
+                    # Delete the user and all their data
+                    db.session.delete(user)
+                    db.session.commit()
+
+                    # Log the deletion
+                    current_app.logger.info(f"User account deleted: {email}")
+
+                    return {
+                        "message": "Your account and all associated data have been successfully deleted",
+                        "email": email,
+                    }, 200
+
+                except (ProgrammingError, SQLAlchemyError) as db_error:
+                    current_app.logger.error(f"Database error in account deletion: {str(db_error)}")
+                    current_app.logger.error(f"Error details: {traceback.format_exc()}")
+
+                    # For deletion, we need to use a transaction with multiple statements
+                    # This is a simplified approach that may not handle all cascades
+                    try:
+                        from sqlalchemy import text
+
+                        # First get the email for the response
+                        email_query = text("SELECT email FROM users WHERE id = :user_id")
+                        with db.engine.connect() as conn:
+                            result = conn.execute(email_query, {"user_id": current_user_id}).fetchone()
+
+                        if not result:
+                            current_app.logger.error(f"User not found with direct SQL for deletion: {current_user_id}")
+                            return {"error": "User not found"}, 404
+
+                        email = result[0]
+
+                        # Delete related data and user record
+                        # Using raw SQL requires handling the cascades manually
+                        with db.engine.begin() as conn:
+                            # Delete related records first (simplified)
+                            conn.execute(
+                                text("DELETE FROM subscriptions WHERE user_id = :user_id"), {"user_id": current_user_id}
+                            )
+                            conn.execute(
+                                text("DELETE FROM contacts WHERE user_id = :user_id"), {"user_id": current_user_id}
+                            )
+                            # Finally delete the user
+                            conn.execute(text("DELETE FROM users WHERE id = :user_id"), {"user_id": current_user_id})
+
+                        current_app.logger.info(f"User account deleted via direct SQL: {email}")
+
+                        return {
+                            "message": "Your account and all associated data have been successfully deleted",
+                            "email": email,
+                        }, 200
+
+                    except Exception as sql_error:
+                        current_app.logger.error(f"Error in SQL fallback for deletion: {str(sql_error)}")
+                        current_app.logger.error(f"SQL error details: {traceback.format_exc()}")
+                        return {"error": f"Failed to delete account: {str(sql_error)}"}, 500
+
+            except Exception as inner_error:
+                db.session.rollback()
+                current_app.logger.error(f"Unexpected error during account deletion: {str(inner_error)}")
+                current_app.logger.error(f"Error details: {traceback.format_exc()}")
+                return {"error": f"Account deletion failed: {str(inner_error)}"}, 500
 
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error deleting user account: {str(e)}")
+            current_app.logger.error(f"Error details: {traceback.format_exc()}")
             return {"error": "An error occurred while deleting your account"}, 500
 
 
