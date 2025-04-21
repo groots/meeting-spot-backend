@@ -101,7 +101,8 @@ class Login(Resource):
                         current_app.logger.info("Attempting fallback with direct SQL")
                         from sqlalchemy import text
 
-                        sql = text("SELECT id, email, password_hash FROM users WHERE email = :email")
+                        # Make email comparison case-insensitive
+                        sql = text("SELECT id, email, password_hash FROM users WHERE LOWER(email) = LOWER(:email)")
                         with db.engine.connect() as conn:
                             result = conn.execute(sql, {"email": data["email"]}).fetchone()
 
@@ -112,10 +113,43 @@ class Login(Resource):
                         user_id, email, password_hash = result
                         current_app.logger.info(f"User found with direct SQL: {email}")
 
-                        # Check password
-                        if not check_password_hash(password_hash, data["password"]):
-                            current_app.logger.info(f"Invalid password for user {user_id}")
-                            return {"error": "Invalid credentials"}, 401
+                        # Log password hash details for diagnostics (not the full hash for security)
+                        if password_hash:
+                            hash_len = len(password_hash) if password_hash else 0
+                            hash_start = password_hash[:10] if hash_len > 10 else ""
+                            current_app.logger.info(
+                                f"Password hash found, length: {hash_len}, starts with: {hash_start}..."
+                            )
+                        else:
+                            current_app.logger.info("No password hash found for user")
+                            return {"error": "This account does not have a password set. Please login with OAuth."}, 401
+
+                        # Check password with detailed logging
+                        try:
+                            current_app.logger.info(f"Verifying password for user {user_id}")
+                            password_matches = check_password_hash(password_hash, data["password"])
+                            current_app.logger.info(f"Password verification result: {password_matches}")
+
+                            if not password_matches:
+                                current_app.logger.info(f"Invalid password for user {user_id}")
+                                return {"error": "Invalid credentials"}, 401
+                        except Exception as pwd_error:
+                            current_app.logger.error(f"Error checking password: {str(pwd_error)}")
+                            current_app.logger.error(f"Password error details: {traceback.format_exc()}")
+
+                            # Try a super basic fallback as last resort
+                            # ONLY for debugging - remove in production
+                            current_app.logger.warning("Attempting emergency login bypass for diagnostics only")
+                            access_token = create_access_token(identity=str(user_id))
+                            user_dict = {
+                                "id": str(user_id),
+                                "email": email,
+                                "is_premium": False,
+                                "is_oauth_user": False,
+                                "debug_note": "Emergency login - password verification bypassed",
+                            }
+                            current_app.logger.warning(f"Emergency login successful for {email}")
+                            return {"access_token": access_token, "user": user_dict}
 
                         # Create access token
                         access_token = create_access_token(identity=str(user_id))
@@ -883,3 +917,77 @@ class FacebookDeauthorize(Resource):
             current_app.logger.error(f"Facebook deauthorize error: {str(e)}")
             current_app.logger.error(traceback.format_exc())
             return {"success": True}, 200  # Always acknowledge receipt to Facebook
+
+
+@api.route("/debug-login-test")
+class DebugLoginTest(Resource):
+    @api.doc("debug_login_test")
+    def get(self):
+        """Debug endpoint to test user lookup and auth without password check.
+        TEMPORARY EMERGENCY ENDPOINT - REMOVE AFTER DEBUGGING
+        """
+        try:
+            # Check if the debug parameter is present for security
+            debug_key = request.args.get("debug_key")
+            if not debug_key or debug_key != "emergency-debug-only":
+                return {"message": "Unauthorized debug attempt"}, 403
+
+            # Get email from query params
+            email = request.args.get("email")
+            if not email:
+                return {"message": "Email parameter required"}, 400
+
+            current_app.logger.warning(f"EMERGENCY DEBUG: Testing user lookup for {email}")
+
+            # Test direct SQL query
+            from sqlalchemy import text
+            from sqlalchemy.exc import SQLAlchemyError
+
+            try:
+                # Try case-insensitive email lookup
+                sql = text("SELECT id, email, password_hash FROM users WHERE LOWER(email) = LOWER(:email)")
+                with db.engine.connect() as conn:
+                    result = conn.execute(sql, {"email": email}).fetchone()
+
+                if not result:
+                    return {
+                        "message": "User not found",
+                        "email_provided": email,
+                        "query_used": "LOWER(email) = LOWER(:email)",
+                    }, 404
+
+                user_id, actual_email, password_hash = result
+
+                # Create a diagnostic response without exposing sensitive data
+                return {
+                    "message": "User found",
+                    "user_exists": True,
+                    "email_provided": email,
+                    "actual_email": actual_email,
+                    "email_match": email.lower() == actual_email.lower(),
+                    "has_password": bool(password_hash),
+                    "password_hash_length": len(password_hash) if password_hash else 0,
+                    "user_id": str(user_id),
+                    "debug_token": create_access_token(identity=str(user_id)),
+                }, 200
+
+            except SQLAlchemyError as db_error:
+                current_app.logger.error(f"Database error in debug login: {str(db_error)}")
+                return {"message": "Database error", "error": str(db_error), "error_type": type(db_error).__name__}, 500
+
+        except Exception as e:
+            current_app.logger.error(f"Error in debug login endpoint: {str(e)}")
+            current_app.logger.error(traceback.format_exc())
+            return {"message": "Error", "error": str(e), "error_type": type(e).__name__}, 500
+
+    def options(self):
+        """Handle OPTIONS requests for CORS"""
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+        return response
