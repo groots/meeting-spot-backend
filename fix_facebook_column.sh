@@ -28,6 +28,14 @@ echo "HTTP Status Code: $HTTP_CODE"
 echo "Response body:"
 echo "$BODY"
 
+# Attempt to parse JSON response, fall back to treating it as plain text
+if [[ "$BODY" == {* ]]; then
+  # Looks like JSON
+  echo "Received JSON response"
+else
+  echo "Received non-JSON response"
+fi
+
 if [ $HTTP_CODE -eq 200 ]; then
   echo -e "\n✅ Fix operation complete! The endpoint returned status 200."
   echo "The subscription API calls should now work correctly."
@@ -50,8 +58,20 @@ else
     echo "2. Run these SQL commands:"
     echo "   ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_oauth_id VARCHAR(255) UNIQUE;"
     echo "   CREATE INDEX IF NOT EXISTS ix_users_facebook_oauth_id ON users (facebook_oauth_id);"
+
+    echo -e "\nCommand for connecting to Cloud SQL (adjust instance name):"
+    echo "   gcloud sql connect your-instance-name --user=postgres"
   fi
 fi
 
 echo -e "\nFor local testing, try: ./fix_facebook_column.sh local"
 echo "To deploy changes after fixing, run: gcloud app deploy"
+
+# Verify the subscriptions endpoint works after the fix
+if [ "$HTTP_CODE" -eq 200 ]; then
+  echo -e "\nVerifying subscriptions endpoint..."
+  echo "GET $API_BASE/api/v1/payments/subscriptions"
+  TEST_RESPONSE=$(curl -s -w "\n%{http_code}" "$API_BASE/api/v1/payments/subscriptions" -H "Authorization: Bearer YOUR_TEST_TOKEN")
+  TEST_CODE=$(echo "$TEST_RESPONSE" | tail -n1)
+  echo "Subscriptions endpoint returned HTTP $TEST_CODE"
+fi

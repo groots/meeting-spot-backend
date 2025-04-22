@@ -8,6 +8,7 @@ from typing import Any, Dict
 
 from flask import current_app, g, jsonify, request, url_for
 from flask_restx import Namespace, Resource, fields
+from sqlalchemy import text
 
 from .. import db
 from ..decorators import auth_required, token_required
@@ -134,34 +135,34 @@ class SubscriptionsList(Resource):
     @api.doc("list_subscriptions")
     @token_required
     def get(self, current_user):
-        """List all subscriptions for the current user"""
+        """Get current user's subscriptions"""
         try:
-            current_user_id = current_user.id
-            current_app.logger.info(f"Fetching subscriptions for user {current_user_id}")
-
+            # Check if user is authenticated
             try:
-                from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
+                current_user_id = current_user.id
+                current_app.logger.info(f"Getting subscriptions for user {current_user_id}")
 
                 try:
-                    # Try standard ORM approach first
-                    user = User.query.get(uuid.UUID(current_user_id))
-                    subscriptions = [sub.to_dict() for sub in user.subscriptions]
-                    current_app.logger.info(f"Found {len(subscriptions)} subscriptions via ORM")
-                    return subscriptions
+                    # First try the ORM approach
+                    subscriptions = Subscription.query.filter_by(user_id=current_user_id).all()
+                    return [sub.to_dict() for sub in subscriptions]
 
-                except (ProgrammingError, SQLAlchemyError) as db_error:
-                    # Handle missing columns error with direct SQL
-                    if "column users.facebook_oauth_id does not exist" in str(db_error):
-                        current_app.logger.warning("Missing facebook_oauth_id column, using direct SQL instead")
-                        from sqlalchemy import text
+                except Exception as e:
+                    # Check if this is the facebook_oauth_id error
+                    error_str = str(e).lower()
+                    current_app.logger.warning(f"Database error occurred: {error_str}")
 
-                        # Use direct SQL to get subscriptions
+                    # Use a more generic check for the column error
+                    if "column" in error_str and "facebook_oauth_id" in error_str:
+                        current_app.logger.info("Falling back to direct SQL due to facebook_oauth_id column issue")
+
+                        # Use direct SQL to avoid the ORM issue
                         sql = text(
                             """
                             SELECT id, user_id, plan_id, stripe_subscription_id, stripe_customer_id,
-                                   status, current_period_start, current_period_end, cancel_at_period_end,
-                                   created_at, updated_at
-                            FROM subscriptions
+                                   status, current_period_start, current_period_end,
+                                   cancel_at_period_end, created_at, updated_at
+                            FROM subscription
                             WHERE user_id = :user_id
                         """
                         )
@@ -189,7 +190,8 @@ class SubscriptionsList(Resource):
                         current_app.logger.info(f"Found {len(subscriptions)} subscriptions via direct SQL")
                         return subscriptions
                     else:
-                        # Re-raise for other database errors
+                        # Log the actual error for debugging
+                        current_app.logger.error(f"Database error in subscriptions endpoint: {error_str}")
                         raise
 
             except Exception as e:
@@ -390,3 +392,102 @@ class PriceResource(Resource):
         """Get all available subscription prices from Stripe."""
         prices = get_subscription_prices()
         return jsonify(prices)
+
+
+# OPTIONS route classes for CORS support
+@api.route("/plans", doc=False)
+class PlansOptions(Resource):
+    def options(self):
+        """Handle OPTIONS requests for the plans endpoint."""
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+
+
+@api.route("/subscriptions", doc=False)
+class SubscriptionsOptions(Resource):
+    def options(self):
+        """Handle OPTIONS requests for the subscriptions endpoint."""
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+
+
+@api.route("/subscriptions/<string:id>", doc=False)
+class SubscriptionIdOptions(Resource):
+    def options(self, id):
+        """Handle OPTIONS requests for the subscription ID endpoint."""
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+
+
+@api.route("/checkout", doc=False)
+class CheckoutOptions(Resource):
+    def options(self):
+        """Handle OPTIONS requests for the checkout endpoint."""
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+
+
+@api.route("/payment-methods", doc=False)
+class PaymentMethodsOptions(Resource):
+    def options(self):
+        """Handle OPTIONS requests for the payment methods endpoint."""
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+
+
+@api.route("/webhook", doc=False)
+class WebhookOptions(Resource):
+    def options(self):
+        """Handle OPTIONS requests for the webhook endpoint."""
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Stripe-Signature"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+
+
+@api.route("/prices", doc=False)
+class PricesOptions(Resource):
+    def options(self):
+        """Handle OPTIONS requests for the prices endpoint."""
+        response = current_app.make_default_options_response()
+        origin = request.headers.get("Origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
