@@ -130,14 +130,75 @@ class PlanList(Resource):
 
 
 @api.route("/subscriptions")
-class SubscriptionList(Resource):
+class SubscriptionsList(Resource):
     @api.doc("list_subscriptions")
-    @api.marshal_list_with(subscription_model)
     @token_required
     def get(self, current_user):
         """List all subscriptions for the current user"""
-        subscriptions = Subscription.query.filter_by(user_id=current_user.id).all()
-        return [sub.to_dict() for sub in subscriptions]
+        try:
+            current_user_id = current_user.id
+            current_app.logger.info(f"Fetching subscriptions for user {current_user_id}")
+
+            try:
+                from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
+
+                try:
+                    # Try standard ORM approach first
+                    user = User.query.get(uuid.UUID(current_user_id))
+                    subscriptions = [sub.to_dict() for sub in user.subscriptions]
+                    current_app.logger.info(f"Found {len(subscriptions)} subscriptions via ORM")
+                    return subscriptions
+
+                except (ProgrammingError, SQLAlchemyError) as db_error:
+                    # Handle missing columns error with direct SQL
+                    if "column users.facebook_oauth_id does not exist" in str(db_error):
+                        current_app.logger.warning("Missing facebook_oauth_id column, using direct SQL instead")
+                        from sqlalchemy import text
+
+                        # Use direct SQL to get subscriptions
+                        sql = text(
+                            """
+                            SELECT id, user_id, plan_id, stripe_subscription_id, stripe_customer_id,
+                                   status, current_period_start, current_period_end, cancel_at_period_end,
+                                   created_at, updated_at
+                            FROM subscriptions
+                            WHERE user_id = :user_id
+                        """
+                        )
+
+                        with db.engine.connect() as conn:
+                            result = conn.execute(sql, {"user_id": current_user_id})
+                            subscriptions = []
+
+                            for row in result:
+                                sub = {
+                                    "id": str(row[0]),
+                                    "user_id": str(row[1]),
+                                    "plan_id": row[2],
+                                    "stripe_subscription_id": row[3],
+                                    "stripe_customer_id": row[4],
+                                    "status": row[5],
+                                    "current_period_start": row[6].isoformat() if row[6] else None,
+                                    "current_period_end": row[7].isoformat() if row[7] else None,
+                                    "cancel_at_period_end": bool(row[8]),
+                                    "created_at": row[9].isoformat() if row[9] else None,
+                                    "updated_at": row[10].isoformat() if row[10] else None,
+                                }
+                                subscriptions.append(sub)
+
+                        current_app.logger.info(f"Found {len(subscriptions)} subscriptions via direct SQL")
+                        return subscriptions
+                    else:
+                        # Re-raise for other database errors
+                        raise
+
+            except Exception as e:
+                current_app.logger.error(f"Error fetching subscriptions: {str(e)}")
+                return {"error": "Error fetching subscriptions", "message": str(e)}, 500
+
+        except Exception as e:
+            current_app.logger.error(f"Unexpected error in subscription list endpoint: {str(e)}")
+            return {"error": "Authentication error", "message": str(e)}, 401
 
     @api.doc("create_subscription")
     @api.expect(create_subscription_model)
