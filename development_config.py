@@ -1,8 +1,10 @@
-"""Development configuration without Google Cloud dependencies."""
+"""Development configuration for Flask."""
 import base64
 import os
 
 from dotenv import load_dotenv
+
+from app.config import DevelopmentConfig as BaseDevConfig
 
 load_dotenv()
 
@@ -10,17 +12,38 @@ load_dotenv()
 DEFAULT_ENCRYPTION_KEY = base64.urlsafe_b64encode(b"find_a_meeting_spot_dev_key_32bytes!!").decode()
 
 
-class DevelopmentConfig:
-    """Development configuration."""
+class DevelopmentConfig(BaseDevConfig):
+    """Development configuration for Flask."""
 
-    SECRET_KEY = os.environ.get("SECRET_KEY", "a_default_secret_key_for_dev")
+    # Skip Facebook migration in development to avoid errors
+    SKIP_FACEBOOK_MIGRATION = True
+
+    # Disable premium feature requirements for development
+    PREMIUM_FEATURES_DISABLED = True
+
+    # Additional development configuration
     DEBUG = True
     TESTING = False
-    PORT = int(os.environ.get("PORT", 8001))
 
-    # Database Configuration
-    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///dev.db")
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Allow all CORS origins for development
+    CORS_ORIGINS = [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:5000",
+        "http://localhost:5001",
+        "http://localhost:8080",
+        "http://localhost:8081",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:8080",
+        "http://127.0.0.1:8081",
+    ]
+
+    # Database configuration
+    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///development.db")
+
+    # Explicitly enable CORS handling
+    CORS_ENABLED = True
 
     # Service Account Configuration (disabled in development)
     SERVICE_ACCOUNT_CREDENTIALS = None
@@ -36,6 +59,8 @@ class DevelopmentConfig:
 
     # JWT Configuration
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-jwt-secret-key")
+    JWT_ACCESS_TOKEN_EXPIRES = 60 * 60 * 6  # 6 hours standard session time
+    JWT_REFRESH_TOKEN_EXPIRES = 60 * 60 * 24 * 14  # 14 days for "remember me" functionality
 
     # Frontend URL
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")

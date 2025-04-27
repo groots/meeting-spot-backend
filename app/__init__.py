@@ -133,6 +133,11 @@ def create_app(config_name="development"):
     # Define function to apply the Facebook column migration
     def apply_facebook_column_migration():
         try:
+            # Skip migration if configured to do so
+            if app.config.get("SKIP_FACEBOOK_MIGRATION", False):
+                app.logger.info("Skipping Facebook OAuth column migration due to configuration")
+                return
+
             from sqlalchemy import inspect
 
             inspector = inspect(db.engine)

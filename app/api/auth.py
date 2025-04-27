@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import google.auth.transport.requests
 from flask import current_app, request
-from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
+from flask_jwt_extended import create_access_token, create_refresh_token, get_jwt_identity, jwt_required
 from flask_restx import Namespace, Resource, fields
 from google.oauth2 import id_token
 from werkzeug.security import check_password_hash
@@ -21,8 +21,11 @@ api = Namespace("auth", description="Authentication operations")
 login_model = api.model(
     "Login",
     {
-        "email": fields.String(required=True, description="User's email address"),
-        "password": fields.String(required=True, description="User's password"),
+        "email": fields.String(required=True, description="User email"),
+        "password": fields.String(required=True, description="User password"),
+        "remember_me": fields.Boolean(
+            required=False, description="Remember me flag for extended session", default=False
+        ),
     },
 )
 
@@ -81,8 +84,9 @@ class Login(Resource):
                 current_app.logger.warning("Login failed: Missing required fields")
                 return {"message": "Email and password are required"}, 400
 
-            # Log the email (without password) for debugging
-            current_app.logger.info(f"Login attempt for email: {data.get('email')}")
+            # Get remember_me preference (default to False if not provided)
+            remember_me = data.get("remember_me", False)
+            current_app.logger.info(f"Login attempt for email: {data.get('email')}, remember_me: {remember_me}")
 
             # Use a direct SQL approach to avoid ORM issues with missing columns
             try:
@@ -154,6 +158,12 @@ class Login(Resource):
                         # Create access token
                         access_token = create_access_token(identity=str(user_id))
 
+                        # Generate refresh token if remember_me is True
+                        refresh_token = None
+                        if remember_me:
+                            refresh_token = create_refresh_token(identity=str(user_id))
+                            current_app.logger.info(f"Refresh token generated for user {user_id} (remember_me=True)")
+
                         # Create minimal user dict for response
                         user_dict = {
                             "id": str(user_id),
@@ -162,8 +172,14 @@ class Login(Resource):
                             "is_oauth_user": False,
                         }
 
+                        response_data = {"access_token": access_token, "user": user_dict}
+
+                        # Add refresh token to response if generated
+                        if refresh_token:
+                            response_data["refresh_token"] = refresh_token
+
                         current_app.logger.info(f"Login successful using fallback for user {user_id}")
-                        return {"access_token": access_token, "user": user_dict}
+                        return response_data
                     except SQLAlchemyError as sqe:
                         current_app.logger.error(f"SQLAlchemy error in user query: {str(sqe)}")
                         current_app.logger.error(f"SQLAlchemy error details: {traceback.format_exc()}")
@@ -189,11 +205,23 @@ class Login(Resource):
                     access_token = create_access_token(identity=str(user.id))
                     current_app.logger.info(f"Access token generated for user {user.id}")
 
+                    # Generate refresh token if remember_me is True
+                    refresh_token = None
+                    if remember_me:
+                        refresh_token = create_refresh_token(identity=str(user.id))
+                        current_app.logger.info(f"Refresh token generated for user {user.id} (remember_me=True)")
+
                     # Get user data
                     user_dict = user.to_dict()
 
+                    response_data = {"access_token": access_token, "user": user_dict}
+
+                    # Add refresh token to response if generated
+                    if refresh_token:
+                        response_data["refresh_token"] = refresh_token
+
                     current_app.logger.info(f"Login successful for user {user.id}")
-                    return {"access_token": access_token, "user": user_dict}
+                    return response_data
 
                 except Exception as inner_error:
                     current_app.logger.error(f"Unexpected inner error during login: {str(inner_error)}")
@@ -1020,3 +1048,27 @@ class DebugLoginTest(Resource):
             response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers["Access-Control-Max-Age"] = "3600"
         return response
+
+
+# Add refresh token endpoint
+@api.route("/refresh")
+class TokenRefresh(Resource):
+    @api.doc("refresh_token")
+    @api.response(200, "Token refresh successful")
+    @api.response(401, "Invalid or expired refresh token")
+    @jwt_required(refresh=True)
+    def post(self):
+        """Refresh access token using refresh token"""
+        try:
+            current_app.logger.info("Token refresh attempt started")
+            current_user_id = get_jwt_identity()
+
+            # Generate new access token
+            new_access_token = create_access_token(identity=current_user_id)
+            current_app.logger.info(f"New access token generated for user {current_user_id}")
+
+            return {"access_token": new_access_token}, 200
+        except Exception as e:
+            current_app.logger.error(f"Error during token refresh: {str(e)}")
+            current_app.logger.error(traceback.format_exc())
+            return {"error": "An error occurred during token refresh"}, 401

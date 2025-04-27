@@ -1,13 +1,14 @@
-import os
-
+"""Initialize the database for development."""
 from app import create_app, db
 
-# Set the environment to development
-env = os.getenv("FLASK_ENV", "development")
-app = create_app(env)
 
-# Create an application context
-with app.app_context():
-    print("Creating database tables...")
-    db.create_all()
-    print("Database tables created.")
+def init_db():
+    """Initialize the database tables."""
+    app = create_app("development")
+    with app.app_context():
+        db.create_all()
+        print("Database tables created successfully!")
+
+
+if __name__ == "__main__":
+    init_db()

@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from sqlalchemy.dialects.postgresql import UUID
 
-from app.extensions import db
+from app import db
 
 
 class PasswordReset(db.Model):

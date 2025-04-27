@@ -72,7 +72,8 @@ class User(db.Model):
         """Get a user by their JWT token identity."""
         try:
             user_id = uuid.UUID(identity)
-            return cls.query.get(user_id)
+            # Updated to use db.session.get() instead of deprecated query.get()
+            return db.session.get(cls, user_id)
         except ValueError:
             return None
 

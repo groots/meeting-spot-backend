@@ -61,7 +61,8 @@ class Config:
 
     # JWT Configuration (for authentication)
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", SECRET_KEY)
-    JWT_ACCESS_TOKEN_EXPIRES = 60 * 60 * 8  # 8 hours instead of default 15 minutes
+    JWT_ACCESS_TOKEN_EXPIRES = 60 * 60 * 6  # 6 hours standard session time
+    JWT_REFRESH_TOKEN_EXPIRES = 60 * 60 * 24 * 14  # 14 days for "remember me" functionality
     # Add other JWT settings like algorithm, expiry time etc. as needed
 
     # Frontend URL (for generating links)

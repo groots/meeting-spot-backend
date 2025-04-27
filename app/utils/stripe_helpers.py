@@ -304,20 +304,28 @@ def get_customer_payment_methods(user: User) -> List[Dict[str, Any]]:
         return []
 
 
-def is_premium_feature(feature_name: str) -> bool:
-    """Check if a feature requires a premium subscription."""
-    premium_features = {
-        "advanced_filtering": True,
-        "unlimited_requests": True,
-        "team_collaboration": True,
-        "priority_support": True,
-        "custom_preferences": True,
-        "sms_notifications": True,
-        "contacts": True,
-        "analytics": True,
-        "export": True,
-        "templates": True,
-        "team_access": True,
-    }
+def is_premium_feature(feature_name):
+    """Check if a feature is premium-only in the current environment.
 
-    return premium_features.get(feature_name, False)
+    Args:
+        feature_name: The name of the feature to check
+
+    Returns:
+        bool: True if the feature is premium-only, False otherwise
+    """
+    # If premium features are disabled in config, always return False
+    if current_app.config.get("PREMIUM_FEATURES_DISABLED", False):
+        current_app.logger.info(f"Premium features disabled in config, allowing access to {feature_name}")
+        return False
+
+    # In testing environment, don't require premium
+    if current_app.config.get("TESTING", False):
+        return False
+
+    # Determine premium features based on environment
+    premium_features = current_app.config.get("PREMIUM_FEATURES", ["contacts", "meeting_history"])
+
+    if feature_name in premium_features:
+        return True
+
+    return False

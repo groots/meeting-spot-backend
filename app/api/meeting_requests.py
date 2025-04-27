@@ -205,6 +205,26 @@ Find a Meeting Spot Team
         meeting_requests = MeetingRequest.query.filter_by(user_a_id=user.id).all()
         return [request.to_dict() for request in meeting_requests]
 
+    def options(self):
+        """Handle OPTIONS requests for the meeting request list endpoint."""
+        response = current_app.make_default_options_response()
+
+        # Get origin from request headers
+        origin = request.headers.get("Origin")
+        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
+
+        # Add CORS headers if origin is allowed
+        if origin and (origin in allowed_origins or "*" in allowed_origins):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            response.headers[
+                "Access-Control-Allow-Headers"
+            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+
+        return response
+
 
 @api.route("/<string:request_id>")
 @api.param("request_id", "The request identifier")
@@ -301,6 +321,26 @@ class MeetingRequestResource(Resource):
         except ValueError:
             return {"message": "Invalid request ID format"}, 400
 
+    def options(self, request_id):
+        """Handle OPTIONS requests for the meeting request resource endpoint."""
+        response = current_app.make_default_options_response()
+
+        # Get origin from request headers
+        origin = request.headers.get("Origin")
+        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
+
+        # Add CORS headers if origin is allowed
+        if origin and (origin in allowed_origins or "*" in allowed_origins):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, PUT, DELETE, OPTIONS"
+            response.headers[
+                "Access-Control-Allow-Headers"
+            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+
+        return response
+
 
 @api.route("/<string:request_id>/status")
 @api.param("request_id", "The request identifier")
@@ -336,6 +376,26 @@ class MeetingRequestStatusResource(Resource):
             "created_at": meeting_request.created_at.isoformat(),
             "expires_at": meeting_request.expires_at.isoformat(),
         }
+
+    def options(self, request_id):
+        """Handle OPTIONS requests for the meeting request status endpoint."""
+        response = current_app.make_default_options_response()
+
+        # Get origin from request headers
+        origin = request.headers.get("Origin")
+        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
+
+        # Add CORS headers if origin is allowed
+        if origin and (origin in allowed_origins or "*" in allowed_origins):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers[
+                "Access-Control-Allow-Headers"
+            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+
+        return response
 
 
 @api.route("/<string:request_id>/respond")
@@ -424,6 +484,26 @@ class MeetingRequestResponseResource(Resource):
             meeting_request.status = MeetingRequestStatus.FAILED
             db.session.commit()
             return {"error": "Failed to process meeting request", "status": "failed"}, 500
+
+    def options(self, request_id):
+        """Handle OPTIONS requests for the meeting request response endpoint."""
+        response = current_app.make_default_options_response()
+
+        # Get origin from request headers
+        origin = request.headers.get("Origin")
+        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
+
+        # Add CORS headers if origin is allowed
+        if origin and (origin in allowed_origins or "*" in allowed_origins):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            response.headers[
+                "Access-Control-Allow-Headers"
+            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+
+        return response
 
 
 @api.route("/<string:request_id>/results")
@@ -529,3 +609,23 @@ class MeetingRequestResultsResource(Resource):
             "midpoint": midpoint,
             "locations": locations,
         }
+
+    def options(self, request_id):
+        """Handle OPTIONS requests for the meeting request results endpoint."""
+        response = current_app.make_default_options_response()
+
+        # Get origin from request headers
+        origin = request.headers.get("Origin")
+        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
+
+        # Add CORS headers if origin is allowed
+        if origin and (origin in allowed_origins or "*" in allowed_origins):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+            response.headers[
+                "Access-Control-Allow-Headers"
+            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Max-Age"] = "3600"
+
+        return response
