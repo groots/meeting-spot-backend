@@ -2,7 +2,7 @@
 
 import re
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from flask import current_app
 
@@ -145,7 +145,7 @@ def validate_url(url: str) -> bool:
     return bool(re.match(pattern, url))
 
 
-def validate_file_extension(filename: str, allowed_extensions: list[str]) -> bool:
+def validate_file_extension(filename: str, allowed_extensions: List[str]) -> bool:
     """
     Validate a file extension.
     Returns True if valid, False otherwise.
@@ -178,7 +178,7 @@ def validate_comment_length(comment: str, max_length: int = 1000) -> bool:
     return len(comment) <= max_length
 
 
-def validate_tags(tags: list[str]) -> bool:
+def validate_tags(tags: List[str]) -> bool:
     """
     Validate a list of tags.
     Returns True if valid, False otherwise.
@@ -223,7 +223,7 @@ def validate_duration(duration: int) -> bool:
     return 0 < duration <= 480  # Max 8 hours
 
 
-def validate_availability(start_time: str, end_time: str, existing_bookings: list[dict]) -> bool:
+def validate_availability(start_time: str, end_time: str, existing_bookings: List[Dict[str, str]]) -> bool:
     """
     Validate if a time slot is available.
     Returns True if available, False otherwise.
@@ -245,7 +245,7 @@ def validate_availability(start_time: str, end_time: str, existing_bookings: lis
         return False
 
 
-def validate_pagination_params(page: int, per_page: int, max_per_page: int = 100) -> tuple[bool, Optional[str]]:
+def validate_pagination_params(page: int, per_page: int, max_per_page: int = 100) -> Tuple[bool, Optional[str]]:
     """
     Validate pagination parameters.
     Returns a tuple of (is_valid, error_message).
