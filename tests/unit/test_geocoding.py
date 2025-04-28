@@ -30,13 +30,18 @@ def test_geocode_address_success(mock_current_app, mock_requests):
             {
                 "formatted_address": "123 Test Street, City, Country",
                 "geometry": {"location": {"lat": 37.7749, "lng": -122.4194}},
+                "address_components": [
+                    {"types": ["street_number"]},
+                    {"types": ["route"]},
+                    {"types": ["locality"]},
+                ],
             }
         ],
     }
     mock_requests.get.return_value = mock_response
 
     # Call the function
-    result = geocode_address("123 Test Street")
+    result = geocode_address("123 Test Street, City, Country")
 
     # Check the result
     assert result["success"] is True
@@ -48,7 +53,7 @@ def test_geocode_address_success(mock_current_app, mock_requests):
     mock_requests.get.assert_called_once()
     args, kwargs = mock_requests.get.call_args
     assert args[0] == "https://maps.googleapis.com/maps/api/geocode/json"
-    assert kwargs["params"]["address"] == "123 Test Street"
+    assert kwargs["params"]["address"] == "123 Test Street, City, Country"
     assert kwargs["params"]["key"] == "test_api_key"
 
 
@@ -58,7 +63,7 @@ def test_geocode_address_no_api_key(mock_current_app):
     mock_current_app.config = {}
 
     # Call the function
-    result = geocode_address("123 Test Street")
+    result = geocode_address("123 Test Street, City, Country")
 
     # Check the result
     assert result["success"] is False
@@ -84,8 +89,8 @@ def test_geocode_address_api_error(mock_current_app, mock_requests):
     mock_response.json.return_value = {"status": "ZERO_RESULTS", "results": []}
     mock_requests.get.return_value = mock_response
 
-    # Call the function
-    result = geocode_address("non-existent address")
+    # Call the function with a complete address to pass validation
+    result = geocode_address("123 Test Street, City, 12345")
 
     # Check the result
     assert result["success"] is False
@@ -98,8 +103,8 @@ def test_geocode_address_request_exception(mock_current_app, mock_requests):
     # Mock request exception
     mock_requests.get.side_effect = Exception("Network error")
 
-    # Call the function
-    result = geocode_address("123 Test Street")
+    # Call the function with a complete address to pass validation
+    result = geocode_address("123 Test Street, City, 12345")
 
     # Check the result
     assert result["success"] is False
