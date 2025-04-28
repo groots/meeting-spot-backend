@@ -7,6 +7,7 @@ from flask_restx import Namespace, Resource, fields
 
 from .. import db
 from ..models import Contact, ContactType, MeetingRequest, MeetingRequestStatus, User
+from ..utils.geocoding import geocode_address
 from ..utils.location import process_meeting_request
 from ..utils.notifications import send_email
 from ..utils.stripe_helpers import is_premium_feature
@@ -94,9 +95,21 @@ class MeetingRequestList(Resource):
                 address_a_lat = float(data["address_a_lat"])
                 address_a_lon = float(data["address_a_lon"])
             else:
-                # If coordinates are not provided, use default coordinates for now
-                address_a_lat = 37.7749  # Default SF latitude
-                address_a_lon = -122.4194  # Default SF longitude
+                # If coordinates not provided, try to geocode the address
+                current_app.logger.info(f"Geocoding address: {address_a}")
+                result = geocode_address(address_a)
+
+                if result["success"] and "coordinates" in result:
+                    address_a_lat = result["coordinates"]["lat"]
+                    address_a_lon = result["coordinates"]["lng"]
+                    current_app.logger.info(f"Geocoded address to: ({address_a_lat}, {address_a_lon})")
+                else:
+                    # If geocoding fails, use default SF coordinates
+                    current_app.logger.warning(
+                        f"Geocoding failed, using default coordinates. Error: {result.get('error')}"
+                    )
+                    address_a_lat = 37.7749  # Default SF latitude
+                    address_a_lon = -122.4194  # Default SF longitude
 
             location_a = {"address": address_a, "latitude": address_a_lat, "longitude": address_a_lon}
 

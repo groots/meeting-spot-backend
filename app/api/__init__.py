@@ -28,6 +28,7 @@ from ..models import ContactType, MeetingRequest, MeetingRequestStatus, User
 from ..utils.notifications import send_email
 from .auth import api as auth_ns
 from .contacts import api as contacts_ns
+from .geocoding import api as geocoding_ns
 from .meeting_requests import api as meeting_requests_ns
 from .payments import api as payments_ns
 from .users import api as users_ns
@@ -166,6 +167,7 @@ api_v1.add_namespace(cors_ns, path="/cors")
 api_v1.add_namespace(payments_ns, path="/payments")
 api_v1.add_namespace(contacts_ns, path="/contacts")
 api_v1.add_namespace(subscriptions_ns, path="/subscriptions")
+api_v1.add_namespace(geocoding_ns, path="/geocoding")
 
 # Register namespaces for v2
 api_v2.add_namespace(auth_ns, path="/auth")
@@ -173,6 +175,7 @@ api_v2.add_namespace(meeting_requests_ns, path="/meeting-requests")
 api_v2.add_namespace(users_ns, path="/users")
 api_v2.add_namespace(payments_ns, path="/payments")
 api_v2.add_namespace(contacts_ns, path="/contacts")
+api_v2.add_namespace(geocoding_ns, path="/geocoding")
 
 # No need to import routes since we're using Flask-RESTX namespaces
 

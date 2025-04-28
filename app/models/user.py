@@ -20,6 +20,9 @@ class User(db.Model):
 
     id = db.Column(UUIDType(), primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    username = db.Column(db.String(50), unique=True, nullable=True, index=True)
+    first_name = db.Column(db.String(50), nullable=True)
+    last_name = db.Column(db.String(50), nullable=True)
     password_hash = db.Column(db.String(256))
     google_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
     facebook_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
@@ -41,10 +44,32 @@ class User(db.Model):
         kwargs.setdefault("updated_at", now)
         if "id" not in kwargs:
             kwargs["id"] = uuid.uuid4()
+
+        # Generate username from email if not provided
+        if "username" not in kwargs and "email" in kwargs:
+            kwargs["username"] = kwargs["email"].split("@")[0]
+
+        # If first_name and last_name are not provided but full_name is
+        if "first_name" not in kwargs and "last_name" not in kwargs and "full_name" in kwargs:
+            name_parts = kwargs.pop("full_name", "").split(" ", 1)
+            kwargs["first_name"] = name_parts[0] if name_parts else ""
+            kwargs["last_name"] = name_parts[1] if len(name_parts) > 1 else ""
+
         super().__init__(**kwargs)
 
     def __repr__(self) -> str:
-        return f"<User {self.email}>"
+        return f"<User {self.username or self.email}>"
+
+    @property
+    def full_name(self) -> str:
+        """Get the user's full name."""
+        if self.first_name and self.last_name:
+            return f"{self.first_name} {self.last_name}"
+        elif self.first_name:
+            return self.first_name
+        elif self.last_name:
+            return self.last_name
+        return ""
 
     def set_password(self, password) -> None:
         """Set hashed password."""
@@ -64,6 +89,8 @@ class User(db.Model):
             expires_delta=expires_delta,
             additional_claims={
                 "email": self.email,
+                "username": self.username,
+                "first_name": self.first_name,
             },
         )
 
@@ -119,6 +146,10 @@ class User(db.Model):
         return {
             "id": str(self.id),
             "email": self.email,
+            "username": self.username,
+            "first_name": self.first_name,
+            "last_name": self.last_name,
+            "full_name": self.full_name,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "is_oauth_user": bool(self.google_oauth_id) or is_facebook_user,
@@ -129,9 +160,11 @@ class User(db.Model):
     def generate_auth_token(self, expiration=86400):
         """Generate a JWT token for authentication."""
         payload = {
-            "exp": datetime.utcnow() + datetime.timedelta(seconds=expiration),
+            "exp": datetime.utcnow() + timedelta(seconds=expiration),
             "iat": datetime.utcnow(),
             "sub": str(self.id),
+            "first_name": self.first_name,
+            "username": self.username,
         }
         token = jwt.encode(payload, current_app.config.get("JWT_SECRET_KEY"), algorithm="HS256")
         return token
