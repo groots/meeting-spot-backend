@@ -21,20 +21,32 @@ logger = logging.getLogger(__name__)
 # Get database connection string from environment or use default for local development
 def get_db_url():
     """Get the database URL based on the environment."""
-    # For Cloud SQL with proxy
+    # First check if DATABASE_URL is directly set (highest priority)
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        return database_url
+
+    # Next check for individual DB connection parameters
+    db_user = os.environ.get("DB_USER")
+    db_pass = os.environ.get("DB_PASS")
+    db_name = os.environ.get("DB_NAME")
+    db_host = os.environ.get("DB_HOST")
+    db_port = os.environ.get("DB_PORT")
+
+    if db_user and db_pass and db_name and db_host and db_port:
+        return f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+
+    # For Cloud SQL with proxy via instance connection name
     instance_connection_name = os.environ.get("INSTANCE_CONNECTION_NAME")
     if instance_connection_name:
         db_user = os.environ.get("DB_USER", "postgres")
         db_pass = os.environ.get("DB_PASS", "postgres")
         db_name = os.environ.get("DB_NAME", "find_a_meeting_spot")
-
-        # When deployed to Google Cloud Run, use the proxy provided by the runtime
         db_host = os.environ.get("DB_HOST", "127.0.0.1")
         db_port = os.environ.get("DB_PORT", "5432")
-
         return f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
-    # Local development default
+    # Local development default (lowest priority)
     return "postgresql://postgres:postgres@localhost:5432/find_a_meeting_spot"
 
 
@@ -186,7 +198,8 @@ def main():
     try:
         # Get database URL
         db_url = get_db_url()
-        logger.info(f"Using database URL: {db_url.replace(db_url.split(':')[2].split('@')[0], '***')}")
+        masked_url = db_url.replace(db_url.split(":")[2].split("@")[0], "***")
+        logger.info(f"Using database URL: {masked_url}")
 
         # Create engine
         engine = create_engine(db_url)

@@ -54,6 +54,97 @@ def validate_address(address: str) -> Dict[str, Union[bool, str]]:
     return {"valid": True, "message": "Address appears valid"}
 
 
+def reverse_geocode_coordinates(lat: float, lng: float) -> Dict[str, Union[bool, str]]:
+    """
+    Convert latitude and longitude coordinates to a readable address using Google Maps Geocoding API.
+
+    Args:
+        lat: The latitude coordinate
+        lng: The longitude coordinate
+
+    Returns:
+        A dictionary containing:
+            success: Boolean indicating if reverse geocoding was successful
+            formatted_address: The readable address (if successful)
+            error: Error message (if not successful)
+    """
+    logger.info(f"Reverse geocoding coordinates: ({lat}, {lng})")
+
+    # Get API key from config
+    api_key = current_app.config.get("GOOGLE_MAPS_API_KEY")
+    if not api_key:
+        logger.error("Google Maps API key not configured")
+        return {"success": False, "error": "Geocoding service not configured"}
+
+    # Google Maps Geocoding API endpoint
+    url = "https://maps.googleapis.com/maps/api/geocode/json"
+
+    try:
+        # Make request to Google Maps Geocoding API with latlng parameter
+        logger.info(f"Sending reverse geocoding request to Google Maps API for coordinates: ({lat}, {lng})")
+        response = requests.get(url, params={"latlng": f"{lat},{lng}", "key": api_key})
+        response.raise_for_status()  # Raise exception for HTTP errors
+
+        data = response.json()
+        logger.debug(f"Google API response status: {data['status']}")
+
+        # Check if request was successful
+        if data["status"] != "OK":
+            logger.error(f"Reverse geocoding error: {data['status']}")
+            if "error_message" in data:
+                logger.error(f"Error message: {data['error_message']}")
+            return {"success": False, "error": f"Reverse geocoding failed: {data.get('status')}"}
+
+        # Get the first result (most relevant)
+        if not data["results"]:
+            logger.warning("No results found from Google API")
+            return {"success": False, "error": "No address found for the provided coordinates"}
+
+        # Find the most appropriate address result
+        best_result = data["results"][0]
+        formatted_address = best_result["formatted_address"]
+
+        # Look for a result that contains a street address if available
+        for result in data["results"]:
+            address_types = result.get("types", [])
+            if "street_address" in address_types or "route" in address_types or "premise" in address_types:
+                formatted_address = result["formatted_address"]
+                best_result = result
+                break
+
+        logger.info(f"Reverse geocoded ({lat}, {lng}) to address: {formatted_address}")
+
+        # Determine address quality
+        address_components = best_result.get("address_components", [])
+        component_types = [comp.get("types", []) for comp in address_components]
+        all_types = [t for sublist in component_types for t in sublist]
+
+        # Check if essential components are present
+        has_street_number = "street_number" in all_types
+        has_route = "route" in all_types
+        has_locality = "locality" in all_types or "administrative_area_level_1" in all_types
+
+        address_quality = (
+            "high"
+            if (has_street_number and has_route and has_locality)
+            else "medium"
+            if (has_route and has_locality)
+            else "low"
+        )
+
+        logger.info(f"Address quality: {address_quality}")
+
+        return {
+            "success": True,
+            "formatted_address": formatted_address,
+            "quality": address_quality,
+        }
+
+    except Exception as e:
+        logger.error(f"Error calling Google Maps Reverse Geocoding API: {str(e)}")
+        return {"success": False, "error": f"Reverse geocoding service error: {str(e)}"}
+
+
 def geocode_address(address: str) -> Dict[str, Union[bool, Dict[str, float], str]]:
     """
     Convert an address string to latitude and longitude coordinates using Google Maps Geocoding API.

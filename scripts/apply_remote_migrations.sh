@@ -58,6 +58,10 @@ export DB_PASS=$DB_PASS
 export DB_NAME=$DB_NAME
 export DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
+# Print the masked database URL
+MASKED_URL="postgresql://${DB_USER}:***@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+echo -e "${YELLOW}Using database URL: ${MASKED_URL}${NC}"
+
 # Test the connection
 echo -e "${YELLOW}Testing database connection...${NC}"
 PGPASSWORD=$DB_PASS psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" &>/dev/null
@@ -85,10 +89,16 @@ fi
 # Run the migrations
 echo -e "${GREEN}Running database migrations...${NC}"
 python run_migrations_directly.py
+MIGRATION_RESULT=$?
 
 # Check if the migration was successful
-if [ $? -ne 0 ]; then
-    echo -e "${RED}Migration failed. Check the output above for details.${NC}"
+if [ $MIGRATION_RESULT -ne 0 ]; then
+    echo -e "${RED}Migration failed with exit code: ${MIGRATION_RESULT}${NC}"
+    echo -e "${RED}Please check the logs above for the specific error.${NC}"
+    echo -e "${YELLOW}Common issues:${NC}"
+    echo -e "  - Database credentials may be incorrect"
+    echo -e "  - Network connectivity issues with the Cloud SQL Proxy"
+    echo -e "  - Database may already be migrated or schema conflicts"
     exit 1
 fi
 

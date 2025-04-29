@@ -1,7 +1,7 @@
 from flask import current_app, request
 from flask_restx import Namespace, Resource, fields
 
-from ..utils.geocoding import geocode_address, validate_address
+from ..utils.geocoding import geocode_address, reverse_geocode_coordinates, validate_address
 
 # Create geocoding namespace
 api = Namespace("geocoding", description="Geocoding operations")
@@ -41,21 +41,23 @@ validation_response = api.model(
 geocoding_request = api.model(
     "GeocodingRequest",
     {
-        "address": fields.String(required=True, description="Address to geocode"),
+        "address": fields.String(required=False, description="Address to geocode"),
+        "lat": fields.Float(required=False, description="Latitude for reverse geocoding"),
+        "lng": fields.Float(required=False, description="Longitude for reverse geocoding"),
     },
 )
 
 
 @api.route("")
 class GeocodingResource(Resource):
-    @api.doc("geocode_address")
+    @api.doc("geocode_address_or_coordinates")
     @api.expect(geocoding_request)
     @api.marshal_with(geocoding_response)
-    @api.response(200, "Address geocoded successfully")
+    @api.response(200, "Geocoding successful")
     @api.response(400, "Invalid request")
     @api.response(500, "Server error")
     def post(self):
-        """Geocode an address to latitude and longitude coordinates"""
+        """Geocode an address to coordinates or reverse geocode coordinates to an address"""
         try:
             data = request.get_json()
             current_app.logger.info(f"Geocoding request received: {data}")
@@ -64,41 +66,78 @@ class GeocodingResource(Resource):
                 current_app.logger.error("No JSON data in request")
                 return {"success": False, "error": "No data provided"}, 400
 
-            if "address" not in data:
-                current_app.logger.error("No address field in request data")
-                return {"success": False, "error": "Address not provided"}, 400
+            # Check if this is a reverse geocoding request (lat/lng provided)
+            if "lat" in data and "lng" in data:
+                lat = data.get("lat")
+                lng = data.get("lng")
 
-            address = data["address"]
-            current_app.logger.info(f"Processing geocoding request for address: {address}")
+                # Validate the coordinates
+                if not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
+                    return {"success": False, "error": "Invalid coordinates format"}, 400
 
-            # Handle special format of "Location (lat, lng)"
-            import re
+                current_app.logger.info(f"Processing reverse geocoding request for coordinates: ({lat}, {lng})")
 
-            location_pattern = re.compile(r"Location \((-?\d+\.\d+), (-?\d+\.\d+)\)")
-            location_match = location_pattern.match(address) if address else None
+                # Perform reverse geocoding
+                result = reverse_geocode_coordinates(lat, lng)
+                current_app.logger.info(f"Reverse geocoding result: {result}")
 
-            if location_match:
-                # Extract coordinates directly from the string
-                lat = float(location_match.group(1))
-                lng = float(location_match.group(2))
-                current_app.logger.info(f"Extracted coordinates from address string: ({lat}, {lng})")
+                if not result["success"]:
+                    return result, 400
 
-                return {
-                    "success": True,
-                    "coordinates": {"lat": lat, "lng": lng},
-                    "formatted_address": address,
-                    "quality": "high",  # Direct coordinates are considered high quality
-                }, 200
+                # Add the coordinates to the result
+                result["coordinates"] = {"lat": lat, "lng": lng}
+                return result, 200
 
-            # Normal geocoding
-            result = geocode_address(address)
-            current_app.logger.info(f"Geocoding result: {result}")
+            # This is a forward geocoding request (address provided)
+            elif "address" in data:
+                address = data["address"]
+                current_app.logger.info(f"Processing geocoding request for address: {address}")
 
-            if not result["success"]:
-                # If geocoding failed, return a 400 status code
-                return result, 400
+                # Handle special format of "Location (lat, lng)"
+                import re
 
-            return result, 200
+                location_pattern = re.compile(r"Location \((-?\d+\.\d+), (-?\d+\.\d+)\)")
+                location_match = location_pattern.match(address) if address else None
+
+                if location_match:
+                    # Extract coordinates directly from the string
+                    lat = float(location_match.group(1))
+                    lng = float(location_match.group(2))
+                    current_app.logger.info(f"Extracted coordinates from address string: ({lat}, {lng})")
+
+                    # Perform reverse geocoding to get a readable address
+                    reverse_result = reverse_geocode_coordinates(lat, lng)
+
+                    if reverse_result["success"]:
+                        # Return both the coordinates and the reverse geocoded address
+                        return {
+                            "success": True,
+                            "coordinates": {"lat": lat, "lng": lng},
+                            "formatted_address": reverse_result["formatted_address"],
+                            "quality": reverse_result.get("quality", "high"),
+                        }, 200
+                    else:
+                        # If reverse geocoding fails, just return the coordinates
+                        return {
+                            "success": True,
+                            "coordinates": {"lat": lat, "lng": lng},
+                            "formatted_address": address,  # Use original string
+                            "quality": "high",  # Direct coordinates are considered high quality
+                        }, 200
+
+                # Normal forward geocoding
+                result = geocode_address(address)
+                current_app.logger.info(f"Geocoding result: {result}")
+
+                if not result["success"]:
+                    # If geocoding failed, return a 400 status code
+                    return result, 400
+
+                return result, 200
+
+            else:
+                current_app.logger.error("No address or coordinates provided in request")
+                return {"success": False, "error": "Either address or lat/lng must be provided"}, 400
 
         except Exception as e:
             current_app.logger.exception(f"Error in geocoding endpoint: {str(e)}")
