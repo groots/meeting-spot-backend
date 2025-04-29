@@ -95,13 +95,13 @@ class User(db.Model):
         )
 
     @classmethod
-    def get_by_token_identity(cls, identity: str) -> Optional["User"]:
-        """Get a user by their JWT token identity."""
+    def get_by_token_identity(cls, identity):
+        """Get user by token identity (used in JWT)."""
         try:
+            # Check if the identity is a valid UUID string
             user_id = uuid.UUID(identity)
-            # Updated to use db.session.get() instead of deprecated query.get()
-            return db.session.get(cls, user_id)
-        except ValueError:
+            return cls.query.get(user_id)
+        except (ValueError, TypeError):
             return None
 
     def is_premium(self) -> bool:
@@ -124,37 +124,15 @@ class User(db.Model):
             # If subscriptions table doesn't exist or there's another error, assume not premium
             return False
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert user to dictionary."""
-        # Handle missing subscriptions table
-        active_subscription = None
-        try:
-            # Only attempt to access subscriptions if the table exists
-            active_subscription = next((sub for sub in self.subscriptions if sub.status == "active"), None)
-        except Exception:
-            # If there's an error (e.g., table doesn't exist), leave active_subscription as None
-            pass
-
-        # Check if facebook_oauth_id attribute exists
-        is_facebook_user = False
-        try:
-            is_facebook_user = bool(self.facebook_oauth_id)
-        except Exception:
-            # If the attribute doesn't exist, it's not a Facebook user
-            pass
-
+    def to_dict(self):
+        """Convert user instance to dictionary."""
         return {
             "id": str(self.id),
             "email": self.email,
-            "username": self.username,
-            "first_name": self.first_name,
-            "last_name": self.last_name,
-            "full_name": self.full_name,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat(),
-            "is_oauth_user": bool(self.google_oauth_id) or is_facebook_user,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "is_oauth_user": bool(self.google_oauth_id or self.facebook_oauth_id),
             "is_premium": self.is_premium(),
-            "subscription": active_subscription.to_dict() if active_subscription else None,
         }
 
     def generate_auth_token(self, expiration=86400):
