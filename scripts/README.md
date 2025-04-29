@@ -101,6 +101,28 @@ A direct SQL approach to fixing the users table schema that avoids using the mig
 - When you need a more targeted approach to fix specific schema issues
 - When you want to verify the script before running (it generates a SQL file that you can review)
 
+### `grant_db_permissions.sh`
+
+A utility script to grant the necessary database permissions to the application user.
+
+**Usage:**
+```bash
+./scripts/grant_db_permissions.sh
+```
+
+**What it does:**
+- Connects to the database using Cloud SQL Proxy with admin credentials
+- Grants ownership of the users table to the application user
+- Grants all privileges on the users table to the application user
+- Grants privileges on sequences associated with the users table
+- Tests the new permissions by attempting to alter the table
+- Verifies and displays the current schema
+
+**When to use:**
+- When the application user lacks the necessary permissions to alter tables
+- Before running migration scripts that require ALTER TABLE privileges
+- When you encounter "insufficient privilege" errors during migrations
+
 ## Deployment Scripts
 
 The project also includes scripts to deploy the database verification service to Cloud Run:
@@ -141,7 +163,7 @@ If you encounter issues with database verification or migrations:
 
 ### Common Migration Issues
 
-- **Permission errors**: If you see "insufficient privilege" errors, try using the `fix_users_table_directly.sh` script which handles permissions more gracefully
+- **Permission errors**: If you see "insufficient privilege" errors, try using the `grant_db_permissions.sh` script to grant the necessary permissions to the application user
 - **Connection issues**: Make sure the Cloud SQL Proxy is running and connected
 - **SQL errors**: Review the generated SQL in the `schema_fix.sql` file before executing
 
