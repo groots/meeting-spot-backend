@@ -1,23 +1,38 @@
 steps:
-# Run migrations first
+# Build the container image
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'gcr.io/$PROJECT_ID/meeting-spot-backend:$COMMIT_SHA', '.']
+
+# Run a direct migration
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: /bin/bash
   args:
   - '-c'
   - |
-    echo "Running database migrations..."
-    # Build a special container for running migrations
-    gcloud builds submit --tag gcr.io/$PROJECT_ID/migration-runner:$COMMIT_SHA --no-source
-    # Run migrations with proper database connection
-    gcloud run jobs create migration-job-$COMMIT_SHA \
-    --image gcr.io/$PROJECT_ID/migration-runner:$COMMIT_SHA \
-    --region us-east1 \
-    --set-cloudsql-instances=find-a-meeting-spot:us-east1:findameetingspot \
-    --set-env-vars="FLASK_APP=wsgi.py,FLASK_ENV=production,RUN_MIGRATIONS=true,INSTANCE_CONNECTION_NAME=find-a-meeting-spot:us-east1:findameetingspot" \
-    --memory=512Mi \
-    --vpc-connector=projects/$PROJECT_ID/locations/us-east1/connectors/cloudrun-connector \
-    --execute-now
-    echo "Migrations completed successfully"
+    echo "Running database migrations directly..."
+    # Deploy a temporary instance to run migrations
+    gcloud run deploy migration-runner-$COMMIT_SHA \
+      --image gcr.io/$PROJECT_ID/meeting-spot-backend:$COMMIT_SHA \
+      --region us-east1 \
+      --platform managed \
+      --no-allow-unauthenticated \
+      --set-env-vars="FLASK_APP=wsgi.py,FLASK_ENV=production,RUN_MIGRATIONS=true,INSTANCE_CONNECTION_NAME=find-a-meeting-spot:us-east1:findameetingspot" \
+      --add-cloudsql-instances=find-a-meeting-spot:us-east1:findameetingspot \
+      --memory=512Mi \
+      --vpc-connector=projects/$PROJECT_ID/locations/us-east1/connectors/cloudrun-connector \
+      --service-account=migrationrunner@$PROJECT_ID.iam.gserviceaccount.com \
+      --timeout=20m \
+      --concurrency=1 \
+      --cpu=1
+
+    # Wait for deployment to complete
+    sleep 120
+
+    # Invoke service to run migrations
+    curl --fail -H "Authorization: Bearer $(gcloud auth print-identity-token --audiences=https://migration-runner-$COMMIT_SHA-vn5dwnwlzq-ue.a.run.app)" https://migration-runner-$COMMIT_SHA-vn5dwnwlzq-ue.a.run.app/
+
+    # Delete temporary migration service
+    gcloud run services delete migration-runner-$COMMIT_SHA --region=us-east1 --quiet
 
 # Deploy container image to Cloud Run
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -38,12 +53,10 @@ steps:
   - '--add-cloudsql-instances'
   - 'find-a-meeting-spot:us-east1:findameetingspot'
 
-# Build the container image
 images:
 - 'gcr.io/$PROJECT_ID/meeting-spot-backend:$COMMIT_SHA'
-- 'gcr.io/$PROJECT_ID/migration-runner:$COMMIT_SHA'
 
-timeout: '1800s'  # Increase timeout to allow for migrations to complete
+timeout: '3600s'  # Increase timeout to allow for migrations to complete
 
 options:
   logging: CLOUD_LOGGING_ONLY
