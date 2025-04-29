@@ -126,6 +126,14 @@ class User(db.Model):
 
     def to_dict(self):
         """Convert user instance to dictionary."""
+        # Check for active subscription
+        active_subscription = None
+        try:
+            active_subscription = next((sub for sub in self.subscriptions if sub.status == "active"), None)
+        except Exception:
+            # If there's an error (e.g., table doesn't exist), leave active_subscription as None
+            pass
+
         return {
             "id": str(self.id),
             "email": self.email,
@@ -133,6 +141,7 @@ class User(db.Model):
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "is_oauth_user": bool(self.google_oauth_id or self.facebook_oauth_id),
             "is_premium": self.is_premium(),
+            "subscription": active_subscription.to_dict() if active_subscription else None,
         }
 
     def generate_auth_token(self, expiration=86400):
