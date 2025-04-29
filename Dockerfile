@@ -4,8 +4,8 @@ FROM python:3.8-slim
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     postgresql-client \
-    netcat-openbsd \  # For connection testing
-    curl \            # For health checks
+    netcat-openbsd \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
