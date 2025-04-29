@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Union
 import jwt
 from flask import current_app
 from flask_jwt_extended import create_access_token
-from sqlalchemy import Column, inspect
+from sqlalchemy import Column, inspect, text
 from sqlalchemy.orm import relationship
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -24,14 +24,16 @@ class User(db.Model):
     id = db.Column(UUIDType(), primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
 
-    # Make these optional columns
+    # Optional columns that might not exist in all database instances
+    # These will be accessed dynamically to avoid errors
     username = db.Column(db.String(50), unique=True, nullable=True, index=True)
     first_name = db.Column(db.String(50), nullable=True)
     last_name = db.Column(db.String(50), nullable=True)
+    facebook_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
 
+    # Required columns that should exist in all database versions
     password_hash = db.Column(db.String(256))
     google_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
-    facebook_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False)
 
@@ -93,12 +95,18 @@ class User(db.Model):
         # Create additional claims without optional fields
         additional_claims = {"email": self.email}
 
-        # Only add optional fields if they exist
-        if hasattr(self, "username") and self.username:
-            additional_claims["username"] = self.username
+        # Only add optional fields if they exist and are accessible
+        try:
+            if hasattr(self, "username") and self.username:
+                additional_claims["username"] = self.username
+        except:
+            pass
 
-        if hasattr(self, "first_name") and self.first_name:
-            additional_claims["first_name"] = self.first_name
+        try:
+            if hasattr(self, "first_name") and self.first_name:
+                additional_claims["first_name"] = self.first_name
+        except:
+            pass
 
         return create_access_token(
             identity=str(self.id),
@@ -113,13 +121,12 @@ class User(db.Model):
             # Check if the identity is a valid UUID string
             user_id = uuid.UUID(identity)
 
-            # Query the user directly without using load_only
-            user = cls.query.filter_by(id=user_id).first()
+            # Convert UUID to string for database compatibility
+            user_id_str = str(user_id)
 
-            if not user:
-                return None
-
-            return user
+            # Important: Go back to the simpler approach - use the ORM query
+            # with filter to avoid SQLite UUID compatibility issues
+            return cls.query.filter_by(id=user_id).first()
 
         except (ValueError, TypeError):
             return None
@@ -167,18 +174,30 @@ class User(db.Model):
             "subscription": active_subscription.to_dict() if active_subscription else None,
         }
 
-        # Add optional fields only if they exist
-        if hasattr(self, "username") and self.username:
-            result["username"] = self.username
+        # Add optional fields only if they exist and are accessible
+        try:
+            if hasattr(self, "username") and self.username:
+                result["username"] = self.username
+        except:
+            pass
 
-        if hasattr(self, "first_name") and self.first_name:
-            result["first_name"] = self.first_name
+        try:
+            if hasattr(self, "first_name") and self.first_name:
+                result["first_name"] = self.first_name
+        except:
+            pass
 
-        if hasattr(self, "last_name") and self.last_name:
-            result["last_name"] = self.last_name
+        try:
+            if hasattr(self, "last_name") and self.last_name:
+                result["last_name"] = self.last_name
+        except:
+            pass
 
-        if hasattr(self, "first_name") or hasattr(self, "last_name"):
-            result["full_name"] = self.full_name
+        try:
+            if hasattr(self, "first_name") or hasattr(self, "last_name"):
+                result["full_name"] = self.full_name
+        except:
+            pass
 
         return result
 
@@ -190,12 +209,18 @@ class User(db.Model):
             "sub": str(self.id),
         }
 
-        # Only add optional fields if they exist
-        if hasattr(self, "first_name") and self.first_name:
-            payload["first_name"] = self.first_name
+        # Only add optional fields if they exist and are accessible
+        try:
+            if hasattr(self, "first_name") and self.first_name:
+                payload["first_name"] = self.first_name
+        except:
+            pass
 
-        if hasattr(self, "username") and self.username:
-            payload["username"] = self.username
+        try:
+            if hasattr(self, "username") and self.username:
+                payload["username"] = self.username
+        except:
+            pass
 
         token = jwt.encode(payload, current_app.config.get("JWT_SECRET_KEY"), algorithm="HS256")
         return token
@@ -206,14 +231,14 @@ class User(db.Model):
         try:
             payload = jwt.decode(token, current_app.config.get("JWT_SECRET_KEY"), algorithms=["HS256"])
             user_id = payload["sub"]
-            return User.query.filter_by(id=user_id).first()
+            return User.get_by_token_identity(user_id)
         except:
             return None
 
     @staticmethod
     def identity(payload):
         user_id = payload["identity"]
-        return User.query.filter_by(id=user_id).first()
+        return User.get_by_token_identity(user_id)
 
 
 # Subscription class has been moved to app/models/subscription.py
@@ -225,6 +250,6 @@ def get_user_by_token(token):
         # Decode the token and extract user_id
         decoded_token = jwt.decode(token, current_app.config["JWT_SECRET_KEY"], algorithms=["HS256"])
         user_id = decoded_token["sub"]
-        return User.query.filter_by(id=user_id).first()
+        return User.get_by_token_identity(user_id)
     except:
         return None
