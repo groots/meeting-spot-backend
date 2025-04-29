@@ -5,6 +5,7 @@ for running migrations in different contexts (development, production, etc.).
 """
 
 import logging
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -80,6 +81,37 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def get_gcp_connection_config():
+    """Get a GCP-specific connection configuration when running in Cloud environment."""
+    # Check if we're running in a GCP environment
+    if os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT"):
+        is_gcp = True
+    else:
+        is_gcp = False
+
+    if not is_gcp:
+        return {}
+
+    # Set appropriate connection pool settings for Cloud SQL
+    gcp_config = {
+        "pool_size": 5,  # Smaller pool size for Cloud SQL connections
+        "max_overflow": 2,
+        "pool_timeout": 30,  # Shorter timeout
+        "pool_recycle": 1800,  # Recycle connections every 30 minutes
+        "connect_args": {
+            "sslmode": "prefer",  # Enable SSL for Cloud SQL connections
+        },
+    }
+
+    # Check for Cloud SQL proxy settings
+    instance_connection_name = os.environ.get("INSTANCE_CONNECTION_NAME")
+    if instance_connection_name:
+        logger.info(f"Using Cloud SQL instance: {instance_connection_name}")
+        # Note: actual connection string is handled by SQLAlchemy in Flask app
+
+    return gcp_config
+
+
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
 
@@ -97,22 +129,59 @@ def run_migrations_online() -> None:
                 directives[:] = []
                 logger.info("No changes in schema detected.")
 
+    cfg = config.get_section(config.config_ini_section)
+
+    # Get GCP-specific configuration if in GCP environment
+    gcp_config = get_gcp_connection_config()
+
+    # Apply specific SQLAlchemy options for Cloud SQL if needed
+    if gcp_config:
+        for key, value in gcp_config.items():
+            if key != "connect_args":
+                cfg[f"sqlalchemy.{key}"] = str(value)
+
+    # Set up the connectable with appropriate pool class depending on environment
+    if os.environ.get("FLASK_ENV") == "production":
+        # Use a QueuePool for production environments
+        poolclass = pool.QueuePool
+    else:
+        # Use a NullPool for development/testing
+        poolclass = pool.NullPool
+
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
+        cfg,
         prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
+        poolclass=poolclass,
     )
 
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=get_metadata(),
-            process_revision_directives=process_revision_directives,
-            **current_app.extensions["migrate"].configure_args,
-        )
+    # Apply connect_args if present in GCP config
+    if gcp_config and "connect_args" in gcp_config:
+        for key, value in gcp_config["connect_args"].items():
+            connectable.dialect.dbapi.connect_args[key] = value
 
-        with context.begin_transaction():
-            context.run_migrations()
+    # Use a try-except block to catch specific Cloud SQL connection issues
+    try:
+        with connectable.connect() as connection:
+            context.configure(
+                connection=connection,
+                target_metadata=get_metadata(),
+                process_revision_directives=process_revision_directives,
+                transaction_per_migration=True,  # Ensure each migration runs in its own transaction
+                **current_app.extensions["migrate"].configure_args,
+            )
+
+            with context.begin_transaction():
+                context.run_migrations()
+
+    except Exception as e:
+        logger.error(f"Error during migration: {str(e)}")
+        # Special handling for common Cloud SQL errors
+        if "SSL SYSCALL error" in str(e) or "connection timed out" in str(e).lower():
+            logger.error(
+                "This appears to be a Cloud SQL connection issue. "
+                "Make sure your Cloud SQL proxy is running or IAM permissions are correct."
+            )
+        raise
 
 
 if context.is_offline_mode():
