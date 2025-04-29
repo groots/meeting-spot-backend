@@ -7,6 +7,7 @@ Create Date: 2025-04-29 12:00:00.000000
 """
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.sql import text
 
 # revision identifiers, used by Alembic.
 revision = "fix_missing_username"
@@ -26,8 +27,12 @@ def upgrade():
         # Add username column if it doesn't exist
         if "username" not in columns:
             op.add_column("users", sa.Column("username", sa.String(length=50), nullable=True))
-            op.create_index(op.f("ix_users_username"), "users", ["username"], unique=True)
-            print("Added username column to users table")
+            try:
+                op.create_index(op.f("ix_users_username"), "users", ["username"], unique=True)
+                print("Added username column to users table with unique index")
+            except Exception as e:
+                # If index creation fails, still keep the column
+                print(f"Added username column but couldn't create index: {str(e)}")
 
         # Add first_name column if it doesn't exist
         if "first_name" not in columns:
@@ -42,18 +47,43 @@ def upgrade():
         # Add facebook_oauth_id column if it doesn't exist
         if "facebook_oauth_id" not in columns:
             op.add_column("users", sa.Column("facebook_oauth_id", sa.String(255), nullable=True))
-            op.create_index(op.f("ix_users_facebook_oauth_id"), "users", ["facebook_oauth_id"], unique=True)
-            print("Added facebook_oauth_id column to users table")
+            try:
+                op.create_index(op.f("ix_users_facebook_oauth_id"), "users", ["facebook_oauth_id"], unique=True)
+                print("Added facebook_oauth_id column to users table with unique index")
+            except Exception as e:
+                # If index creation fails, still keep the column
+                print(f"Added facebook_oauth_id column but couldn't create index: {str(e)}")
 
         # Generate usernames from email addresses for existing users
-        op.execute(
+        # Use standard SQL instead of PostgreSQL-specific functions
+        try:
+            conn.execute(
+                text(
+                    """
+            UPDATE users
+            SET username = SUBSTR(email, 1, INSTR(email, '@') - 1)
+            WHERE username IS NULL
             """
-        UPDATE users
-        SET username = SUBSTRING(email FROM 1 FOR POSITION('@' IN email) - 1)
-        WHERE username IS NULL
-        """
-        )
-        print("Generated usernames for existing users")
+                )
+            )
+            print("Generated usernames for existing users")
+        except Exception as e:
+            print(f"Could not generate usernames with SUBSTR/INSTR: {str(e)}")
+            # Try PostgreSQL-specific version as fallback
+            try:
+                conn.execute(
+                    text(
+                        """
+                UPDATE users
+                SET username = SUBSTRING(email FROM 1 FOR POSITION('@' IN email) - 1)
+                WHERE username IS NULL
+                """
+                    )
+                )
+                print("Generated usernames for existing users using PostgreSQL syntax")
+            except Exception as e2:
+                print(f"Failed to generate usernames with PostgreSQL syntax too: {str(e2)}")
+                print("Usernames will need to be set manually")
 
     except Exception as e:
         print(f"Error adding columns: {str(e)}")
