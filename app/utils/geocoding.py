@@ -1,11 +1,14 @@
 import logging
+import os
 import re
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import requests
 from flask import current_app
 
 logger = logging.getLogger(__name__)
+
+GEOCODING_API_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 
 
 def validate_address(address: str) -> Dict[str, Union[bool, str]]:
@@ -54,189 +57,155 @@ def validate_address(address: str) -> Dict[str, Union[bool, str]]:
     return {"valid": True, "message": "Address appears valid"}
 
 
-def reverse_geocode_coordinates(lat: float, lng: float) -> Dict[str, Union[bool, str]]:
+def reverse_geocode_coordinates(lat: float, lng: float, api_key: str = None) -> Dict[str, Any]:
     """
-    Convert latitude and longitude coordinates to a readable address using Google Maps Geocoding API.
+    Reverse geocode coordinates to an address using Google Maps API.
 
     Args:
-        lat: The latitude coordinate
-        lng: The longitude coordinate
+        lat: Latitude
+        lng: Longitude
+        api_key: Google Maps API key (defaults to environment variable if not provided)
 
     Returns:
-        A dictionary containing:
-            success: Boolean indicating if reverse geocoding was successful
-            formatted_address: The readable address (if successful)
-            error: Error message (if not successful)
+        Dict with reverse geocoding results including success status, address if successful,
+        or error message if unsuccessful
     """
-    logger.info(f"Reverse geocoding coordinates: ({lat}, {lng})")
+    # Validate inputs
+    if not _validate_coordinates(lat, lng):
+        return {"success": False, "error": "Invalid latitude/longitude values"}
 
-    # Get API key from config
-    api_key = current_app.config.get("GOOGLE_MAPS_API_KEY")
+    # Get API key if not provided
     if not api_key:
-        logger.error("Google Maps API key not configured")
-        return {"success": False, "error": "Geocoding service not configured"}
-
-    # Google Maps Geocoding API endpoint
-    url = "https://maps.googleapis.com/maps/api/geocode/json"
+        api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+        if not api_key:
+            return {"success": False, "error": "API key cannot be empty"}
 
     try:
-        # Make request to Google Maps Geocoding API with latlng parameter
-        logger.info(f"Sending reverse geocoding request to Google Maps API for coordinates: ({lat}, {lng})")
-        response = requests.get(url, params={"latlng": f"{lat},{lng}", "key": api_key})
-        response.raise_for_status()  # Raise exception for HTTP errors
-
+        # Make the request to Google Maps API
+        params = {"latlng": f"{lat},{lng}", "key": api_key}
+        response = requests.get(GEOCODING_API_URL, params=params)
         data = response.json()
-        logger.debug(f"Google API response status: {data['status']}")
 
-        # Check if request was successful
+        # Check for API errors
         if data["status"] != "OK":
-            logger.error(f"Reverse geocoding error: {data['status']}")
-            if "error_message" in data:
-                logger.error(f"Error message: {data['error_message']}")
-            return {"success": False, "error": f"Reverse geocoding failed: {data.get('status')}"}
+            if data["status"] == "ZERO_RESULTS":
+                return {"success": False, "error": "No results found for the given coordinates"}
+            error_message = data.get("error_message", f"Reverse geocoding failed with status: {data['status']}")
+            return {"success": False, "error": error_message}
 
-        # Get the first result (most relevant)
-        if not data["results"]:
-            logger.warning("No results found from Google API")
-            return {"success": False, "error": "No address found for the provided coordinates"}
+        # Check if we have results
+        if not data.get("results"):
+            return {"success": False, "error": "No results found for the given coordinates"}
 
-        # Find the most appropriate address result
-        best_result = data["results"][0]
-        formatted_address = best_result["formatted_address"]
+        # Extract the first result (most relevant)
+        result = data["results"][0]
 
-        # Look for a result that contains a street address if available
-        for result in data["results"]:
-            address_types = result.get("types", [])
-            if "street_address" in address_types or "route" in address_types or "premise" in address_types:
-                formatted_address = result["formatted_address"]
-                best_result = result
-                break
+        # Determine quality of the result based on the types
+        quality = _determine_address_quality(result)
 
-        logger.info(f"Reverse geocoded ({lat}, {lng}) to address: {formatted_address}")
-
-        # Determine address quality
-        address_components = best_result.get("address_components", [])
-        component_types = [comp.get("types", []) for comp in address_components]
-        all_types = [t for sublist in component_types for t in sublist]
-
-        # Check if essential components are present
-        has_street_number = "street_number" in all_types
-        has_route = "route" in all_types
-        has_locality = "locality" in all_types or "administrative_area_level_1" in all_types
-
-        address_quality = (
-            "high"
-            if (has_street_number and has_route and has_locality)
-            else "medium"
-            if (has_route and has_locality)
-            else "low"
-        )
-
-        logger.info(f"Address quality: {address_quality}")
-
-        return {
-            "success": True,
-            "formatted_address": formatted_address,
-            "quality": address_quality,
-        }
+        return {"success": True, "formatted_address": result["formatted_address"], "quality": quality}
 
     except Exception as e:
-        logger.error(f"Error calling Google Maps Reverse Geocoding API: {str(e)}")
-        return {"success": False, "error": f"Reverse geocoding service error: {str(e)}"}
+        logger.error(f"Error during reverse geocoding: {str(e)}", exc_info=True)
+        return {"success": False, "error": f"Error during reverse geocoding: {str(e)}"}
 
 
-def geocode_address(address: str) -> Dict[str, Union[bool, Dict[str, float], str]]:
+def _validate_coordinates(lat: float, lng: float) -> bool:
     """
-    Convert an address string to latitude and longitude coordinates using Google Maps Geocoding API.
+    Validate that latitude and longitude are within valid ranges.
 
     Args:
-        address: The address string to geocode
+        lat: Latitude (-90 to 90)
+        lng: Longitude (-180 to 180)
 
     Returns:
-        A dictionary containing:
-            success: Boolean indicating if geocoding was successful
-            coordinates: Dictionary with 'lat' and 'lng' keys (if successful)
-            formatted_address: Formatted address from Google (if successful)
-            error: Error message (if not successful)
+        True if coordinates are valid, False otherwise
     """
-    logger.info(f"Geocoding address: '{address}'")
+    try:
+        lat_float = float(lat)
+        lng_float = float(lng)
+        return -90 <= lat_float <= 90 and -180 <= lng_float <= 180
+    except (ValueError, TypeError):
+        return False
 
-    if not address or not address.strip():
-        logger.warning("Empty address provided to geocode_address")
-        return {"success": False, "error": "No address provided"}
 
-    # First validate the address format
-    validation = validate_address(address)
-    if not validation["valid"]:
-        logger.warning(f"Address validation failed: {validation['message']}")
-        return {"success": False, "error": validation["message"]}
+def _determine_address_quality(result: Dict[str, Any]) -> str:
+    """
+    Determine the quality of a geocoding result based on its types.
 
-    # Get API key from config
-    api_key = current_app.config.get("GOOGLE_MAPS_API_KEY")
+    Args:
+        result: A geocoding result from Google Maps API
+
+    Returns:
+        String quality level: "high", "medium", or "low"
+    """
+    types = result.get("types", [])
+
+    # High precision results have specific address information
+    high_precision_types = ["street_address", "premise", "subpremise", "point_of_interest"]
+
+    # Medium precision results have neighborhood or locality information
+    medium_precision_types = ["neighborhood", "locality", "sublocality", "postal_code"]
+
+    if any(t in types for t in high_precision_types):
+        return "high"
+    elif any(t in types for t in medium_precision_types):
+        return "medium"
+    else:
+        return "low"
+
+
+def geocode_address(address: str, api_key: str = None) -> Dict[str, Any]:
+    """
+    Geocode an address string to latitude and longitude using Google Maps API.
+
+    Args:
+        address: The address to geocode
+        api_key: Google Maps API key (defaults to environment variable if not provided)
+
+    Returns:
+        Dict with geocoding results including success status, lat/lng if successful,
+        or error message if unsuccessful
+    """
+    # Validate inputs
+    if not address:
+        return {"success": False, "error": "Address cannot be empty"}
+
+    # Get API key if not provided
     if not api_key:
-        logger.error("Google Maps API key not configured")
-        return {"success": False, "error": "Geocoding service not configured"}
-
-    # Google Maps Geocoding API endpoint
-    url = "https://maps.googleapis.com/maps/api/geocode/json"
+        api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+        if not api_key:
+            return {"success": False, "error": "API key cannot be empty"}
 
     try:
-        # Make request to Google Maps Geocoding API
-        logger.info(f"Sending request to Google Maps API for address: '{address}'")
-        response = requests.get(url, params={"address": address, "key": api_key})
-        response.raise_for_status()  # Raise exception for HTTP errors
-
+        # Make the request to Google Maps API
+        params = {"address": address, "key": api_key}
+        response = requests.get(GEOCODING_API_URL, params=params)
         data = response.json()
-        logger.debug(f"Google API response status: {data['status']}")
 
-        # Check if request was successful
+        # Check for API errors
         if data["status"] != "OK":
-            logger.error(f"Geocoding error: {data['status']}")
-            if "error_message" in data:
-                logger.error(f"Error message: {data['error_message']}")
-            return {"success": False, "error": f"Geocoding failed: {data.get('status')}"}
+            if data["status"] == "ZERO_RESULTS":
+                return {"success": False, "error": "No results found for the given address"}
+            # Use the error_message directly from API if available
+            error_message = data.get("error_message", f"Geocoding failed with status: {data['status']}")
+            return {"success": False, "error": error_message}
 
-        # Get the first result (most relevant)
-        if not data["results"]:
-            logger.warning("No results found from Google API")
-            return {"success": False, "error": "No results found for the provided address"}
+        # Check if we have results
+        if not data.get("results"):
+            return {"success": False, "error": "No results found for the given address"}
 
+        # Extract the first result (most relevant)
         result = data["results"][0]
         location = result["geometry"]["location"]
-        logger.info(f"Geocoded '{address}' to coordinates: ({location['lat']}, {location['lng']})")
-
-        # Check if the address is a partial match
-        if result.get("partial_match", False):
-            logger.warning(f"Partial match found for address: {address}")
-            # Still return results but add a warning in logs
-
-        # Determine address quality by checking address components
-        address_components = result.get("address_components", [])
-        component_types = [comp.get("types", []) for comp in address_components]
-        all_types = [t for sublist in component_types for t in sublist]
-
-        # Check if essential components are present
-        has_street_number = "street_number" in all_types
-        has_route = "route" in all_types
-        has_locality = "locality" in all_types or "administrative_area_level_1" in all_types
-
-        address_quality = (
-            "high"
-            if (has_street_number and has_route and has_locality)
-            else "medium"
-            if (has_route and has_locality)
-            else "low"
-        )
-
-        logger.info(f"Address quality: {address_quality}")
 
         return {
             "success": True,
-            "coordinates": {"lat": location["lat"], "lng": location["lng"]},
+            "lat": location["lat"],
+            "lng": location["lng"],
             "formatted_address": result["formatted_address"],
-            "quality": address_quality,
         }
 
     except Exception as e:
-        logger.error(f"Error calling Google Maps Geocoding API: {str(e)}")
-        return {"success": False, "error": f"Geocoding service error: {str(e)}"}
+        logger.error(f"Error during geocoding: {str(e)}", exc_info=True)
+        return {"success": False, "error": f"Error during geocoding: {str(e)}"}
