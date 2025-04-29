@@ -64,6 +64,43 @@ This script applies database migrations to the remote (production) database via 
 - User must be authenticated with Google Cloud (`gcloud auth login`)
 - PostgreSQL client (`psql`) must be installed
 
+### `apply_remote_migrations_admin.sh`
+
+A specialized version of the migration script that uses admin database credentials for situations where the regular user lacks the necessary privileges.
+
+**Usage:**
+```bash
+./scripts/apply_remote_migrations_admin.sh
+```
+
+**What it does:**
+- Similar to `apply_remote_migrations.sh` but uses the postgres admin user
+- Provides more detailed schema verification after migration
+- Shows sample of updated users
+- Displays helpful error messages if the migration fails
+
+### `fix_users_table_directly.sh`
+
+A direct SQL approach to fixing the users table schema that avoids using the migration framework.
+
+**Usage:**
+```bash
+./scripts/fix_users_table_directly.sh
+```
+
+**What it does:**
+- Connects to the database using Cloud SQL Proxy
+- Displays the current users table schema
+- Creates a SQL script that handles possible permission issues
+- Adds the missing columns if they don't exist
+- Generates usernames from email addresses for users without usernames
+- Shows the updated schema and a sample of users with generated usernames
+
+**When to use:**
+- When standard migrations fail due to permission issues
+- When you need a more targeted approach to fix specific schema issues
+- When you want to verify the script before running (it generates a SQL file that you can review)
+
 ## Deployment Scripts
 
 The project also includes scripts to deploy the database verification service to Cloud Run:
@@ -101,6 +138,12 @@ If you encounter issues with database verification or migrations:
 2. Ensure you have the necessary permissions to access the database
 3. For remote database operations, verify your Google Cloud credentials
 4. Check the logs for detailed error messages
+
+### Common Migration Issues
+
+- **Permission errors**: If you see "insufficient privilege" errors, try using the `fix_users_table_directly.sh` script which handles permissions more gracefully
+- **Connection issues**: Make sure the Cloud SQL Proxy is running and connected
+- **SQL errors**: Review the generated SQL in the `schema_fix.sql` file before executing
 
 ## Security Notes
 
