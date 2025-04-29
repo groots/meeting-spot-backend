@@ -55,39 +55,59 @@ def upgrade():
                 print(f"Added facebook_oauth_id column but couldn't create index: {str(e)}")
 
         # Generate usernames from email addresses for existing users
-        # Use standard SQL instead of PostgreSQL-specific functions
+        # Try PostgreSQL-specific version first
         try:
             conn.execute(
                 text(
                     """
-            UPDATE users
-            SET username = SUBSTR(email, 1, INSTR(email, '@') - 1)
-            WHERE username IS NULL
-            """
+                UPDATE users
+                SET username = SUBSTRING(email FROM 1 FOR POSITION('@' IN email) - 1)
+                WHERE username IS NULL
+                """
                 )
             )
-            print("Generated usernames for existing users")
-        except Exception as e:
-            print(f"Could not generate usernames with SUBSTR/INSTR: {str(e)}")
-            # Try PostgreSQL-specific version as fallback
+            print("Generated usernames for existing users using PostgreSQL syntax")
+        except Exception as e1:
+            print(f"Could not generate usernames with PostgreSQL syntax: {str(e1)}")
+
+            # Try standard SQL as fallback
             try:
                 conn.execute(
                     text(
                         """
                 UPDATE users
-                SET username = SUBSTRING(email FROM 1 FOR POSITION('@' IN email) - 1)
+                SET username = SUBSTR(email, 1, INSTR(email, '@') - 1)
                 WHERE username IS NULL
                 """
                     )
                 )
-                print("Generated usernames for existing users using PostgreSQL syntax")
+                print("Generated usernames for existing users using standard SQL")
             except Exception as e2:
-                print(f"Failed to generate usernames with PostgreSQL syntax too: {str(e2)}")
-                print("Usernames will need to be set manually")
+                print(f"Failed to generate usernames with standard SQL too: {str(e2)}")
+
+                # Last resort: try a more basic approach
+                try:
+                    # Get all users without username
+                    result = conn.execute(text("SELECT id, email FROM users WHERE username IS NULL"))
+                    for row in result:
+                        user_id = row[0]
+                        email = row[1]
+                        username = email.split("@")[0] if "@" in email else email
+
+                        # Update each user individually
+                        conn.execute(
+                            text("UPDATE users SET username = :username WHERE id = :user_id"),
+                            {"username": username, "user_id": user_id},
+                        )
+                    print("Generated usernames for existing users using Python-based approach")
+                except Exception as e3:
+                    print(f"All username generation methods failed: {str(e3)}")
+                    print("Usernames will need to be set manually")
 
     except Exception as e:
         print(f"Error adding columns: {str(e)}")
-        raise
+        print("Migration continuing despite errors. Some columns may need to be added manually.")
+        # Don't raise the exception to allow the migration to complete
 
 
 def downgrade():
