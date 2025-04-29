@@ -7,7 +7,6 @@ import logging
 import os
 import sys
 import time
-from contextlib import contextmanager
 
 import sqlalchemy as sa
 from sqlalchemy import create_engine, text
@@ -39,20 +38,18 @@ def get_db_url():
     return "postgresql://postgres:postgres@localhost:5432/find_a_meeting_spot"
 
 
-@contextmanager
-def retry_on_connection_error(max_retries=5, retry_interval=5):
-    """Context manager to retry operations on connection errors."""
+def retry_operation(func, max_retries=5, retry_interval=5):
+    """Retry an operation with exponential backoff."""
     retries = 0
     while True:
         try:
-            yield
-            break  # If successful, break out of the loop
+            return func()
         except (OperationalError, ProgrammingError) as e:
             # Check if it's a connection error
             if "connection" in str(e).lower() and retries < max_retries:
                 retries += 1
                 logger.warning(f"Connection error detected, retrying ({retries}/{max_retries})...")
-                time.sleep(retry_interval)
+                time.sleep(retry_interval * retries)  # Exponential backoff
             else:
                 logger.error(f"Failed after {retries} retries or not a connection error: {str(e)}")
                 raise
@@ -64,7 +61,7 @@ def add_username_column(engine):
         # Create a session
         Session = sessionmaker(bind=engine)
 
-        with retry_on_connection_error():
+        def add_columns():
             with Session() as session, session.begin():
                 # Check if the columns already exist
                 inspector = sa.inspect(engine)
@@ -115,7 +112,10 @@ def add_username_column(engine):
                 # Commit the transaction
                 logger.info("Committing transaction...")
 
-            # In a separate transaction, generate usernames from email addresses
+        # Retry the column addition if needed
+        retry_operation(add_columns)
+
+        def generate_usernames():
             with Session() as session, session.begin():
                 logger.info("Generating usernames from email addresses...")
                 # Try standard SQL approach
@@ -167,6 +167,9 @@ def add_username_column(engine):
 
                 # Commit the transaction
                 logger.info("Committing username updates transaction...")
+
+        # Retry the username generation if needed
+        retry_operation(generate_usernames)
 
         logger.info("Migration completed successfully")
         return True
