@@ -7,7 +7,7 @@ import jwt
 from flask import current_app
 from flask_jwt_extended import create_access_token
 from sqlalchemy import Column, inspect
-from sqlalchemy.orm import load_only, relationship
+from sqlalchemy.orm import relationship
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .. import db
@@ -113,19 +113,13 @@ class User(db.Model):
             # Check if the identity is a valid UUID string
             user_id = uuid.UUID(identity)
 
-            # Only select columns that are guaranteed to exist
-            inspector = inspect(db.engine)
-            columns = [col["name"] for col in inspector.get_columns("users")]
+            # Query the user directly without using load_only
+            user = cls.query.filter_by(id=user_id).first()
 
-            # Always include these required columns
-            required_cols = ["id", "email", "password_hash", "google_oauth_id", "created_at", "updated_at"]
+            if not user:
+                return None
 
-            # Add optional columns only if they exist in the database
-            optional_cols = ["username", "first_name", "last_name", "facebook_oauth_id"]
-            select_columns = required_cols + [col for col in optional_cols if col in columns]
-
-            # Query with only the columns that exist
-            return cls.query.options(load_only(*select_columns)).filter_by(id=user_id).first()
+            return user
 
         except (ValueError, TypeError):
             return None
