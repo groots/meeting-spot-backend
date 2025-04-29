@@ -56,19 +56,53 @@ class GeocodingResource(Resource):
     @api.response(500, "Server error")
     def post(self):
         """Geocode an address to latitude and longitude coordinates"""
-        data = request.get_json()
+        try:
+            data = request.get_json()
+            current_app.logger.info(f"Geocoding request received: {data}")
 
-        if not data or "address" not in data:
-            return {"success": False, "error": "Address not provided"}, 400
+            if not data:
+                current_app.logger.error("No JSON data in request")
+                return {"success": False, "error": "No data provided"}, 400
 
-        address = data["address"]
-        result = geocode_address(address)
+            if "address" not in data:
+                current_app.logger.error("No address field in request data")
+                return {"success": False, "error": "Address not provided"}, 400
 
-        if not result["success"]:
-            # If geocoding failed, return a 400 status code
-            return result, 400
+            address = data["address"]
+            current_app.logger.info(f"Processing geocoding request for address: {address}")
 
-        return result, 200
+            # Handle special format of "Location (lat, lng)"
+            import re
+
+            location_pattern = re.compile(r"Location \((-?\d+\.\d+), (-?\d+\.\d+)\)")
+            location_match = location_pattern.match(address) if address else None
+
+            if location_match:
+                # Extract coordinates directly from the string
+                lat = float(location_match.group(1))
+                lng = float(location_match.group(2))
+                current_app.logger.info(f"Extracted coordinates from address string: ({lat}, {lng})")
+
+                return {
+                    "success": True,
+                    "coordinates": {"lat": lat, "lng": lng},
+                    "formatted_address": address,
+                    "quality": "high",  # Direct coordinates are considered high quality
+                }, 200
+
+            # Normal geocoding
+            result = geocode_address(address)
+            current_app.logger.info(f"Geocoding result: {result}")
+
+            if not result["success"]:
+                # If geocoding failed, return a 400 status code
+                return result, 400
+
+            return result, 200
+
+        except Exception as e:
+            current_app.logger.exception(f"Error in geocoding endpoint: {str(e)}")
+            return {"success": False, "error": f"Server error: {str(e)}"}, 500
 
     def options(self):
         """Handle OPTIONS requests for the geocoding endpoint."""

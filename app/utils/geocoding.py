@@ -68,12 +68,16 @@ def geocode_address(address: str) -> Dict[str, Union[bool, Dict[str, float], str
             formatted_address: Formatted address from Google (if successful)
             error: Error message (if not successful)
     """
+    logger.info(f"Geocoding address: '{address}'")
+
     if not address or not address.strip():
+        logger.warning("Empty address provided to geocode_address")
         return {"success": False, "error": "No address provided"}
 
     # First validate the address format
     validation = validate_address(address)
     if not validation["valid"]:
+        logger.warning(f"Address validation failed: {validation['message']}")
         return {"success": False, "error": validation["message"]}
 
     # Get API key from config
@@ -87,10 +91,12 @@ def geocode_address(address: str) -> Dict[str, Union[bool, Dict[str, float], str
 
     try:
         # Make request to Google Maps Geocoding API
+        logger.info(f"Sending request to Google Maps API for address: '{address}'")
         response = requests.get(url, params={"address": address, "key": api_key})
         response.raise_for_status()  # Raise exception for HTTP errors
 
         data = response.json()
+        logger.debug(f"Google API response status: {data['status']}")
 
         # Check if request was successful
         if data["status"] != "OK":
@@ -101,10 +107,12 @@ def geocode_address(address: str) -> Dict[str, Union[bool, Dict[str, float], str
 
         # Get the first result (most relevant)
         if not data["results"]:
+            logger.warning("No results found from Google API")
             return {"success": False, "error": "No results found for the provided address"}
 
         result = data["results"][0]
         location = result["geometry"]["location"]
+        logger.info(f"Geocoded '{address}' to coordinates: ({location['lat']}, {location['lng']})")
 
         # Check if the address is a partial match
         if result.get("partial_match", False):
@@ -128,6 +136,8 @@ def geocode_address(address: str) -> Dict[str, Union[bool, Dict[str, float], str
             if (has_route and has_locality)
             else "low"
         )
+
+        logger.info(f"Address quality: {address_quality}")
 
         return {
             "success": True,

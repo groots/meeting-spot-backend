@@ -66,144 +66,192 @@ class MeetingRequestList(Resource):
     @jwt_required()
     def post(self) -> None:
         """Create a new meeting request"""
-        data = request.get_json()
-
-        # Get user from JWT token
-        user_id = get_jwt_identity()
-        user = User.get_by_token_identity(user_id)
-        if not user:
-            return {"error": "User not found"}, 404
-
-        # Validate required fields
-        required_fields = [
-            "address_a",
-            "location_type",
-            "user_b_contact_type",
-            "user_b_contact",
-        ]
-        if not all(field in data for field in required_fields):
-            return {"error": "Missing required fields"}, 400
-
         try:
-            # Encrypt user_b_contact for storage
-            user_b_contact = data["user_b_contact"]
-            contact_type = ContactType(data["user_b_contact_type"].lower())
+            data = request.get_json()
+            current_app.logger.info(f"Meeting request creation data: {data}")
 
-            # Get location data
-            address_a = data["address_a"]
-            if "address_a_lat" in data and "address_a_lon" in data:
-                address_a_lat = float(data["address_a_lat"])
-                address_a_lon = float(data["address_a_lon"])
-            else:
-                # If coordinates not provided, try to geocode the address
-                current_app.logger.info(f"Geocoding address: {address_a}")
-                result = geocode_address(address_a)
+            # Get user from JWT token
+            user_id = get_jwt_identity()
+            user = User.get_by_token_identity(user_id)
+            if not user:
+                current_app.logger.error(f"User not found with ID: {user_id}")
+                return {"error": "User not found"}, 404
 
-                if result["success"] and "coordinates" in result:
-                    address_a_lat = result["coordinates"]["lat"]
-                    address_a_lon = result["coordinates"]["lng"]
-                    current_app.logger.info(f"Geocoded address to: ({address_a_lat}, {address_a_lon})")
+            current_app.logger.info(f"Creating meeting request for user: {user.email}")
+
+            # Validate required fields
+            required_fields = [
+                "address_a",
+                "location_type",
+                "user_b_contact_type",
+                "user_b_contact",
+            ]
+            missing_fields = [field for field in required_fields if field not in data]
+            if missing_fields:
+                current_app.logger.error(f"Missing required fields: {missing_fields}")
+                return {"error": f"Missing required fields: {', '.join(missing_fields)}"}, 400
+
+            try:
+                # Encrypt user_b_contact for storage
+                user_b_contact = data["user_b_contact"]
+                contact_type = ContactType(data["user_b_contact_type"].lower())
+                current_app.logger.info(f"Contact type: {contact_type.name}, Contact: {user_b_contact}")
+
+                # Get location data
+                address_a = data["address_a"]
+                current_app.logger.info(f"Processing location: {address_a}")
+
+                # Handle special format of "Location (lat, lng)"
+                import re
+
+                location_pattern = re.compile(r"Location \((-?\d+\.\d+), (-?\d+\.\d+)\)")
+                location_match = location_pattern.match(address_a) if address_a else None
+
+                if location_match:
+                    # Extract coordinates directly from the string
+                    address_a_lat = float(location_match.group(1))
+                    address_a_lon = float(location_match.group(2))
+                    current_app.logger.info(f"Extracted coordinates: ({address_a_lat}, {address_a_lon})")
+                elif "address_a_lat" in data and "address_a_lon" in data:
+                    address_a_lat = float(data["address_a_lat"])
+                    address_a_lon = float(data["address_a_lon"])
+                    current_app.logger.info(f"Using provided coordinates: ({address_a_lat}, {address_a_lon})")
                 else:
-                    # If geocoding fails, use default SF coordinates
-                    current_app.logger.warning(
-                        f"Geocoding failed, using default coordinates. Error: {result.get('error')}"
-                    )
-                    address_a_lat = 37.7749  # Default SF latitude
-                    address_a_lon = -122.4194  # Default SF longitude
+                    # If coordinates not provided, try to geocode the address
+                    current_app.logger.info(f"Geocoding address: {address_a}")
+                    result = geocode_address(address_a)
 
-            location_a = {"address": address_a, "latitude": address_a_lat, "longitude": address_a_lon}
-
-            # Create meeting request
-            user_b_name = data.get("user_b_name", "")
-
-            # Create a new meeting request - avoid setting user_b_name in constructor if database doesn't have the column
-            new_request = MeetingRequest(
-                user_a_id=user.id if user else None,
-                address_a_lat=address_a_lat,
-                address_a_lon=address_a_lon,
-                location_a=location_a,
-                location_type=data["location_type"],
-                user_b_contact_type=contact_type,
-                user_b_contact=user_b_contact,
-                token_b=uuid.uuid4().hex,
-                status=MeetingRequestStatus.PENDING_B_ADDRESS,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
-                expires_at=datetime.now(timezone.utc) + timedelta(days=1),
-            )
-
-            # Set user_b_name after creation to use the hybrid property
-            if user_b_name:
-                new_request.user_b_name = user_b_name
-
-            db.session.add(new_request)
-
-            # If user wants to save as contact and is premium, create a contact
-            save_as_contact = data.get("save_as_contact", False)
-            if save_as_contact:
-                # Check if contacts is a premium feature
-                if is_premium_feature("contacts") and not user.is_premium():
-                    return {
-                        "error": "Premium subscription required",
-                        "message": "Saving contacts requires a premium subscription",
-                        "request_created": False,
-                    }, 402
-
-                # Check if contact with this email already exists
-                if user_b_name:
-                    existing_contact = Contact.query.filter_by(user_id=user.id, email=user_b_name).first()
-
-                    if existing_contact:
-                        # Update existing contact with new info if provided
-                        if user_b_name and not existing_contact.name:
-                            existing_contact.name = user_b_name
-                            existing_contact.updated_at = datetime.now(timezone.utc)
-
-                        # Associate the meeting request with the existing contact
-                        new_request.contacts.append(existing_contact)
+                    if result["success"] and "coordinates" in result:
+                        address_a_lat = result["coordinates"]["lat"]
+                        address_a_lon = result["coordinates"]["lng"]
+                        current_app.logger.info(f"Geocoded address to: ({address_a_lat}, {address_a_lon})")
                     else:
-                        # Create new contact
-                        contact = Contact(
-                            user_id=user.id,
-                            name=user_b_name or "Unknown",
-                            email=user_b_name,
+                        # If geocoding fails, use default SF coordinates
+                        current_app.logger.warning(
+                            f"Geocoding failed, using default coordinates. Error: {result.get('error')}"
                         )
-                        db.session.add(contact)
+                        address_a_lat = 37.7749  # Default SF latitude
+                        address_a_lon = -122.4194  # Default SF longitude
 
-                        # Associate the meeting request with the new contact
-                        new_request.contacts.append(contact)
+                location_a = {"address": address_a, "latitude": address_a_lat, "longitude": address_a_lon}
+                current_app.logger.info(f"Final location_a: {location_a}")
 
-            db.session.commit()
+                # Create meeting request
+                user_b_name = data.get("user_b_name", "")
 
-        except (ValueError, TypeError) as e:
-            current_app.logger.exception(f"Error processing coordinates: {str(e)}")
-            return {"error": f"Invalid coordinate format: {str(e)}"}, 400
+                # First check if the user table has all the needed columns
+                try:
+                    # Create a new meeting request - avoid setting user_b_name in constructor if database doesn't have the column
+                    new_request = MeetingRequest(
+                        user_a_id=user.id if user else None,
+                        address_a_lat=address_a_lat,
+                        address_a_lon=address_a_lon,
+                        location_a=location_a,
+                        location_type=data["location_type"],
+                        user_b_contact_type=contact_type,
+                        user_b_contact=user_b_contact,
+                        token_b=uuid.uuid4().hex,
+                        status=MeetingRequestStatus.PENDING_B_ADDRESS,
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
+                        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+                    )
 
-        # Send email to user B if contact type is email
-        if new_request.user_b_contact_type == ContactType.EMAIL:
-            base_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
-            response_url = f"{base_url}/request/{new_request.request_id}?token={new_request.token_b}"
+                    # Set user_b_name after creation to use the hybrid property
+                    if user_b_name:
+                        try:
+                            new_request.user_b_name = user_b_name
+                        except Exception as name_err:
+                            current_app.logger.warning(f"Could not set user_b_name: {str(name_err)}")
 
-            subject = "You've been invited to find a meeting spot!"
-            body = f"""
-Hello{f' {user_b_name}' if user_b_name else ''}!
+                    db.session.add(new_request)
+                    current_app.logger.info(f"Created meeting request with ID: {new_request.request_id}")
 
-{user.email} has invited you to find a convenient meeting spot.
+                    # If user wants to save as contact and is premium, create a contact
+                    save_as_contact = data.get("save_as_contact", False)
+                    if save_as_contact:
+                        current_app.logger.info("Saving as contact requested")
+                        # Check if contacts is a premium feature
+                        if is_premium_feature("contacts") and not user.is_premium():
+                            return {
+                                "error": "Premium subscription required",
+                                "message": "Saving contacts requires a premium subscription",
+                                "request_created": False,
+                            }, 402
 
-To respond with your location, please click the following link:
-{response_url}
+                        # Check if contact with this email already exists
+                        if user_b_name:
+                            existing_contact = Contact.query.filter_by(user_id=user.id, email=user_b_name).first()
 
-This link will expire in 24 hours.
+                            if existing_contact:
+                                current_app.logger.info(f"Contact already exists: {existing_contact.id}")
+                                # Update existing contact with new info if provided
+                                if user_b_name and not existing_contact.name:
+                                    existing_contact.name = user_b_name
+                                    existing_contact.updated_at = datetime.now(timezone.utc)
 
-Best regards,
-Find a Meeting Spot Team
-"""
-            send_email(user_b_name, subject, body)
+                                # Associate the meeting request with the existing contact
+                                new_request.contacts.append(existing_contact)
+                            else:
+                                current_app.logger.info("Creating new contact")
+                                # Create new contact
+                                contact = Contact(
+                                    user_id=user.id,
+                                    name=user_b_name or "Unknown",
+                                    email=user_b_name,
+                                )
+                                db.session.add(contact)
 
-        response_data = new_request.to_dict()
-        # Add request_id to the response for backward compatibility
-        response_data["request_id"] = str(new_request.request_id)
-        return response_data, 201
+                                # Associate the meeting request with the new contact
+                                new_request.contacts.append(contact)
+
+                    db.session.commit()
+                    current_app.logger.info("Meeting request saved to database")
+
+                except Exception as db_err:
+                    db.session.rollback()
+                    current_app.logger.exception(f"Database error creating meeting request: {str(db_err)}")
+                    return {"error": f"Database error: {str(db_err)}"}, 500
+
+            except (ValueError, TypeError) as e:
+                current_app.logger.exception(f"Error processing coordinates: {str(e)}")
+                return {"error": f"Invalid coordinate format: {str(e)}"}, 400
+
+            # Send email to user B if contact type is email
+            if new_request.user_b_contact_type == ContactType.EMAIL:
+                try:
+                    base_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
+                    response_url = f"{base_url}/request/{new_request.request_id}?token={new_request.token_b}"
+
+                    subject = "You've been invited to find a meeting spot!"
+                    body = f"""
+    Hello{f' {user_b_name}' if user_b_name else ''}!
+
+    {user.email} has invited you to find a convenient meeting spot.
+
+    To respond with your location, please click the following link:
+    {response_url}
+
+    This link will expire in 24 hours.
+
+    Best regards,
+    Find a Meeting Spot Team
+    """
+                    send_email(user_b_contact, subject, body)
+                    current_app.logger.info(f"Email sent to {user_b_contact}")
+                except Exception as email_err:
+                    current_app.logger.error(f"Failed to send email: {str(email_err)}")
+                    # Continue processing even if email fails
+
+            response_data = new_request.to_dict()
+            # Add request_id to the response for backward compatibility
+            response_data["request_id"] = str(new_request.request_id)
+            current_app.logger.info(f"Meeting request created successfully: {new_request.request_id}")
+            return response_data, 201
+
+        except Exception as e:
+            current_app.logger.exception(f"Unexpected error in meeting request creation: {str(e)}")
+            return {"error": f"Server error: {str(e)}"}, 500
 
     @api.doc("get_requests_list")
     @api.response(200, "List of requests")
