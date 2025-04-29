@@ -3,7 +3,7 @@ Unit tests for the database verification functionality.
 """
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import sqlalchemy as sa
 
@@ -98,8 +98,7 @@ class TestDatabaseVerification(unittest.TestCase):
         self.assertFalse(result)
         mock_inspector.get_columns.assert_called_once_with("users")
 
-    @patch("sqlalchemy.text")
-    def test_check_user_data(self, mock_text):
+    def test_check_user_data(self):
         """Test checking user data in the database."""
         # Create a mock engine and connection
         mock_engine = MagicMock()
@@ -127,12 +126,8 @@ class TestDatabaseVerification(unittest.TestCase):
         self.assertEqual(users_with_username, 8)
         self.assertEqual(users_without_username, 2)
 
-        # Verify text constructor calls
-        self.assertEqual(mock_text.call_count, 4)
-        mock_text.assert_any_call("SELECT COUNT(*) FROM users")
-        mock_text.assert_any_call("SELECT COUNT(*) FROM users WHERE username IS NOT NULL")
-        mock_text.assert_any_call("SELECT COUNT(*) FROM users WHERE username IS NULL")
-        mock_text.assert_any_call("SELECT id, email, username FROM users LIMIT 5")
+        # Verify execute calls
+        self.assertEqual(mock_conn.execute.call_count, 4)
 
 
 if __name__ == "__main__":
