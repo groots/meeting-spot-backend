@@ -76,9 +76,9 @@ def reverse_geocode_coordinates(lat: float, lng: float, api_key: str = None) -> 
 
     # Get API key if not provided
     if not api_key:
-        api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+        api_key = current_app.config.get("GOOGLE_MAPS_API_KEY")
         if not api_key:
-            return {"success": False, "error": "API key cannot be empty"}
+            return {"success": False, "error": "Geocoding service not configured"}
 
     try:
         # Make the request to Google Maps API
@@ -89,13 +89,13 @@ def reverse_geocode_coordinates(lat: float, lng: float, api_key: str = None) -> 
         # Check for API errors
         if data["status"] != "OK":
             if data["status"] == "ZERO_RESULTS":
-                return {"success": False, "error": "No results found for the given coordinates"}
-            error_message = data.get("error_message", f"Reverse geocoding failed with status: {data['status']}")
+                return {"success": False, "error": "No address found for the provided coordinates"}
+            error_message = data.get("error_message", f"Reverse geocoding failed: {data['status']}")
             return {"success": False, "error": error_message}
 
         # Check if we have results
         if not data.get("results"):
-            return {"success": False, "error": "No results found for the given coordinates"}
+            return {"success": False, "error": "No address found for the provided coordinates"}
 
         # Extract the first result (most relevant)
         result = data["results"][0]
@@ -107,7 +107,7 @@ def reverse_geocode_coordinates(lat: float, lng: float, api_key: str = None) -> 
 
     except Exception as e:
         logger.error(f"Error during reverse geocoding: {str(e)}", exc_info=True)
-        return {"success": False, "error": f"Error during reverse geocoding: {str(e)}"}
+        return {"success": False, "error": f"Reverse geocoding service error: {str(e)}"}
 
 
 def _validate_coordinates(lat: float, lng: float) -> bool:
@@ -169,13 +169,13 @@ def geocode_address(address: str, api_key: str = None) -> Dict[str, Any]:
     """
     # Validate inputs
     if not address:
-        return {"success": False, "error": "Address cannot be empty"}
+        return {"success": False, "error": "No address provided"}
 
     # Get API key if not provided
     if not api_key:
-        api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+        api_key = current_app.config.get("GOOGLE_MAPS_API_KEY")
         if not api_key:
-            return {"success": False, "error": "API key cannot be empty"}
+            return {"success": False, "error": "Geocoding service not configured"}
 
     try:
         # Make the request to Google Maps API
@@ -186,7 +186,7 @@ def geocode_address(address: str, api_key: str = None) -> Dict[str, Any]:
         # Check for API errors
         if data["status"] != "OK":
             if data["status"] == "ZERO_RESULTS":
-                return {"success": False, "error": "No results found for the given address"}
+                return {"success": False, "error": "ZERO_RESULTS"}
             # Use the error_message directly from API if available
             error_message = data.get("error_message", f"Geocoding failed with status: {data['status']}")
             return {"success": False, "error": error_message}
@@ -206,6 +206,9 @@ def geocode_address(address: str, api_key: str = None) -> Dict[str, Any]:
             "formatted_address": result["formatted_address"],
         }
 
+    except requests.exceptions.RequestException:
+        logger.error("Network error during geocoding", exc_info=True)
+        return {"success": False, "error": "Network error"}
     except Exception as e:
         logger.error(f"Error during geocoding: {str(e)}", exc_info=True)
         return {"success": False, "error": f"Error during geocoding: {str(e)}"}
