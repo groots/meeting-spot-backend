@@ -42,9 +42,22 @@ EOL
 
 # Build the container
 echo "Building container image..."
-gcloud builds submit --tag gcr.io/$PROJECT_ID/$SERVICE_NAME:$BUILD_ID \
-  --project=$PROJECT_ID \
-  --dockerfile=Dockerfile.verify .
+# Using docker build + push instead of gcloud builds submit with custom Dockerfile
+docker build -t gcr.io/$PROJECT_ID/$SERVICE_NAME:$BUILD_ID -f Dockerfile.verify .
+docker push gcr.io/$PROJECT_ID/$SERVICE_NAME:$BUILD_ID
+
+# Alternative approach using gcloud builds submit with config file
+# Create a temporary cloudbuild.yaml
+cat > cloudbuild.verify.yaml << EOL
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'gcr.io/$PROJECT_ID/$SERVICE_NAME:$BUILD_ID', '-f', 'Dockerfile.verify', '.']
+images:
+- 'gcr.io/$PROJECT_ID/$SERVICE_NAME:$BUILD_ID'
+EOL
+
+echo "Submitting build to Cloud Build..."
+gcloud builds submit --config cloudbuild.verify.yaml
 
 # Deploy to Cloud Run
 echo "Deploying to Cloud Run..."
@@ -68,6 +81,7 @@ curl -H "Authorization: Bearer $TOKEN" $URL
 
 # Cleanup
 rm Dockerfile.verify
+rm cloudbuild.verify.yaml
 
 echo "Deployment completed successfully!"
 echo "You can check the endpoint at: $URL"

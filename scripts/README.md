@@ -34,6 +34,12 @@ This script verifies the remote (production) database schema by connecting to th
 - Parses and displays the verification results in a user-friendly format
 - Exits with non-zero code if issues are found
 
+### Legacy Verification Script
+
+The root directory also contains a legacy verification script:
+
+* `check-db.sh` - Simple script that calls the verification service without detailed output formatting
+
 ## Database Migration Scripts
 
 ### `apply_remote_migrations.sh`
@@ -57,6 +63,19 @@ This script applies database migrations to the remote (production) database via 
 - [Cloud SQL Proxy](https://cloud.google.com/sql/docs/postgres/sql-proxy#install) must be installed
 - User must be authenticated with Google Cloud (`gcloud auth login`)
 - PostgreSQL client (`psql`) must be installed
+
+## Deployment Scripts
+
+The project also includes scripts to deploy the database verification service to Cloud Run:
+
+* `deploy_verification.sh` - Deploys the database schema verification service to Cloud Run
+* `deploy_verification_simple.sh` - Simplified version of the deployment script
+
+These scripts:
+- Build a Docker container with the verification code
+- Deploy it to Cloud Run as an authenticated service
+- Configure it to connect to the Cloud SQL instance
+- Output the URL and how to authenticate with the service
 
 ## Other Database Related Scripts
 
