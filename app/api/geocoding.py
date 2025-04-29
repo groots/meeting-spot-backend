@@ -44,6 +44,9 @@ geocoding_request = api.model(
         "address": fields.String(required=False, description="Address to geocode"),
         "lat": fields.Float(required=False, description="Latitude for reverse geocoding"),
         "lng": fields.Float(required=False, description="Longitude for reverse geocoding"),
+        "skip_reverse": fields.Boolean(
+            required=False, description="Skip reverse geocoding for 'Location (lat, lng)' format"
+        ),
     },
 )
 
@@ -66,6 +69,9 @@ class GeocodingResource(Resource):
                 current_app.logger.error("No JSON data in request")
                 return {"success": False, "error": "No data provided"}, 400
 
+            # Check if reverse geocoding should be skipped (optimization flag)
+            skip_reverse = data.get("skip_reverse", False)
+
             # Check if this is a reverse geocoding request (lat/lng provided)
             if "lat" in data and "lng" in data:
                 lat = data.get("lat")
@@ -77,12 +83,27 @@ class GeocodingResource(Resource):
 
                 current_app.logger.info(f"Processing reverse geocoding request for coordinates: ({lat}, {lng})")
 
+                if skip_reverse:
+                    # Skip reverse geocoding and just return the coordinates with a formatted string
+                    return {
+                        "success": True,
+                        "coordinates": {"lat": lat, "lng": lng},
+                        "formatted_address": f"Location ({lat}, {lng})",
+                        "quality": "high",
+                    }, 200
+
                 # Perform reverse geocoding
                 result = reverse_geocode_coordinates(lat, lng)
                 current_app.logger.info(f"Reverse geocoding result: {result}")
 
                 if not result["success"]:
-                    return result, 400
+                    # If reverse geocoding failed, still return the coordinates with a formatted string
+                    return {
+                        "success": True,
+                        "coordinates": {"lat": lat, "lng": lng},
+                        "formatted_address": f"Location ({lat}, {lng})",
+                        "quality": "medium",
+                    }, 200
 
                 # Add the coordinates to the result
                 result["coordinates"] = {"lat": lat, "lng": lng}
@@ -104,6 +125,16 @@ class GeocodingResource(Resource):
                     lat = float(location_match.group(1))
                     lng = float(location_match.group(2))
                     current_app.logger.info(f"Extracted coordinates from address string: ({lat}, {lng})")
+
+                    # Check if we should skip reverse geocoding
+                    if skip_reverse:
+                        # Skip reverse geocoding and just return the coordinates
+                        return {
+                            "success": True,
+                            "coordinates": {"lat": lat, "lng": lng},
+                            "formatted_address": address,  # Use original string
+                            "quality": "high",  # Direct coordinates are considered high quality
+                        }, 200
 
                     # Perform reverse geocoding to get a readable address
                     reverse_result = reverse_geocode_coordinates(lat, lng)
