@@ -6,13 +6,16 @@ from typing import Any, Dict, List, Optional, Union
 import jwt
 from flask import current_app
 from flask_jwt_extended import create_access_token
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, inspect
+from sqlalchemy.orm import load_only, relationship
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .. import db
 from .types import UUIDType
 
 
+# Create a version of User model that works with or without the username column
+# This is important for backwards compatibility with existing databases
 class User(db.Model):
     """User model for storing user details."""
 
@@ -20,9 +23,12 @@ class User(db.Model):
 
     id = db.Column(UUIDType(), primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
+
+    # Make these optional columns
     username = db.Column(db.String(50), unique=True, nullable=True, index=True)
     first_name = db.Column(db.String(50), nullable=True)
     last_name = db.Column(db.String(50), nullable=True)
+
     password_hash = db.Column(db.String(256))
     google_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
     facebook_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
@@ -58,16 +64,16 @@ class User(db.Model):
         super().__init__(**kwargs)
 
     def __repr__(self) -> str:
-        return f"<User {self.username or self.email}>"
+        return f"<User {self.email}>"
 
     @property
     def full_name(self) -> str:
         """Get the user's full name."""
-        if self.first_name and self.last_name:
+        if hasattr(self, "first_name") and hasattr(self, "last_name") and self.first_name and self.last_name:
             return f"{self.first_name} {self.last_name}"
-        elif self.first_name:
+        elif hasattr(self, "first_name") and self.first_name:
             return self.first_name
-        elif self.last_name:
+        elif hasattr(self, "last_name") and self.last_name:
             return self.last_name
         return ""
 
@@ -84,14 +90,20 @@ class User(db.Model):
         if expires_delta is None:
             expires_delta = current_app.config.get("JWT_ACCESS_TOKEN_EXPIRES", 3600)
 
+        # Create additional claims without optional fields
+        additional_claims = {"email": self.email}
+
+        # Only add optional fields if they exist
+        if hasattr(self, "username") and self.username:
+            additional_claims["username"] = self.username
+
+        if hasattr(self, "first_name") and self.first_name:
+            additional_claims["first_name"] = self.first_name
+
         return create_access_token(
             identity=str(self.id),
             expires_delta=expires_delta,
-            additional_claims={
-                "email": self.email,
-                "username": self.username,
-                "first_name": self.first_name,
-            },
+            additional_claims=additional_claims,
         )
 
     @classmethod
@@ -100,7 +112,21 @@ class User(db.Model):
         try:
             # Check if the identity is a valid UUID string
             user_id = uuid.UUID(identity)
-            return cls.query.get(user_id)
+
+            # Only select columns that are guaranteed to exist
+            inspector = inspect(db.engine)
+            columns = [col["name"] for col in inspector.get_columns("users")]
+
+            # Always include these required columns
+            required_cols = ["id", "email", "password_hash", "google_oauth_id", "created_at", "updated_at"]
+
+            # Add optional columns only if they exist in the database
+            optional_cols = ["username", "first_name", "last_name", "facebook_oauth_id"]
+            select_columns = required_cols + [col for col in optional_cols if col in columns]
+
+            # Query with only the columns that exist
+            return cls.query.options(load_only(*select_columns)).filter_by(id=user_id).first()
+
         except (ValueError, TypeError):
             return None
 
@@ -134,15 +160,33 @@ class User(db.Model):
             # If there's an error (e.g., table doesn't exist), leave active_subscription as None
             pass
 
-        return {
+        # Start with required fields that should always be present
+        result = {
             "id": str(self.id),
             "email": self.email,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "is_oauth_user": bool(self.google_oauth_id or self.facebook_oauth_id),
+            "is_oauth_user": bool(
+                self.google_oauth_id or (hasattr(self, "facebook_oauth_id") and self.facebook_oauth_id)
+            ),
             "is_premium": self.is_premium(),
             "subscription": active_subscription.to_dict() if active_subscription else None,
         }
+
+        # Add optional fields only if they exist
+        if hasattr(self, "username") and self.username:
+            result["username"] = self.username
+
+        if hasattr(self, "first_name") and self.first_name:
+            result["first_name"] = self.first_name
+
+        if hasattr(self, "last_name") and self.last_name:
+            result["last_name"] = self.last_name
+
+        if hasattr(self, "first_name") or hasattr(self, "last_name"):
+            result["full_name"] = self.full_name
+
+        return result
 
     def generate_auth_token(self, expiration=86400):
         """Generate a JWT token for authentication."""
@@ -150,9 +194,15 @@ class User(db.Model):
             "exp": datetime.utcnow() + timedelta(seconds=expiration),
             "iat": datetime.utcnow(),
             "sub": str(self.id),
-            "first_name": self.first_name,
-            "username": self.username,
         }
+
+        # Only add optional fields if they exist
+        if hasattr(self, "first_name") and self.first_name:
+            payload["first_name"] = self.first_name
+
+        if hasattr(self, "username") and self.username:
+            payload["username"] = self.username
+
         token = jwt.encode(payload, current_app.config.get("JWT_SECRET_KEY"), algorithm="HS256")
         return token
 
