@@ -1,7 +1,7 @@
 """Fix missing username fields in users table
 
 Revision ID: fix_missing_username
-Revises: add_facebook_oauth
+Revises: 715ddd7ea1ee
 Create Date: 2025-04-29 12:00:00.000000
 
 """
@@ -10,7 +10,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "fix_missing_username"
-down_revision = "add_facebook_oauth"  # Make sure this matches your latest migration
+down_revision = "715ddd7ea1ee"  # Update to use an existing migration
 branch_labels = None
 depends_on = None
 
