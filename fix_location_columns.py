@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text
 
 
 def fix_location_columns():
-    """Fix location_a and location_b columns in meeting_requests table"""
+    """Fix columns in meeting_requests table"""
     # Get admin password securely
     admin_pass = getpass.getpass("Enter PostgreSQL admin password: ")
 
@@ -22,46 +22,60 @@ def fix_location_columns():
         return
 
     try:
-        # Check the current type of location_a and location_b columns
+        # Check the current columns in the meeting_requests table
         result = conn.execute(
             text(
                 """
             SELECT column_name, data_type, is_nullable
             FROM information_schema.columns
             WHERE table_name = 'meeting_requests'
-            AND column_name IN ('location_a', 'location_b')
+            AND column_name IN ('location_a', 'location_b', 'selected_place_id')
             """
             )
         ).fetchall()
 
         print(f"Current column types: {result}")
+        column_names = [col[0] for col in result]
 
-        # If the columns don't exist or have the wrong type, fix them
+        # Fix location_a and location_b columns if needed
+        if "location_a" not in column_names or "location_b" not in column_names:
+            try:
+                if "location_a" not in column_names:
+                    conn.execute(
+                        text("ALTER TABLE meeting_requests ADD COLUMN location_a JSONB NOT NULL DEFAULT '{}'::jsonb")
+                    )
+                    print("Added location_a column")
+
+                if "location_b" not in column_names:
+                    conn.execute(text("ALTER TABLE meeting_requests ADD COLUMN location_b JSONB"))
+                    print("Added location_b column")
+            except Exception as e:
+                print(f"Error adding location columns: {e}")
+                conn.rollback()
+
+        # Fix selected_place_id column if needed
+        if "selected_place_id" not in column_names:
+            try:
+                # Add selected_place_id column with UUID type without foreign key constraint
+                conn.execute(
+                    text(
+                        """
+                ALTER TABLE meeting_requests ADD COLUMN selected_place_id UUID
+                """
+                    )
+                )
+                print("Added selected_place_id column")
+            except Exception as e:
+                print(f"Error adding selected_place_id column: {e}")
+                conn.rollback()
+
+        # Commit the changes
         try:
-            conn.execute(text("ALTER TABLE meeting_requests DROP COLUMN IF EXISTS location_a"))
-            conn.execute(text("ALTER TABLE meeting_requests DROP COLUMN IF EXISTS location_b"))
-            print("Dropped existing columns if they existed")
+            conn.commit()
+            print("Fixed meeting_requests table columns successfully")
         except Exception as e:
-            print(f"Error dropping columns: {e}")
+            print(f"Error committing changes: {e}")
             conn.rollback()
-
-        try:
-            conn.execute(text("ALTER TABLE meeting_requests ADD COLUMN location_a JSONB NOT NULL DEFAULT '{}'::jsonb"))
-            conn.execute(text("ALTER TABLE meeting_requests ADD COLUMN location_b JSONB"))
-            print("Added location columns with correct types")
-        except Exception as e:
-            print(f"Error adding columns: {e}")
-            conn.rollback()
-
-        # Also add a transaction to avoid any issues
-        try:
-            conn.execute(text("BEGIN"))
-            conn.execute(text("COMMIT"))
-        except Exception as e:
-            print(f"Error with transaction: {e}")
-            conn.rollback()
-
-        print("Fixed location columns successfully")
 
     except Exception as e:
         print(f"Error: {e}")
