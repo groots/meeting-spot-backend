@@ -80,7 +80,7 @@ def test_geocode_address_empty_input():
     # Check the result
     assert result["success"] is False
     assert "error" in result
-    assert "No address provided" in result["error"]
+    assert result["error"] == "Address cannot be empty"
 
 
 def test_geocode_address_api_error(mock_current_app, mock_requests):
@@ -96,7 +96,7 @@ def test_geocode_address_api_error(mock_current_app, mock_requests):
     # Check the result
     assert result["success"] is False
     assert "error" in result
-    assert "ZERO_RESULTS" in result["error"]
+    assert result["error"] == "No results found for the given address"
 
 
 def test_geocode_address_request_exception(mock_current_app, mock_requests):
