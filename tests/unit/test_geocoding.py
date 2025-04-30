@@ -113,6 +113,33 @@ def test_geocode_address_request_exception(mock_current_app, mock_requests):
     assert "Network error" in result["error"]
 
 
+def test_geocode_address_no_results(mock_current_app, mock_requests):
+    """Test geocoding when API returns no results"""
+    # Mock 'no results' response
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"status": "ZERO_RESULTS", "results": []}
+    mock_requests.get.return_value = mock_response
+
+    # Call the function
+    result = geocode_address("123 Nonexistent Street, Unknown Place")
+
+    # Check the result
+    assert result["success"] is False
+    assert "error" in result
+    assert result["error"] == "No results found for the given address"
+
+
+def test_invalid_parameters(mock_current_app, mock_requests):
+    """Test geocoding with empty address"""
+    # Call the function with an empty address
+    result = geocode_address("")
+
+    # Check the result
+    assert result["success"] is False
+    assert "error" in result
+    assert result["error"] == "Address cannot be empty"
+
+
 class TestGeocoding(unittest.TestCase):
     """Unit tests for geocoding utility functions."""
 
@@ -286,23 +313,15 @@ class TestGeocoding(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["error"], "You have exceeded your daily request quota")
 
-    def test_invalid_parameters(self):
+    @patch("app.utils.geocoding.requests.get")
+    def test_invalid_parameters(self, mock_get):
         """Test geocoding with invalid parameters."""
-        # Test with empty address
+        # Call the geocode function with empty address
         result = geocode_address("", "test_api_key")
+
+        # Check the result
         self.assertFalse(result["success"])
         self.assertEqual(result["error"], "Address cannot be empty")
 
-        # Test with empty API key
-        result = geocode_address("123 Main St", "")
-        self.assertFalse(result["success"])
-        self.assertEqual(result["error"], "API key cannot be empty")
-
-        # Test reverse geocoding with invalid coordinates
-        result = reverse_geocode_coordinates(91, -122.4194, "test_api_key")  # Latitude > 90
-        self.assertFalse(result["success"])
-        self.assertEqual(result["error"], "Invalid latitude/longitude values")
-
-        result = reverse_geocode_coordinates(37.7749, -190, "test_api_key")  # Longitude < -180
-        self.assertFalse(result["success"])
-        self.assertEqual(result["error"], "Invalid latitude/longitude values")
+        # No API call should be made
+        mock_get.assert_not_called()

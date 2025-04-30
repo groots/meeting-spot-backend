@@ -44,7 +44,7 @@ class TestGeocodingE2E(unittest.TestCase):
         }
         mock_get.return_value = mock_response
 
-        # Make a request to the geocode endpoint
+        # Test the new /api/geocode endpoint with POST method
         response = self.client.post(
             "/api/geocode",
             data=json.dumps({"address": "123 Main St, San Francisco, CA"}),
@@ -55,9 +55,18 @@ class TestGeocodingE2E(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         self.assertTrue(data["success"])
-        self.assertEqual(data["lat"], 37.7749)
-        self.assertEqual(data["lng"], -122.4194)
+        self.assertEqual(data["coordinates"]["lat"], 37.7749)
+        self.assertEqual(data["coordinates"]["lng"], -122.4194)
         self.assertEqual(data["formatted_address"], "123 Main St, San Francisco, CA 94105, USA")
+
+        # Test the GET method as well
+        mock_get.reset_mock()
+        response = self.client.get("/api/geocode?address=123 Main St, San Francisco, CA")
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["coordinates"]["lat"], 37.7749)
+        self.assertEqual(data["coordinates"]["lng"], -122.4194)
 
     @patch("app.utils.geocoding.requests.get")
     def test_reverse_geocode_endpoint(self, mock_get):
@@ -80,7 +89,7 @@ class TestGeocodingE2E(unittest.TestCase):
         }
         mock_get.return_value = mock_response
 
-        # Make a request to the reverse geocode endpoint
+        # Test the POST method
         response = self.client.post(
             "/api/reverse-geocode", data=json.dumps({"lat": 37.7749, "lng": -122.4194}), content_type="application/json"
         )
@@ -91,6 +100,14 @@ class TestGeocodingE2E(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertEqual(data["formatted_address"], "123 Main St, San Francisco, CA 94105, USA")
         self.assertEqual(data["quality"], "high")
+
+        # Test the GET method as well
+        mock_get.reset_mock()
+        response = self.client.get("/api/reverse-geocode?lat=37.7749&lng=-122.4194")
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["formatted_address"], "123 Main St, San Francisco, CA 94105, USA")
 
     @patch("app.utils.geocoding.requests.get")
     def test_meeting_location_with_geocoding(self, mock_get):

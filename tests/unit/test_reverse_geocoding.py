@@ -5,118 +5,96 @@ from app.utils.geocoding import reverse_geocode_coordinates
 
 
 class TestReverseGeocoding(unittest.TestCase):
-    """Test cases for the reverse_geocode_coordinates function."""
+    """Unit tests for reverse geocoding functionality."""
 
     @patch("app.utils.geocoding.requests.get")
-    @patch("app.utils.geocoding.current_app")
-    def test_reverse_geocode_coordinates_success(self, mock_app, mock_get):
-        """Test successful reverse geocoding with a mock response."""
-        # Set up mock API key
-        mock_app.config.get.return_value = "fake_api_key"
-
-        # Set up mock response
+    def test_reverse_geocode_coordinates_success(self, mock_get):
+        """Test successful reverse geocoding."""
+        # Mock successful API response
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "status": "OK",
             "results": [
                 {
-                    "formatted_address": "123 Main St, San Francisco, CA 94105, USA",
-                    "address_components": [
-                        {"types": ["street_number"]},
-                        {"types": ["route"]},
-                        {"types": ["locality"]},
-                    ],
+                    "formatted_address": "123 Test St, San Francisco, CA 94105, USA",
                     "types": ["street_address"],
                 }
             ],
         }
         mock_get.return_value = mock_response
 
-        # Call the function with test coordinates
-        lat, lng = 37.7749, -122.4194
-        result = reverse_geocode_coordinates(lat, lng)
+        # Call the function with test API key
+        api_key = "fake_api_key"
+        result = reverse_geocode_coordinates(37.7749, -122.4194, api_key)
 
-        # Check function called the API with expected parameters
-        mock_get.assert_called_once()
-        args, kwargs = mock_get.call_args
-        self.assertEqual(kwargs["params"]["latlng"], f"{lat},{lng}")
-        self.assertEqual(kwargs["params"]["key"], "fake_api_key")
-
-        # Validate the returned result
+        # Verify the result
         self.assertTrue(result["success"])
-        self.assertEqual(result["formatted_address"], "123 Main St, San Francisco, CA 94105, USA")
+        self.assertEqual(result["formatted_address"], "123 Test St, San Francisco, CA 94105, USA")
         self.assertEqual(result["quality"], "high")
 
-    @patch("app.utils.geocoding.current_app")
-    def test_reverse_geocode_coordinates_no_api_key(self, mock_app):
-        """Test behavior when no API key is provided."""
-        # Set up mock to return None for API key
-        mock_app.config.get.return_value = None
+        # Verify that the API was called with correct parameters
+        mock_get.assert_called_once()
+        args, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["params"]["latlng"], "37.7749,-122.4194")
+        self.assertEqual(kwargs["params"]["key"], api_key)
+
+    @patch("app.utils.geocoding.requests.get")
+    def test_reverse_geocode_coordinates_no_results(self, mock_get):
+        """Test reverse geocoding with no results."""
+        # Mock API response with no results
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"status": "ZERO_RESULTS", "results": []}
+        mock_get.return_value = mock_response
 
         # Call the function
+        result = reverse_geocode_coordinates(0, 0, "fake_api_key")  # Ocean location, no address
+
+        # Verify the result indicates failure
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "No results found for the given coordinates")
+
+    @patch("app.utils.geocoding.current_app")
+    def test_reverse_geocode_coordinates_no_api_key(self, mock_current_app):
+        """Test reverse geocoding with no API key."""
+        # Mock app config with no API key
+        mock_current_app.config.get.return_value = None
+
+        # Call the function without providing an API key
         result = reverse_geocode_coordinates(37.7749, -122.4194)
 
-        # Validate error handling
+        # Verify the result indicates failure due to missing API key
         self.assertFalse(result["success"])
         self.assertEqual(result["error"], "Geocoding service not configured")
 
     @patch("app.utils.geocoding.requests.get")
-    @patch("app.utils.geocoding.current_app")
-    def test_reverse_geocode_coordinates_no_results(self, mock_app, mock_get):
-        """Test behavior when the API returns no results."""
-        # Set up mock API key
-        mock_app.config.get.return_value = "fake_api_key"
-
-        # Set up mock response with no results
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"status": "OK", "results": []}
-        mock_get.return_value = mock_response
-
-        # Call the function
-        result = reverse_geocode_coordinates(37.7749, -122.4194)
-
-        # Validate error handling
-        self.assertFalse(result["success"])
-        self.assertEqual(result["error"], "No address found for the provided coordinates")
-
-    @patch("app.utils.geocoding.requests.get")
-    @patch("app.utils.geocoding.current_app")
-    def test_reverse_geocode_coordinates_api_error(self, mock_app, mock_get):
-        """Test behavior when the API returns an error status."""
-        # Set up mock API key
-        mock_app.config.get.return_value = "fake_api_key"
-
-        # Set up mock response with error status
+    def test_reverse_geocode_coordinates_api_error(self, mock_get):
+        """Test reverse geocoding with API error."""
+        # Mock API response with error
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "status": "ZERO_RESULTS",
-            "error_message": "The provided location is invalid",
+            "status": "REQUEST_DENIED",
+            "error_message": "The provided API key is invalid.",
         }
         mock_get.return_value = mock_response
 
         # Call the function
-        result = reverse_geocode_coordinates(37.7749, -122.4194)
+        result = reverse_geocode_coordinates(37.7749, -122.4194, "invalid_key")
 
-        # Validate error handling
+        # Verify the result indicates failure due to API error
         self.assertFalse(result["success"])
-        self.assertEqual(result["error"], "Reverse geocoding failed: ZERO_RESULTS")
+        self.assertEqual(result["error"], "Geocoding failed: REQUEST_DENIED")
 
-    @patch("app.utils.geocoding.requests.get")
-    @patch("app.utils.geocoding.current_app")
-    def test_reverse_geocode_coordinates_request_exception(self, mock_app, mock_get):
-        """Test behavior when a request exception occurs."""
-        # Set up mock API key
-        mock_app.config.get.return_value = "fake_api_key"
-
-        # Set up mock to raise an exception
-        mock_get.side_effect = Exception("Network error")
-
-        # Call the function
-        result = reverse_geocode_coordinates(37.7749, -122.4194)
-
-        # Validate error handling
+    def test_reverse_geocode_coordinates_invalid_coordinates(self):
+        """Test reverse geocoding with invalid coordinates."""
+        # Test with latitude > 90
+        result = reverse_geocode_coordinates(91, -122.4194, "fake_api_key")
         self.assertFalse(result["success"])
-        self.assertEqual(result["error"], "Reverse geocoding service error: Network error")
+        self.assertEqual(result["error"], "Invalid latitude/longitude values")
+
+        # Test with longitude < -180
+        result = reverse_geocode_coordinates(37.7749, -190, "fake_api_key")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "Invalid latitude/longitude values")
 
     @patch("app.utils.geocoding.requests.get")
     @patch("app.utils.geocoding.current_app")

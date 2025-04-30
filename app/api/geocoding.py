@@ -109,52 +109,50 @@ class GeocodingResource(Resource):
                 result["coordinates"] = {"lat": lat, "lng": lng}
                 return result, 200
 
-            # This is a forward geocoding request (address provided)
+            # Forward geocoding
             elif "address" in data:
-                address = data["address"]
+                address = data.get("address", "").strip()
+
+                # Validate the address
+                if not address:
+                    return {"success": False, "error": "Address cannot be empty"}, 400
+
                 current_app.logger.info(f"Processing geocoding request for address: {address}")
 
-                # Handle special format of "Location (lat, lng)"
+                # Check if this could be coordinates in a string format
+                coords_pattern = r"^\s*(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)\s*$"
                 import re
 
-                location_pattern = re.compile(r"Location \((-?\d+\.\d+), (-?\d+\.\d+)\)")
-                location_match = location_pattern.match(address) if address else None
+                coords_match = re.match(coords_pattern, address)
+                if coords_match:
+                    try:
+                        lat = float(coords_match.group(1))
+                        lng = float(coords_match.group(2))
 
-                if location_match:
-                    # Extract coordinates directly from the string
-                    lat = float(location_match.group(1))
-                    lng = float(location_match.group(2))
-                    current_app.logger.info(f"Extracted coordinates from address string: ({lat}, {lng})")
+                        # Perform reverse geocoding to get the address
+                        reverse_result = reverse_geocode_coordinates(lat, lng)
+                        current_app.logger.info(f"Parsed coordinates from string: ({lat}, {lng})")
+                        current_app.logger.info(f"Reverse geocoding result: {reverse_result}")
 
-                    # Check if we should skip reverse geocoding
-                    if skip_reverse:
-                        # Skip reverse geocoding and just return the coordinates
-                        return {
-                            "success": True,
-                            "coordinates": {"lat": lat, "lng": lng},
-                            "formatted_address": address,  # Use original string
-                            "quality": "high",  # Direct coordinates are considered high quality
-                        }, 200
-
-                    # Perform reverse geocoding to get a readable address
-                    reverse_result = reverse_geocode_coordinates(lat, lng)
-
-                    if reverse_result["success"]:
-                        # Return both the coordinates and the reverse geocoded address
-                        return {
-                            "success": True,
-                            "coordinates": {"lat": lat, "lng": lng},
-                            "formatted_address": reverse_result["formatted_address"],
-                            "quality": reverse_result.get("quality", "high"),
-                        }, 200
-                    else:
-                        # If reverse geocoding fails, just return the coordinates
-                        return {
-                            "success": True,
-                            "coordinates": {"lat": lat, "lng": lng},
-                            "formatted_address": address,  # Use original string
-                            "quality": "high",  # Direct coordinates are considered high quality
-                        }, 200
+                        if reverse_result["success"]:
+                            # Return both the coordinates and the reverse geocoded address
+                            return {
+                                "success": True,
+                                "coordinates": {"lat": lat, "lng": lng},
+                                "formatted_address": reverse_result["formatted_address"],
+                                "quality": reverse_result.get("quality", "high"),
+                            }, 200
+                        else:
+                            # If reverse geocoding fails, just return the coordinates
+                            return {
+                                "success": True,
+                                "coordinates": {"lat": lat, "lng": lng},
+                                "formatted_address": address,  # Use original string
+                                "quality": "high",  # Direct coordinates are considered high quality
+                            }, 200
+                    except (ValueError, IndexError):
+                        # Not valid coordinates, continue with normal geocoding
+                        pass
 
                 # Normal forward geocoding
                 result = geocode_address(address)
@@ -222,6 +220,96 @@ class GeocodingResource(Resource):
             current_app.logger.exception(f"Error in geocoding GET endpoint: {str(e)}")
             return {"success": False, "error": f"Server error: {str(e)}"}, 500
 
+
+# Add separate routes to match the test expectations
+@api.route("/geocode")
+class GeocodingForwardResource(Resource):
+    @api.doc("geocode_address")
+    @api.expect(geocoding_request)
+    @api.marshal_with(geocoding_response)
+    @api.response(200, "Geocoding successful")
+    @api.response(400, "Invalid request")
+    @api.response(500, "Server error")
+    def post(self):
+        """Geocode an address to coordinates"""
+        try:
+            data = request.get_json()
+            if not data or "address" not in data:
+                return {"success": False, "error": "Address is required"}, 400
+
+            address = data.get("address", "").strip()
+            if not address:
+                return {"success": False, "error": "Address cannot be empty"}, 400
+
+            result = geocode_address(address)
+            return result, 200 if result["success"] else 400
+        except Exception as e:
+            current_app.logger.exception(f"Error in geocode endpoint: {str(e)}")
+            return {"success": False, "error": f"Server error: {str(e)}"}, 500
+
+    def get(self):
+        """GET method for forward geocoding"""
+        try:
+            address = request.args.get("address")
+            if not address:
+                return {"success": False, "error": "Address is required"}, 400
+
+            result = geocode_address(address)
+            return result, 200 if result["success"] else 400
+        except Exception as e:
+            current_app.logger.exception(f"Error in geocode GET endpoint: {str(e)}")
+            return {"success": False, "error": f"Server error: {str(e)}"}, 500
+
+
+@api.route("/reverse-geocode")
+class GeocodingReverseResource(Resource):
+    @api.doc("reverse_geocode_coordinates")
+    @api.expect(geocoding_request)
+    @api.marshal_with(geocoding_response)
+    @api.response(200, "Reverse geocoding successful")
+    @api.response(400, "Invalid request")
+    @api.response(500, "Server error")
+    def post(self):
+        """Reverse geocode coordinates to an address"""
+        try:
+            data = request.get_json()
+            if not data or "lat" not in data or "lng" not in data:
+                return {"success": False, "error": "Latitude and longitude are required"}, 400
+
+            lat = data.get("lat")
+            lng = data.get("lng")
+
+            if not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
+                return {"success": False, "error": "Invalid coordinates format"}, 400
+
+            result = reverse_geocode_coordinates(lat, lng)
+            if result["success"]:
+                result["coordinates"] = {"lat": lat, "lng": lng}
+            return result, 200
+        except Exception as e:
+            current_app.logger.exception(f"Error in reverse-geocode endpoint: {str(e)}")
+            return {"success": False, "error": f"Server error: {str(e)}"}, 500
+
+    def get(self):
+        """GET method for reverse geocoding"""
+        try:
+            try:
+                lat = float(request.args.get("lat", 0))
+                lng = float(request.args.get("lng", 0))
+            except (ValueError, TypeError):
+                return {"success": False, "error": "Invalid coordinates format"}, 400
+
+            if not lat and not lng:  # Check if both are zero/empty
+                return {"success": False, "error": "Latitude and longitude are required"}, 400
+
+            result = reverse_geocode_coordinates(lat, lng)
+            if result["success"]:
+                result["coordinates"] = {"lat": lat, "lng": lng}
+            return result, 200
+        except Exception as e:
+            current_app.logger.exception(f"Error in reverse-geocode GET endpoint: {str(e)}")
+            return {"success": False, "error": f"Server error: {str(e)}"}, 500
+
     def options(self):
         """Handle OPTIONS requests for the geocoding endpoint."""
         response = current_app.make_default_options_response()
@@ -274,91 +362,6 @@ class AddressValidationResource(Resource):
         if origin and (origin in allowed_origins or "*" in allowed_origins):
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-            response.headers[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-
-        return response
-
-
-@api.route("/reverse")
-class ReverseGeocodingResource(Resource):
-    """Endpoint for reverse geocoding from coordinates to address"""
-
-    @api.doc("reverse_geocode_coordinates")
-    @api.expect(geocoding_request)
-    @api.marshal_with(geocoding_response)
-    @api.response(200, "Reverse geocoding successful")
-    @api.response(400, "Invalid request")
-    @api.response(500, "Server error")
-    def post(self):
-        """Reverse geocode coordinates to an address"""
-        try:
-            data = request.get_json()
-
-            if not data or "lat" not in data or "lng" not in data:
-                return {"success": False, "error": "Latitude and longitude are required"}, 400
-
-            lat = data.get("lat")
-            lng = data.get("lng")
-
-            # Validate coordinates
-            if not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
-                return {"success": False, "error": "Invalid coordinates format"}, 400
-
-            # Perform reverse geocoding
-            result = reverse_geocode_coordinates(lat, lng)
-
-            if result["success"]:
-                result["coordinates"] = {"lat": lat, "lng": lng}
-
-            return result, 200 if result["success"] else 400
-
-        except Exception as e:
-            current_app.logger.exception(f"Error in reverse geocoding endpoint: {str(e)}")
-            return {"success": False, "error": f"Server error: {str(e)}"}, 500
-
-    @api.doc("reverse_geocode_coordinates_get")
-    @api.marshal_with(geocoding_response)
-    @api.response(200, "Reverse geocoding successful")
-    @api.response(400, "Invalid request")
-    @api.response(500, "Server error")
-    def get(self):
-        """GET method for reverse geocoding to support the tests"""
-        try:
-            # Get parameters from query string
-            try:
-                lat = float(request.args.get("lat", ""))
-                lng = float(request.args.get("lng", ""))
-            except ValueError:
-                return {"success": False, "error": "Invalid coordinates format"}, 400
-
-            # Perform reverse geocoding
-            result = reverse_geocode_coordinates(lat, lng)
-
-            if result["success"]:
-                result["coordinates"] = {"lat": lat, "lng": lng}
-
-            return result, 200 if result["success"] else 400
-
-        except Exception as e:
-            current_app.logger.exception(f"Error in reverse geocoding GET endpoint: {str(e)}")
-            return {"success": False, "error": f"Server error: {str(e)}"}, 500
-
-    def options(self):
-        """Handle OPTIONS requests for the reverse geocoding endpoint."""
-        response = current_app.make_default_options_response()
-
-        # Get origin from request headers
-        origin = request.headers.get("Origin")
-        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
-
-        # Add CORS headers if origin is allowed
-        if origin and (origin in allowed_origins or "*" in allowed_origins):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
             response.headers[
                 "Access-Control-Allow-Headers"
             ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"

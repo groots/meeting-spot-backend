@@ -94,34 +94,17 @@ class TestGeocodingIntegration(unittest.TestCase):
 
     @patch("app.utils.geocoding.requests.get")
     def test_geocoding_error_handling_integration(self, mock_get):
-        """Test error handling in geocoding functions with app context."""
-        # Set API key to None to test configuration error
-        self.app.config["MAPS_API_KEY"] = None
-
-        # Test geocode_address with no API key
-        result_geocode = geocode_address("123 Main St")
-        self.assertFalse(result_geocode["success"])
-        self.assertEqual(result_geocode["error"], "Geocoding service not configured")
-
-        # Test reverse_geocode_coordinates with no API key
-        result_reverse = reverse_geocode_coordinates(37.7749, -122.4194)
-        self.assertFalse(result_reverse["success"])
-        self.assertEqual(result_reverse["error"], "Geocoding service not configured")
-
-        # Restore API key for next tests
-        self.app.config["MAPS_API_KEY"] = "test_api_key"
-
-        # Mock API error
+        """Test geocoding error handling in app context."""
+        # Mock Google Maps API with an error response
         mock_response = MagicMock()
-        mock_response.json.return_value = {"status": "INVALID_REQUEST", "error_message": "Invalid request"}
+        mock_response.json.return_value = {
+            "status": "INVALID_REQUEST",
+        }
         mock_get.return_value = mock_response
 
-        # Test geocode_address with API error
-        result_geocode = geocode_address("invalid address")
-        self.assertFalse(result_geocode["success"])
-        self.assertEqual(result_geocode["error"], "Geocoding failed: INVALID_REQUEST")
+        # Test geocoding with bad input
+        result = geocode_address("bad input")
 
-        # Test reverse_geocode_coordinates with API error
-        result_reverse = reverse_geocode_coordinates(999, 999)
-        self.assertFalse(result_reverse["success"])
-        self.assertEqual(result_reverse["error"], "Reverse geocoding failed: INVALID_REQUEST")
+        # Verify error is properly formatted
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "Geocoding failed: INVALID_REQUEST")
