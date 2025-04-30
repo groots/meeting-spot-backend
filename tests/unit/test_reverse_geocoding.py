@@ -82,7 +82,7 @@ class TestReverseGeocoding(unittest.TestCase):
 
         # Verify the result indicates failure due to API error
         self.assertFalse(result["success"])
-        self.assertEqual(result["error"], "Geocoding failed: REQUEST_DENIED")
+        self.assertEqual(result["error"], "The provided API key is invalid.")
 
     def test_reverse_geocode_coordinates_invalid_coordinates(self):
         """Test reverse geocoding with invalid coordinates."""
