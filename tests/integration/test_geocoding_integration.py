@@ -11,7 +11,7 @@ class TestGeocodingIntegration(unittest.TestCase):
     def setUp(self):
         """Set up test app configuration."""
         self.app = create_app("testing")
-        self.app.config["MAPS_API_KEY"] = "test_api_key"
+        self.app.config["MAPS_API_KEY"] = "test-maps-api-key"
         self.app_context = self.app.app_context()
         self.app_context.push()
 
@@ -48,7 +48,7 @@ class TestGeocodingIntegration(unittest.TestCase):
         mock_get.assert_called_once()
         args, kwargs = mock_get.call_args
         self.assertEqual(kwargs["params"]["address"], "123 Main St, San Francisco, CA")
-        self.assertEqual(kwargs["params"]["key"], "test_api_key")
+        self.assertEqual(kwargs["params"]["key"], "test-maps-api-key")
 
         # Verify the result
         self.assertTrue(result["success"])
@@ -85,7 +85,7 @@ class TestGeocodingIntegration(unittest.TestCase):
         mock_get.assert_called_once()
         args, kwargs = mock_get.call_args
         self.assertEqual(kwargs["params"]["latlng"], "37.7749,-122.4194")
-        self.assertEqual(kwargs["params"]["key"], "test_api_key")
+        self.assertEqual(kwargs["params"]["key"], "test-maps-api-key")
 
         # Verify the result
         self.assertTrue(result["success"])
