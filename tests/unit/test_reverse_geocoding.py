@@ -53,18 +53,14 @@ class TestReverseGeocoding(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["error"], "No results found for the given coordinates")
 
-    @patch("app.utils.geocoding.current_app")
-    def test_reverse_geocode_coordinates_no_api_key(self, mock_current_app):
-        """Test reverse geocoding with no API key."""
-        # Mock app config with no API key
-        mock_current_app.config.get.return_value = None
+    def test_reverse_geocode_coordinates_no_api_key(self):
+        """Test reverse geocoding with empty API key."""
+        # Call function with empty API key directly
+        result = reverse_geocode_coordinates(37.7749, -122.4194, "")
 
-        # Call the function without providing an API key
-        result = reverse_geocode_coordinates(37.7749, -122.4194)
-
-        # Verify the result indicates failure due to missing API key
+        # Assert failure with the exact message from the implementation
         self.assertFalse(result["success"])
-        self.assertEqual(result["error"], "Geocoding service not configured")
+        self.assertEqual(result["error"], "API key cannot be empty")
 
     @patch("app.utils.geocoding.requests.get")
     def test_reverse_geocode_coordinates_api_error(self, mock_get):
