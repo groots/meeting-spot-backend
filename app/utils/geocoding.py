@@ -80,7 +80,7 @@ def reverse_geocode_coordinates(lat: float, lng: float, api_key: str = None) -> 
         if not api_key:
             return {"success": False, "error": "Geocoding service not configured"}
     elif api_key == "":
-        return {"success": False, "error": "The provided API key is invalid. "}
+        return {"success": False, "error": "API key cannot be empty"}
 
     try:
         # Make the request to Google Maps API
@@ -91,13 +91,13 @@ def reverse_geocode_coordinates(lat: float, lng: float, api_key: str = None) -> 
         # Check for API errors
         if data["status"] != "OK":
             if data["status"] == "ZERO_RESULTS":
-                return {"success": False, "error": "No address found for the provided coordinates"}
+                return {"success": False, "error": "Reverse geocoding failed: ZERO_RESULTS"}
             error_message = data.get("error_message", f"Reverse geocoding failed: {data['status']}")
             return {"success": False, "error": error_message}
 
         # Check if we have results
         if not data.get("results"):
-            return {"success": False, "error": "No address found for the provided coordinates"}
+            return {"success": False, "error": "No results found for the given coordinates"}
 
         # Extract the first result (most relevant)
         result = data["results"][0]
@@ -171,7 +171,7 @@ def geocode_address(address: str, api_key: str = None) -> Dict[str, Any]:
     """
     # Validate inputs
     if not address:
-        return {"success": False, "error": "Address cannot be empty"}
+        return {"success": False, "error": "No address provided"}
 
     # Get API key if not provided
     if not api_key:
@@ -190,7 +190,7 @@ def geocode_address(address: str, api_key: str = None) -> Dict[str, Any]:
         # Check for API errors
         if data["status"] != "OK":
             if data["status"] == "ZERO_RESULTS":
-                return {"success": False, "error": "No results found for the given address"}
+                return {"success": False, "error": "ZERO_RESULTS"}
             # Use the error_message directly from API if available
             error_message = data.get("error_message", f"Geocoding failed: {data['status']}")
             return {"success": False, "error": error_message}
