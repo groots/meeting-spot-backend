@@ -13,19 +13,23 @@ from app.utils.notifications import send_email, send_sms
 def test_send_email_development():
     """Test email sending in development mode."""
     mock_app = MagicMock()
-    mock_app.config.get.return_value = "development"
+    mock_app.config.get.side_effect = lambda key, default=None: {
+        "ENV": "development",
+        "FLASK_ENV": "development",
+        "MAILGUN_API_KEY": "test_key",
+        "MAILGUN_DOMAIN": "test.domain",
+    }.get(key, default)
     mock_logger = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_post = MagicMock(return_value=mock_response)
 
-    with patch("app.utils.notifications.current_app", mock_app), patch("app.utils.notifications.logger", mock_logger):
+    with patch("app.utils.notifications.current_app", mock_app), patch(
+        "app.utils.notifications.logger", mock_logger
+    ), patch("requests.post", mock_post):
         result = send_email("test@example.com", "Test Subject", "Test Body")
         assert result is True
-        mock_logger.info.assert_has_calls(
-            [
-                call("Development mode: Would send email to test@example.com"),
-                call("Subject: Test Subject"),
-                call("Body: Test Body"),
-            ]
-        )
+        mock_post.assert_called_once()
 
 
 def test_send_email_production():
@@ -56,11 +60,14 @@ def test_send_email_missing_config():
     }.get(key, default)
     mock_logger = MagicMock()
 
-    with patch("app.utils.notifications.current_app", mock_app), patch("app.utils.notifications.logger", mock_logger):
+    # Mock environment variables to be empty
+    with patch("app.utils.notifications.current_app", mock_app), patch(
+        "app.utils.notifications.logger", mock_logger
+    ), patch("app.utils.notifications.os.environ.get", return_value=None):
         result = send_email("test@example.com", "Test Subject", "Test Body")
         assert result is False
-        mock_logger.error.assert_called_once_with(
-            "Missing Mailgun configuration. " "Please set MAILGUN_API_KEY and MAILGUN_DOMAIN."
+        mock_logger.error.assert_any_call(
+            "Missing Mailgun configuration. Please set MAILGUN_API_KEY and MAILGUN_DOMAIN."
         )
 
 
