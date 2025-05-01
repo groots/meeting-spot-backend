@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import jwt
 from flask import current_app, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from flask_restx import Namespace, Resource, fields
@@ -258,13 +259,26 @@ class MeetingRequestList(Resource):
     @jwt_required()
     def get(self) -> None:
         """Get a list of meeting requests for the current user"""
-        user_id = get_jwt_identity()
-        user = User.get_by_token_identity(user_id)
-        if not user:
-            return {"error": "User not found"}, 404
+        try:
+            user_id = get_jwt_identity()
+            user = User.get_by_token_identity(user_id)
+            if not user:
+                return {"error": "User not found", "code": "USER_NOT_FOUND"}, 404
 
-        meeting_requests = MeetingRequest.query.filter_by(user_a_id=user.id).all()
-        return [request.to_dict() for request in meeting_requests]
+            meeting_requests = MeetingRequest.query.filter_by(user_a_id=user.id).all()
+            return [request.to_dict() for request in meeting_requests]
+        except jwt.exceptions.ExpiredSignatureError:
+            # If token is expired, return a specific error
+            current_app.logger.warning("JWT token expired during meeting requests list fetch")
+            return {"error": "Your session has expired. Please log in again.", "code": "TOKEN_EXPIRED"}, 401
+        except jwt.exceptions.InvalidTokenError:
+            # Handle other JWT errors
+            current_app.logger.warning("Invalid JWT token during meeting requests list fetch")
+            return {"error": "Invalid authentication token. Please log in again.", "code": "INVALID_TOKEN"}, 401
+        except Exception as e:
+            # Log unexpected errors
+            current_app.logger.exception(f"Error in meeting request list fetch: {str(e)}")
+            return {"error": "An unexpected error occurred", "code": "SERVER_ERROR"}, 500
 
     def options(self):
         """Handle OPTIONS requests for the meeting request list endpoint."""
@@ -299,13 +313,32 @@ class MeetingRequestResource(Resource):
         try:
             request_id = uuid.UUID(request_id)
         except ValueError:
-            return {"error": "Invalid request ID format"}, 400
+            return {"error": "Invalid request ID format", "code": "INVALID_ID"}, 400
 
-        meeting_request = MeetingRequest.query.get(request_id)
-        if not meeting_request:
-            return {"error": "Request not found"}, 404
+        try:
+            # Get the user from the JWT token
+            user_id = get_jwt_identity()
+            user = User.get_by_token_identity(user_id)
+            if not user:
+                return {"error": "User not found", "code": "USER_NOT_FOUND"}, 404
 
-        return meeting_request.to_dict()
+            meeting_request = MeetingRequest.query.get(request_id)
+            if not meeting_request:
+                return {"error": "Request not found", "code": "REQUEST_NOT_FOUND"}, 404
+
+            return meeting_request.to_dict()
+        except jwt.exceptions.ExpiredSignatureError:
+            # If token is expired, return a specific error
+            current_app.logger.warning(f"JWT token expired during meeting request fetch: {request_id}")
+            return {"error": "Your session has expired. Please log in again.", "code": "TOKEN_EXPIRED"}, 401
+        except jwt.exceptions.InvalidTokenError:
+            # Handle other JWT errors
+            current_app.logger.warning(f"Invalid JWT token during meeting request fetch: {request_id}")
+            return {"error": "Invalid authentication token. Please log in again.", "code": "INVALID_TOKEN"}, 401
+        except Exception as e:
+            # Log unexpected errors
+            current_app.logger.exception(f"Error in meeting request fetch: {str(e)}")
+            return {"error": "An unexpected error occurred", "code": "SERVER_ERROR"}, 500
 
     @api.doc("update_request")
     @api.expect(update_request_model)
@@ -415,28 +448,41 @@ class MeetingRequestStatusResource(Resource):
         try:
             request_id = uuid.UUID(request_id)
         except ValueError:
-            return {"error": "Invalid request ID format"}, 400
+            return {"error": "Invalid request ID format", "code": "INVALID_ID"}, 400
 
-        # Get user from JWT token
-        user_id = get_jwt_identity()
-        user = User.get_by_token_identity(user_id)
-        if not user:
-            return {"error": "User not found"}, 404
+        try:
+            # Get user from JWT token
+            user_id = get_jwt_identity()
+            user = User.get_by_token_identity(user_id)
+            if not user:
+                return {"error": "User not found", "code": "USER_NOT_FOUND"}, 404
 
-        meeting_request = MeetingRequest.query.get(request_id)
-        if not meeting_request:
-            return {"error": "Request not found"}, 404
+            meeting_request = MeetingRequest.query.get(request_id)
+            if not meeting_request:
+                return {"error": "Request not found", "code": "REQUEST_NOT_FOUND"}, 404
 
-        # Check if user owns the request
-        if meeting_request.user_a_id != user.id:
-            return {"error": "Unauthorized"}, 403
+            # Check if user owns the request
+            if meeting_request.user_a_id != user.id:
+                return {"error": "Unauthorized", "code": "UNAUTHORIZED"}, 403
 
-        return {
-            "request_id": str(request_id),
-            "status": meeting_request.status.value,
-            "created_at": meeting_request.created_at.isoformat(),
-            "expires_at": meeting_request.expires_at.isoformat(),
-        }
+            return {
+                "request_id": str(request_id),
+                "status": meeting_request.status.value,
+                "created_at": meeting_request.created_at.isoformat(),
+                "expires_at": meeting_request.expires_at.isoformat(),
+            }
+        except jwt.exceptions.ExpiredSignatureError:
+            # If token is expired, return a specific error
+            current_app.logger.warning(f"JWT token expired during status fetch: {request_id}")
+            return {"error": "Your session has expired. Please log in again.", "code": "TOKEN_EXPIRED"}, 401
+        except jwt.exceptions.InvalidTokenError:
+            # Handle other JWT errors
+            current_app.logger.warning(f"Invalid JWT token during status fetch: {request_id}")
+            return {"error": "Invalid authentication token. Please log in again.", "code": "INVALID_TOKEN"}, 401
+        except Exception as e:
+            # Log unexpected errors
+            current_app.logger.exception(f"Error in meeting request status fetch: {str(e)}")
+            return {"error": "An unexpected error occurred", "code": "SERVER_ERROR"}, 500
 
     def options(self, request_id):
         """Handle OPTIONS requests for the meeting request status endpoint."""
@@ -579,97 +625,113 @@ class MeetingRequestResultsResource(Resource):
         try:
             request_id = uuid.UUID(request_id)
         except ValueError:
-            return {"error": "Invalid request ID format"}, 400
+            return {"error": "Invalid request ID format", "code": "INVALID_ID"}, 400
 
-        # Get user from JWT token
-        user_id = get_jwt_identity()
-        user = User.get_by_token_identity(user_id)
-        if not user:
-            return {"error": "User not found"}, 404
+        try:
+            # Get user from JWT token
+            user_id = get_jwt_identity()
+            user = User.get_by_token_identity(user_id)
+            if not user:
+                return {"error": "User not found", "code": "USER_NOT_FOUND"}, 404
 
-        meeting_request = MeetingRequest.query.get(request_id)
-        if not meeting_request:
-            return {"error": "Request not found"}, 404
+            meeting_request = MeetingRequest.query.get(request_id)
+            if not meeting_request:
+                return {"error": "Request not found", "code": "REQUEST_NOT_FOUND"}, 404
 
-        # Check if user owns the request
-        if meeting_request.user_a_id != user.id:
-            return {"error": "Unauthorized"}, 403
+            # Check if user owns the request
+            if meeting_request.user_a_id != user.id:
+                return {"error": "Unauthorized", "code": "UNAUTHORIZED"}, 403
 
-        # If meeting request is still in CALCULATING status, try to process it
-        if meeting_request.status == MeetingRequestStatus.CALCULATING:
-            try:
-                # Check if we have all required coordinates
-                if (
-                    meeting_request.address_a_lat is None
-                    or meeting_request.address_a_lon is None
-                    or meeting_request.address_b_lat is None
-                    or meeting_request.address_b_lon is None
-                ):
-                    current_app.logger.error(f"Missing coordinates for meeting request {meeting_request.request_id}")
-                    meeting_request.status = MeetingRequestStatus.FAILED
-                    db.session.commit()
-                    return {
-                        "error": "Missing coordinates",
-                        "status": meeting_request.status.value,
-                        "request_id": str(request_id),
-                    }, 400
+            # If meeting request is still in CALCULATING status, try to process it
+            if meeting_request.status == MeetingRequestStatus.CALCULATING:
+                try:
+                    # Check if we have all required coordinates
+                    if (
+                        meeting_request.address_a_lat is None
+                        or meeting_request.address_a_lon is None
+                        or meeting_request.address_b_lat is None
+                        or meeting_request.address_b_lon is None
+                    ):
+                        current_app.logger.error(
+                            f"Missing coordinates for meeting request {meeting_request.request_id}"
+                        )
+                        meeting_request.status = MeetingRequestStatus.FAILED
+                        db.session.commit()
+                        return {
+                            "error": "Missing coordinates",
+                            "status": meeting_request.status.value,
+                            "request_id": str(request_id),
+                            "code": "MISSING_COORDINATES",
+                        }, 400
 
-                from ..utils.location import process_meeting_request
+                    from ..utils.location import process_meeting_request
 
-                current_app.logger.info(
-                    f"Attempting to process meeting request {meeting_request.request_id} during results fetch"
-                )
-                process_success = process_meeting_request(meeting_request)
-                if process_success:
-                    db.session.commit()
                     current_app.logger.info(
-                        f"Processed meeting request {meeting_request.request_id} during results fetch"
+                        f"Attempting to process meeting request {meeting_request.request_id} during results fetch"
                     )
-                else:
-                    current_app.logger.warning(
-                        f"Failed to process meeting request {meeting_request.request_id} during results fetch"
+                    process_success = process_meeting_request(meeting_request)
+                    if process_success:
+                        db.session.commit()
+                        current_app.logger.info(
+                            f"Processed meeting request {meeting_request.request_id} during results fetch"
+                        )
+                    else:
+                        current_app.logger.warning(
+                            f"Failed to process meeting request {meeting_request.request_id} during results fetch"
+                        )
+                except Exception as e:
+                    current_app.logger.exception(f"Error processing meeting request during results fetch: {str(e)}")
+
+            # Calculate midpoint for frontend reference
+            midpoint = None
+            if (
+                meeting_request.address_a_lat is not None
+                and meeting_request.address_a_lon is not None
+                and meeting_request.address_b_lat is not None
+                and meeting_request.address_b_lon is not None
+            ):
+                try:
+                    from ..utils.location import calculate_midpoint
+
+                    mid_lat, mid_lon = calculate_midpoint(
+                        meeting_request.address_a_lat,
+                        meeting_request.address_a_lon,
+                        meeting_request.address_b_lat,
+                        meeting_request.address_b_lon,
                     )
-            except Exception as e:
-                current_app.logger.exception(f"Error processing meeting request during results fetch: {str(e)}")
+                    midpoint = {"lat": mid_lat, "lng": mid_lon}
+                except Exception as e:
+                    current_app.logger.exception(f"Error calculating midpoint: {str(e)}")
+                    midpoint = None
 
-        # Calculate midpoint for frontend reference
-        midpoint = None
-        if (
-            meeting_request.address_a_lat is not None
-            and meeting_request.address_a_lon is not None
-            and meeting_request.address_b_lat is not None
-            and meeting_request.address_b_lon is not None
-        ):
-            try:
-                from ..utils.location import calculate_midpoint
+            # Prepare response locations data if both coordinates exist
+            locations = None
+            if meeting_request.address_a_lat is not None and meeting_request.address_a_lon is not None:
+                locations = {"a": {"lat": meeting_request.address_a_lat, "lng": meeting_request.address_a_lon}}
 
-                mid_lat, mid_lon = calculate_midpoint(
-                    meeting_request.address_a_lat,
-                    meeting_request.address_a_lon,
-                    meeting_request.address_b_lat,
-                    meeting_request.address_b_lon,
-                )
-                midpoint = {"lat": mid_lat, "lng": mid_lon}
-            except Exception as e:
-                current_app.logger.exception(f"Error calculating midpoint: {str(e)}")
-                midpoint = None
+                if meeting_request.address_b_lat is not None and meeting_request.address_b_lon is not None:
+                    locations["b"] = {"lat": meeting_request.address_b_lat, "lng": meeting_request.address_b_lon}
 
-        # Prepare response locations data if both coordinates exist
-        locations = None
-        if meeting_request.address_a_lat is not None and meeting_request.address_a_lon is not None:
-            locations = {"a": {"lat": meeting_request.address_a_lat, "lng": meeting_request.address_a_lon}}
-
-            if meeting_request.address_b_lat is not None and meeting_request.address_b_lon is not None:
-                locations["b"] = {"lat": meeting_request.address_b_lat, "lng": meeting_request.address_b_lon}
-
-        return {
-            "request_id": str(request_id),
-            "status": meeting_request.status.value,
-            "suggested_options": meeting_request.suggested_options or [],
-            "selected_place": meeting_request.selected_place_details,
-            "midpoint": midpoint,
-            "locations": locations,
-        }
+            return {
+                "request_id": str(request_id),
+                "status": meeting_request.status.value,
+                "suggested_options": meeting_request.suggested_options or [],
+                "selected_place": meeting_request.selected_place_details,
+                "midpoint": midpoint,
+                "locations": locations,
+            }
+        except jwt.exceptions.ExpiredSignatureError:
+            # If token is expired, return a specific error
+            current_app.logger.warning(f"JWT token expired during results fetch: {request_id}")
+            return {"error": "Your session has expired. Please log in again.", "code": "TOKEN_EXPIRED"}, 401
+        except jwt.exceptions.InvalidTokenError:
+            # Handle other JWT errors
+            current_app.logger.warning(f"Invalid JWT token during results fetch: {request_id}")
+            return {"error": "Invalid authentication token. Please log in again.", "code": "INVALID_TOKEN"}, 401
+        except Exception as e:
+            # Log unexpected errors
+            current_app.logger.exception(f"Error in meeting request results fetch: {str(e)}")
+            return {"error": "An unexpected error occurred", "code": "SERVER_ERROR"}, 500
 
     def options(self, request_id):
         """Handle OPTIONS requests for the meeting request results endpoint."""
@@ -701,84 +763,102 @@ class MeetingRequestResendInvitationResource(Resource):
     @api.response(404, "Request not found")
     @jwt_required()
     def post(self, request_id) -> None:
-        """Resend invitation email for a meeting request"""
+        """Resend the invitation email for a meeting request"""
         try:
             request_id = uuid.UUID(request_id)
         except ValueError:
-            return {"error": "Invalid request ID format"}, 400
-
-        # Get user from JWT token
-        user_id = get_jwt_identity()
-        user = User.get_by_token_identity(user_id)
-        if not user:
-            return {"error": "User not found"}, 404
-
-        meeting_request = MeetingRequest.query.get(request_id)
-        if not meeting_request:
-            return {"error": "Request not found"}, 404
-
-        # Check if user owns the request
-        if meeting_request.user_a_id != user.id:
-            return {"error": "Unauthorized"}, 403
-
-        # Check if status is still pending_b_address
-        if meeting_request.status != MeetingRequestStatus.PENDING_B_ADDRESS:
-            return {"error": "Cannot resend invitation for requests that are not pending"}, 400
-
-        # Check if contact type is email
-        if meeting_request.user_b_contact_type != ContactType.EMAIL:
-            return {"error": "Invitation can only be resent for email contacts"}, 400
-
-        # Check if it's been at least 30 minutes since the last update
-        cooldown_period = 30  # minutes
-
-        # Make sure both datetimes are timezone-aware
-        if meeting_request.updated_at.tzinfo is None:
-            cooldown_time = meeting_request.updated_at.replace(tzinfo=timezone.utc) + timedelta(minutes=cooldown_period)
-        else:
-            cooldown_time = meeting_request.updated_at + timedelta(minutes=cooldown_period)
-
-        current_time = datetime.now(timezone.utc)
-
-        if current_time < cooldown_time:
-            time_remaining = cooldown_time - current_time
-            minutes_remaining = int(time_remaining.total_seconds() / 60)
-            return {
-                "error": f"Rate limited: Please wait {minutes_remaining} minutes before resending",
-                "cooldown_remaining_minutes": minutes_remaining,
-            }, 429  # Rate limited status code
-
-        # All checks passed, resend the email
-        user_b_email = meeting_request.user_b_contact
-        user_b_name = meeting_request.user_b_name
+            return {"error": "Invalid request ID format", "code": "INVALID_ID"}, 400
 
         try:
-            base_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
-            response_url = f"{base_url}/request/{meeting_request.request_id}?token={meeting_request.token_b}"
+            # Get user from JWT token
+            user_id = get_jwt_identity()
+            user = User.get_by_token_identity(user_id)
+            if not user:
+                return {"error": "User not found", "code": "USER_NOT_FOUND"}, 404
 
-            subject = "Reminder: You've been invited to find a meeting spot!"
-            body = f"""
-Hello{f' {user_b_name}' if user_b_name else ''}!
+            # Find the meeting request
+            meeting_request = MeetingRequest.query.get(request_id)
+            if not meeting_request:
+                return {"error": "Request not found", "code": "REQUEST_NOT_FOUND"}, 404
 
-This is a reminder that {user.email} has invited you to find a convenient meeting spot.
+            # Check if user owns the request
+            if meeting_request.user_a_id != user.id:
+                return {"error": "Unauthorized", "code": "UNAUTHORIZED"}, 403
 
-To respond with your location, please click the following link:
-{response_url}
+            # Make sure the meeting request is in a state where resending makes sense
+            if meeting_request.status not in [
+                MeetingRequestStatus.PENDING_B_ADDRESS,
+                MeetingRequestStatus.PENDING_B_RESPONSE,
+            ]:
+                return {
+                    "error": f"Cannot resend invitation for a request with status {meeting_request.status.value}",
+                    "code": "INVALID_STATUS",
+                }, 400
 
-This link will expire in 24 hours.
+            # Check if it's been at least 30 minutes since the last update
+            cooldown_period = 30  # minutes
 
-Best regards,
-Find a Meeting Spot Team
-"""
-            send_email(user_b_email, subject, body)
-            current_app.logger.info(f"Reminder email sent to {user_b_email}")
+            # Make sure both datetimes are timezone-aware
+            if meeting_request.updated_at.tzinfo is None:
+                cooldown_time = meeting_request.updated_at.replace(tzinfo=timezone.utc) + timedelta(
+                    minutes=cooldown_period
+                )
+            else:
+                cooldown_time = meeting_request.updated_at + timedelta(minutes=cooldown_period)
 
-            # Update the timestamp to track when we last sent a reminder
-            meeting_request.updated_at = current_time
-            db.session.commit()
+            current_time = datetime.now(timezone.utc)
 
-            return {"message": "Invitation resent successfully"}, 200
+            if current_time < cooldown_time:
+                time_remaining = cooldown_time - current_time
+                minutes_remaining = int(time_remaining.total_seconds() / 60)
+                return {
+                    "error": f"Please wait {minutes_remaining} more minutes before resending",
+                    "code": "RATE_LIMITED",
+                    "minutes_remaining": minutes_remaining,
+                }, 429
 
-        except Exception as email_err:
-            current_app.logger.error(f"Failed to send reminder email: {str(email_err)}")
-            return {"error": f"Failed to send email: {str(email_err)}"}, 500
+            # Get the user's name
+            user_name = user.name or user.email.split("@")[0]
+
+            # Get the unique response URL
+            response_url = f"{current_app.config.get('FRONTEND_URL')}/request/{meeting_request.request_id}?token={meeting_request.token_b}"
+
+            # Send the invitation email
+            if meeting_request.user_b_contact_type == ContactType.EMAIL:
+                # Compose email
+                subject = f"{user_name} wants to find a meeting spot with you"
+                body = f"""
+                <p>Hi {meeting_request.user_b_name or 'there'},</p>
+                <p>{user_name} would like to find a convenient place to meet using Find A Meeting Spot.</p>
+                <p>Click the link below to provide your location and see suggestions:</p>
+                <p><a href="{response_url}">{response_url}</a></p>
+                <p>This link will expire in 24 hours.</p>
+                <p>Thank you,<br>Find A Meeting Spot Team</p>
+                """
+
+                # Send the email
+                send_email(meeting_request.user_b_contact, subject, body)
+                current_app.logger.info(f"Resent invitation email to {meeting_request.user_b_contact}")
+
+                # Update the meeting request
+                meeting_request.updated_at = datetime.now(timezone.utc)
+                db.session.commit()
+
+                return {"message": "Invitation email resent successfully"}, 200
+            else:
+                return {
+                    "error": "Only email invitations can be resent at this time",
+                    "code": "UNSUPPORTED_CONTACT_TYPE",
+                }, 400
+        except jwt.exceptions.ExpiredSignatureError:
+            # If token is expired, return a specific error
+            current_app.logger.warning(f"JWT token expired during invitation resend: {request_id}")
+            return {"error": "Your session has expired. Please log in again.", "code": "TOKEN_EXPIRED"}, 401
+        except jwt.exceptions.InvalidTokenError:
+            # Handle other JWT errors
+            current_app.logger.warning(f"Invalid JWT token during invitation resend: {request_id}")
+            return {"error": "Invalid authentication token. Please log in again.", "code": "INVALID_TOKEN"}, 401
+        except Exception as e:
+            # Log unexpected errors
+            current_app.logger.exception(f"Error in meeting request invitation resend: {str(e)}")
+            return {"error": "An unexpected error occurred", "code": "SERVER_ERROR"}, 500
