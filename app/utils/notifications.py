@@ -29,6 +29,11 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         logger.info(f"Mailgun Domain: {domain}")
         logger.info(f"Mailgun API Key: {api_key[:6]}...") if api_key else logger.warning("No Mailgun API key found")
 
+        # In production, check for required config first
+        if not api_key or not domain:
+            logger.error("Missing Mailgun configuration. Please set MAILGUN_API_KEY and MAILGUN_DOMAIN.")
+            return False
+
         # Special handling for tests - if both API key and domain are present with a production environment, 
         # assume we want to actually send the email regardless of ENV
         is_test_environment = api_key and domain and flask_env == "production"
@@ -39,11 +44,6 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
             logger.info(f"Subject: {subject}")
             logger.info(f"Body: {body}")
             return True
-
-        # In production, check for required config
-        if not api_key or not domain:
-            logger.error("Missing Mailgun configuration. Please set MAILGUN_API_KEY and MAILGUN_DOMAIN.")
-            return False
 
         # Mailgun API endpoint
         url = f"https://api.mailgun.net/v3/{domain}/messages"
