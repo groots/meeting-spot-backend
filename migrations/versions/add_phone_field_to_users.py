@@ -26,4 +26,4 @@ def upgrade():
 def downgrade():
     # Remove index and column during downgrade
     op.drop_index(op.f("ix_users_phone"), table_name="users")
-    op.drop_column("users", "phone") 
+    op.drop_column("users", "phone")

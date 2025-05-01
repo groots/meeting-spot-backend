@@ -271,7 +271,7 @@ class Register(Resource):
             last_name = data.get("last_name")
             username = data.get("username")
             phone = data.get("phone")
-            
+
             # In case the name field is present, extract first and last name from it
             # This is for backward compatibility
             if "name" in data and not (first_name and last_name):
@@ -280,15 +280,9 @@ class Register(Resource):
                     first_name = name_parts[0]
                 if not last_name and len(name_parts) > 1:
                     last_name = name_parts[1]
-            
+
             # Create the user
-            user = User(
-                email=data["email"],
-                first_name=first_name,
-                last_name=last_name,
-                username=username,
-                phone=phone
-            )
+            user = User(email=data["email"], first_name=first_name, last_name=last_name, username=username, phone=phone)
             user.set_password(data["password"])
 
             # Log user object created
