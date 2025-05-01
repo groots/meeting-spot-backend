@@ -1,3 +1,4 @@
+import logging
 import os
 
 from dotenv import load_dotenv
@@ -100,6 +101,10 @@ class ProductionConfig(Config):
     DEBUG = False
     TESTING = False
     ENV = "production"
+    FLASK_ENV = "production"  # Explicitly set FLASK_ENV for email sending logic
+
+    # For debugging, print the environment in logs
+    logging.getLogger(__name__).info("Loading PRODUCTION configuration with ENV=production and FLASK_ENV=production")
 
     # Security settings
     SESSION_COOKIE_SECURE = True

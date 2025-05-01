@@ -18,10 +18,19 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         # Get Mailgun configuration
         api_key = current_app.config.get("MAILGUN_API_KEY")
         domain = current_app.config.get("MAILGUN_DOMAIN")
-        env = current_app.config.get("FLASK_ENV", "development")  # Default to development
 
-        # In development, just log the email
-        if env == "development":
+        # Explicitly check both FLASK_ENV and ENV configuration
+        env = current_app.config.get("ENV", "development")
+        flask_env = current_app.config.get("FLASK_ENV", "development")
+
+        # Log environment settings for debugging
+        logger.info(f"Current ENV: {env}, FLASK_ENV: {flask_env}")
+        logger.info(f"Sending email to: {to_email}")
+        logger.info(f"Mailgun Domain: {domain}")
+        logger.info(f"Mailgun API Key: {api_key[:6]}...") if api_key else logger.warning("No Mailgun API key found")
+
+        # In development mode, just log the email
+        if env == "development" or flask_env == "development":
             logger.info(f"Development mode: Would send email to {to_email}")
             logger.info(f"Subject: {subject}")
             logger.info(f"Body: {body}")
@@ -29,11 +38,12 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
 
         # In production, check for required config
         if not api_key or not domain:
-            logger.error("Missing Mailgun configuration. " "Please set MAILGUN_API_KEY and MAILGUN_DOMAIN.")
+            logger.error("Missing Mailgun configuration. Please set MAILGUN_API_KEY and MAILGUN_DOMAIN.")
             return False
 
         # Mailgun API endpoint
         url = f"https://api.mailgun.net/v3/{domain}/messages"
+        logger.info(f"Using Mailgun endpoint: {url}")
 
         # Prepare the email data
         data = {
@@ -45,12 +55,17 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         }
 
         # Send the email
+        logger.info(f"Sending email request to Mailgun...")
         response = requests.post(url, auth=("api", api_key), data=data)
+
+        # Log response details
+        logger.info(f"Mailgun API response status code: {response.status_code}")
 
         if response.status_code != 200:
             logger.error(f"Mailgun API error: {response.text}")
             return False
 
+        logger.info(f"Email sent successfully to {to_email}")
         return True
     except Exception as e:
         logger.error(f"Error sending email: {e}")
@@ -63,10 +78,12 @@ def send_sms(to_number: str, message: str) -> bool:
     For development, just log the SMS content.
     """
     try:
-        env = current_app.config.get("FLASK_ENV", "development")  # Default to development
+        # Check both ENV settings
+        env = current_app.config.get("ENV", "development")
+        flask_env = current_app.config.get("FLASK_ENV", "development")
 
         # In development, just log the SMS
-        if env == "development":
+        if env == "development" or flask_env == "development":
             logger.info(f"Development mode: Would send SMS to {to_number}")
             logger.info(f"Message: {message}")
             return True
