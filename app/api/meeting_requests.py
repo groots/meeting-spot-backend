@@ -731,7 +731,13 @@ class MeetingRequestResendInvitationResource(Resource):
 
         # Check if it's been at least 30 minutes since the last update
         cooldown_period = 30  # minutes
-        cooldown_time = meeting_request.updated_at + timedelta(minutes=cooldown_period)
+
+        # Make sure both datetimes are timezone-aware
+        if meeting_request.updated_at.tzinfo is None:
+            cooldown_time = meeting_request.updated_at.replace(tzinfo=timezone.utc) + timedelta(minutes=cooldown_period)
+        else:
+            cooldown_time = meeting_request.updated_at + timedelta(minutes=cooldown_period)
+
         current_time = datetime.now(timezone.utc)
 
         if current_time < cooldown_time:
