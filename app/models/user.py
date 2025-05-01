@@ -29,6 +29,7 @@ class User(db.Model):
     username = db.Column(db.String(50), unique=True, nullable=True, index=True)
     first_name = db.Column(db.String(50), nullable=True)
     last_name = db.Column(db.String(50), nullable=True)
+    phone = db.Column(db.String(50), nullable=True, index=True)
     facebook_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
 
     # Required columns that should exist in all database versions
@@ -190,6 +191,12 @@ class User(db.Model):
         try:
             if hasattr(self, "last_name") and self.last_name:
                 result["last_name"] = self.last_name
+        except:
+            pass
+
+        try:
+            if hasattr(self, "phone") and self.phone:
+                result["phone"] = self.phone
         except:
             pass
 

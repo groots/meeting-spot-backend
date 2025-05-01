@@ -266,8 +266,29 @@ class Register(Resource):
             # Log registration attempt for debugging
             current_app.logger.info(f"Registration attempt for email: {data['email']}")
 
-            # Create new user
-            user = User(email=data["email"])
+            # Extract optional fields
+            first_name = data.get("first_name")
+            last_name = data.get("last_name")
+            username = data.get("username")
+            phone = data.get("phone")
+            
+            # In case the name field is present, extract first and last name from it
+            # This is for backward compatibility
+            if "name" in data and not (first_name and last_name):
+                name_parts = data["name"].split(" ", 1)
+                if not first_name and len(name_parts) > 0:
+                    first_name = name_parts[0]
+                if not last_name and len(name_parts) > 1:
+                    last_name = name_parts[1]
+            
+            # Create the user
+            user = User(
+                email=data["email"],
+                first_name=first_name,
+                last_name=last_name,
+                username=username,
+                phone=phone
+            )
             user.set_password(data["password"])
 
             # Log user object created
@@ -493,6 +514,41 @@ class UserProfile(Resource):
             current_app.logger.error(f"Error deleting user account: {str(e)}")
             current_app.logger.error(f"Error details: {traceback.format_exc()}")
             return {"error": "An error occurred while deleting your account"}, 500
+
+    @api.doc("update_profile")
+    @api.response(200, "Profile updated successfully")
+    @api.response(401, "Unauthorized")
+    @api.response(404, "User not found")
+    @api.response(500, "Server error")
+    @jwt_required()
+    def patch(self) -> None:
+        """Update the current user's profile"""
+        current_user_id = get_jwt_identity()
+        data = request.get_json()
+
+        try:
+            user = User.query.get(uuid.UUID(current_user_id))
+            if not user:
+                return {"error": "User not found"}, 404
+
+            # Update allowed fields
+            if "first_name" in data:
+                user.first_name = data["first_name"]
+            if "last_name" in data:
+                user.last_name = data["last_name"]
+            if "username" in data:
+                user.username = data["username"]
+            if "phone" in data:
+                user.phone = data["phone"]
+
+            user.updated_at = datetime.now(timezone.utc)
+            db.session.commit()
+
+            return {"message": "Profile updated successfully"}, 200
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error updating profile: {str(e)}")
+            return {"error": "Failed to update profile"}, 500
 
 
 @api.route("/google/callback")
