@@ -690,3 +690,89 @@ class MeetingRequestResultsResource(Resource):
             response.headers["Access-Control-Max-Age"] = "3600"
 
         return response
+
+
+@api.route("/<string:request_id>/resend-invitation")
+@api.param("request_id", "The request identifier")
+class MeetingRequestResendInvitationResource(Resource):
+    @api.doc("resend_invitation")
+    @api.response(200, "Invitation resent successfully")
+    @api.response(400, "Invalid input or rate limited")
+    @api.response(404, "Request not found")
+    @jwt_required()
+    def post(self, request_id) -> None:
+        """Resend invitation email for a meeting request"""
+        try:
+            request_id = uuid.UUID(request_id)
+        except ValueError:
+            return {"error": "Invalid request ID format"}, 400
+
+        # Get user from JWT token
+        user_id = get_jwt_identity()
+        user = User.get_by_token_identity(user_id)
+        if not user:
+            return {"error": "User not found"}, 404
+
+        meeting_request = MeetingRequest.query.get(request_id)
+        if not meeting_request:
+            return {"error": "Request not found"}, 404
+
+        # Check if user owns the request
+        if meeting_request.user_a_id != user.id:
+            return {"error": "Unauthorized"}, 403
+
+        # Check if status is still pending_b_address
+        if meeting_request.status != MeetingRequestStatus.PENDING_B_ADDRESS:
+            return {"error": "Cannot resend invitation for requests that are not pending"}, 400
+
+        # Check if contact type is email
+        if meeting_request.user_b_contact_type != ContactType.EMAIL:
+            return {"error": "Invitation can only be resent for email contacts"}, 400
+
+        # Check if it's been at least 30 minutes since the last update
+        cooldown_period = 30  # minutes
+        cooldown_time = meeting_request.updated_at + timedelta(minutes=cooldown_period)
+        current_time = datetime.now(timezone.utc)
+
+        if current_time < cooldown_time:
+            time_remaining = cooldown_time - current_time
+            minutes_remaining = int(time_remaining.total_seconds() / 60)
+            return {
+                "error": f"Rate limited: Please wait {minutes_remaining} minutes before resending",
+                "cooldown_remaining_minutes": minutes_remaining,
+            }, 429  # Rate limited status code
+
+        # All checks passed, resend the email
+        user_b_email = meeting_request.user_b_contact
+        user_b_name = meeting_request.user_b_name
+
+        try:
+            base_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
+            response_url = f"{base_url}/request/{meeting_request.request_id}?token={meeting_request.token_b}"
+
+            subject = "Reminder: You've been invited to find a meeting spot!"
+            body = f"""
+Hello{f' {user_b_name}' if user_b_name else ''}!
+
+This is a reminder that {user.email} has invited you to find a convenient meeting spot.
+
+To respond with your location, please click the following link:
+{response_url}
+
+This link will expire in 24 hours.
+
+Best regards,
+Find a Meeting Spot Team
+"""
+            send_email(user_b_email, subject, body)
+            current_app.logger.info(f"Reminder email sent to {user_b_email}")
+
+            # Update the timestamp to track when we last sent a reminder
+            meeting_request.updated_at = current_time
+            db.session.commit()
+
+            return {"message": "Invitation resent successfully"}, 200
+
+        except Exception as email_err:
+            current_app.logger.error(f"Failed to send reminder email: {str(email_err)}")
+            return {"error": f"Failed to send email: {str(email_err)}"}, 500

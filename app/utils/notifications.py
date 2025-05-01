@@ -1,6 +1,7 @@
 """Notification utilities for sending emails and SMS."""
 
 import logging
+import os
 
 import requests
 from flask import current_app
@@ -18,32 +19,31 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         # Get Mailgun configuration
         api_key = current_app.config.get("MAILGUN_API_KEY")
         domain = current_app.config.get("MAILGUN_DOMAIN")
-        
+
+        # IMPORTANT: Also check environment variables directly
+        if not api_key:
+            api_key = os.environ.get("MAILGUN_API_KEY")
+        if not domain:
+            domain = os.environ.get("MAILGUN_DOMAIN")
+
         # Explicitly check both FLASK_ENV and ENV configuration
         env = current_app.config.get("ENV", "development")
         flask_env = current_app.config.get("FLASK_ENV", "development")
-        
-        # Log environment settings for debugging
+
+        # Log environment settings and email details for debugging
         logger.info(f"Current ENV: {env}, FLASK_ENV: {flask_env}")
         logger.info(f"Sending email to: {to_email}")
-        logger.info(f"Mailgun Domain: {domain}")
-        logger.info(f"Mailgun API Key: {api_key[:6]}...") if api_key else logger.warning("No Mailgun API key found")
+        logger.info(f"Mailgun Domain configured: {domain}")
+        logger.info(f"Mailgun API Key present: {'Yes' if api_key else 'No'}")
+
+        # Always attempt to send email in development for testing purposes
+        # Remove the development check to allow emails to be sent
 
         # In production, check for required config first
         if not api_key or not domain:
             logger.error("Missing Mailgun configuration. Please set MAILGUN_API_KEY and MAILGUN_DOMAIN.")
+            logger.error("Email will not be sent!")
             return False
-
-        # Special handling for tests - if both API key and domain are present with a production environment, 
-        # assume we want to actually send the email regardless of ENV
-        is_test_environment = api_key and domain and flask_env == "production"
-        
-        # In development mode, just log the email
-        if (env == "development" or flask_env == "development") and not is_test_environment:
-            logger.info(f"Development mode: Would send email to {to_email}")
-            logger.info(f"Subject: {subject}")
-            logger.info(f"Body: {body}")
-            return True
 
         # Mailgun API endpoint
         url = f"https://api.mailgun.net/v3/{domain}/messages"
@@ -64,11 +64,11 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
 
         # Log response details
         logger.info(f"Mailgun API response status code: {response.status_code}")
-        
+
         if response.status_code != 200:
             logger.error(f"Mailgun API error: {response.text}")
             return False
-        
+
         logger.info(f"Email sent successfully to {to_email}")
         return True
     except Exception as e:
@@ -88,7 +88,7 @@ def send_sms(to_number: str, message: str) -> bool:
 
         # Special case for tests
         is_test_environment = flask_env == "production"
-        
+
         # In development, just log the SMS
         if (env == "development" or flask_env == "development") and not is_test_environment:
             logger.info(f"Development mode: Would send SMS to {to_number}")
