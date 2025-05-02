@@ -1,0 +1,94 @@
+name: Production Database Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "yes" to confirm running migrations in PRODUCTION'
+        required: true
+        default: 'no'
+
+jobs:
+  run-migrations:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'yes'
+
+    steps:
+    - name: Confirm Production Action
+      run: |
+        echo "⚠️ RUNNING MIGRATIONS ON PRODUCTION DATABASE ⚠️"
+        echo "This operation was explicitly confirmed by ${{ github.actor }}"
+
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+        cache: 'pip'
+
+    - name: Install dependencies
+      working-directory: ./backend
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v1
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ secrets.GCP_PROJECT }}
+        install_components: 'beta,cloud-sql-proxy'
+
+    - name: Start Cloud SQL Proxy
+      run: |
+        # Download Cloud SQL Auth Proxy
+        curl -o cloud_sql_proxy https://dl.google.com/cloudsql/cloud_sql_proxy_x64.linux
+        chmod +x cloud_sql_proxy
+
+        # Start the proxy (replace with your instance connection name)
+        ./cloud_sql_proxy -instances=${{ secrets.GCP_PROJECT }}:${{ secrets.GCP_REGION }}:findameetingspot=tcp:5432 &
+        echo "Waiting for Cloud SQL Proxy to initialize..."
+        sleep 10
+
+        # Verify proxy is running
+        ps aux | grep cloud_sql_proxy
+
+    - name: Run database migrations
+      working-directory: ./backend
+      env:
+        # Use TCP connection to localhost:5432 where the proxy is forwarding
+        DATABASE_URL: postgresql://postgres:${{ secrets.DB_PASSWORD }}@localhost:5432/findameetingspot
+        FLASK_APP: app:create_app
+        FLASK_ENV: production
+        # Force migrations by disabling CI-specific skipping
+        CI: "false"
+        FORCE_DB_MIGRATIONS_IN_CI: "true"
+        SKIP_DB_MIGRATIONS_IN_CI: "false"
+      run: |
+        echo "Running migrations against production database via Cloud SQL Proxy"
+        python deploy_db_migrations.py
+
+        # Add to GitHub step summary
+        echo "## 📊 Database Migration Summary" >> $GITHUB_STEP_SUMMARY
+        echo "Migrations were applied to the production database" >> $GITHUB_STEP_SUMMARY
+        echo "Executed by: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+        echo "Date: $(date)" >> $GITHUB_STEP_SUMMARY
+
+    - name: Verify migrations
+      working-directory: ./backend
+      env:
+        DATABASE_URL: postgresql://postgres:${{ secrets.DB_PASSWORD }}@localhost:5432/findameetingspot
+        FLASK_APP: app:create_app
+      run: |
+        echo "Verifying database schema after migrations..."
+        # Use Flask-Migrate to check migration status
+        flask db check
+
+        # Add success message to step summary
+        echo "## ✅ Migration Verification" >> $GITHUB_STEP_SUMMARY
+        echo "The database schema is up to date" >> $GITHUB_STEP_SUMMARY

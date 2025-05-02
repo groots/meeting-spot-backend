@@ -11,33 +11,52 @@ on:
 jobs:
   configure-migrations:
     runs-on: ubuntu-latest
+    outputs:
+      ci_ignore_db_errors: ${{ steps.set-env-vars.outputs.ci_ignore_db_errors }}
+      skip_db_migrations_in_ci: ${{ steps.set-env-vars.outputs.skip_db_migrations_in_ci }}
+      force_db_migrations_in_ci: ${{ steps.set-env-vars.outputs.force_db_migrations_in_ci }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Configure database migration settings
+        id: set-env-vars
         run: |
           echo "Setting CI environment variables for database migrations"
+          echo "ci_ignore_db_connection_errors=true" >> $GITHUB_OUTPUT
           echo "CI_IGNORE_DB_CONNECTION_ERRORS=true" >> $GITHUB_ENV
 
-          # For testing environments, we can skip migrations if desired
+          # For testing and CI environments, we want to ignore DB errors
           if [[ "${{ inputs.environment }}" == "dev" || "${{ inputs.environment }}" == "ci" ]]; then
-            echo "SKIP_DB_MIGRATIONS_IN_CI=true" >> $GITHUB_ENV
-          fi
-
-      - name: Apply migrations with safety flags
-        run: |
-          # This step configures environment variables for subsequent steps
-          if [[ "${{ inputs.environment }}" == "production" ]]; then
-            echo "Running with production database connection"
-            # In production, we want migration errors to fail the build
-            echo "CI_IGNORE_DB_ERRORS=false" >> $GITHUB_ENV
-          else
-            # In non-production environments, we can optionally ignore errors
+            echo "ci_ignore_db_errors=true" >> $GITHUB_OUTPUT
             echo "CI_IGNORE_DB_ERRORS=true" >> $GITHUB_ENV
-            # Set a memory database for CI if no real database is available
-            if [[ -z "$DATABASE_URL" ]]; then
-              echo "DATABASE_URL=sqlite:///:memory:" >> $GITHUB_ENV
-            fi
+          else
+            echo "ci_ignore_db_errors=false" >> $GITHUB_OUTPUT
+            echo "CI_IGNORE_DB_ERRORS=false" >> $GITHUB_ENV
           fi
 
+          # For non-production environments, we can skip migrations if desired
+          if [[ "${{ inputs.environment }}" != "production" ]]; then
+            echo "skip_db_migrations_in_ci=true" >> $GITHUB_OUTPUT
+            echo "SKIP_DB_MIGRATIONS_IN_CI=true" >> $GITHUB_ENV
+            echo "force_db_migrations_in_ci=false" >> $GITHUB_OUTPUT
+            echo "FORCE_DB_MIGRATIONS_IN_CI=false" >> $GITHUB_ENV
+          else
+            echo "skip_db_migrations_in_ci=false" >> $GITHUB_OUTPUT
+            echo "SKIP_DB_MIGRATIONS_IN_CI=false" >> $GITHUB_ENV
+            echo "force_db_migrations_in_ci=true" >> $GITHUB_OUTPUT
+            echo "FORCE_DB_MIGRATIONS_IN_CI=true" >> $GITHUB_ENV
+          fi
+
+      - name: Create step summary
+        run: |
+          echo "## Database Migration Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Variable | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CI_IGNORE_DB_CONNECTION_ERRORS | ${{ steps.set-env-vars.outputs.ci_ignore_db_connection_errors }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CI_IGNORE_DB_ERRORS | ${{ steps.set-env-vars.outputs.ci_ignore_db_errors }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| SKIP_DB_MIGRATIONS_IN_CI | ${{ steps.set-env-vars.outputs.skip_db_migrations_in_ci }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| FORCE_DB_MIGRATIONS_IN_CI | ${{ steps.set-env-vars.outputs.force_db_migrations_in_ci }} |" >> $GITHUB_STEP_SUMMARY

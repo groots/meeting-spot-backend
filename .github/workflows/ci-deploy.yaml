@@ -19,6 +19,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: setup-migrations
 
+    env:
+      CI_IGNORE_DB_CONNECTION_ERRORS: true
+      CI_IGNORE_DB_ERRORS: true
+      SKIP_DB_MIGRATIONS_IN_CI: true  # Always skip in CI
+      DATABASE_URL: 'sqlite:////memory'
+
     steps:
     - uses: actions/checkout@v3
 
@@ -43,10 +49,10 @@ jobs:
     - name: Run tests
       working-directory: ./backend
       run: |
-        # Set CI environment variables from previous job
-        export CI_IGNORE_DB_CONNECTION_ERRORS=true
-        export CI_IGNORE_DB_ERRORS=true
-        export DATABASE_URL=sqlite:///:memory:
+        # Set testing environment
+        export FLASK_ENV=testing
+        export FLASK_APP=app:create_app
+        export DATABASE_URL='sqlite:////memory'
 
         # Run tests
         pytest
@@ -58,8 +64,12 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     env:
-      # Import environment variables from the setup-migrations job
-      CI_IGNORE_DB_CONNECTION_ERRORS: true
+      # Force migration skipping in CI
+      CI: "true"
+      CI_IGNORE_DB_CONNECTION_ERRORS: "true"
+      CI_IGNORE_DB_ERRORS: "true"
+      SKIP_DB_MIGRATIONS_IN_CI: "true"
+      FORCE_DB_MIGRATIONS_IN_CI: "false"
 
     steps:
     - uses: actions/checkout@v3
@@ -84,18 +94,24 @@ jobs:
     - name: Set up Cloud SQL Proxy
       uses: google-github-actions/setup-gcloud@v1
 
-    - name: Run database migrations
+    - name: Set database migration strategy
+      run: |
+        echo "## Database Migration Strategy" >> $GITHUB_STEP_SUMMARY
+        echo "Skipping migrations in CI environment" >> $GITHUB_STEP_SUMMARY
+        echo "Migrations will be applied in production environment using the dedicated migration workflow" >> $GITHUB_STEP_SUMMARY
+        echo "To run migrations in production, use the 'Production Database Migrations' workflow" >> $GITHUB_STEP_SUMMARY
+
+    - name: Skip database migrations (deployment only)
       working-directory: ./backend
       env:
-        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        CI: "true"
+        SKIP_DB_MIGRATIONS_IN_CI: "true"
         FLASK_APP: app:create_app
-        CI_IGNORE_DB_CONNECTION_ERRORS: true
       run: |
-        # Run migrations with error handling from our env.py
-        python -m flask db upgrade || {
-          echo "Migration failed but we will continue with the deployment"
-          echo "Check the logs for more details"
-        }
+        echo "Explicitly skipping database migrations in CI environment"
+        echo "To run migrations, use the dedicated 'Production Database Migrations' workflow"
+        echo "## ⏩ Database Migrations Skipped" >> $GITHUB_STEP_SUMMARY
+        echo "Migrations were skipped and will be handled separately" >> $GITHUB_STEP_SUMMARY
 
     - name: Deploy to Cloud Run
       working-directory: ./backend
@@ -109,4 +125,6 @@ jobs:
     - name: Verify deployment
       run: |
         echo "Deployment completed. Verify the application is running correctly."
-
+        echo "## ✅ Deployment Complete" >> $GITHUB_STEP_SUMMARY
+        echo "Application has been deployed to Cloud Run." >> $GITHUB_STEP_SUMMARY
+        echo "**Note**: Database migrations were skipped. Run migrations separately using the dedicated workflow." >> $GITHUB_STEP_SUMMARY
