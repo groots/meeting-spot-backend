@@ -25,19 +25,14 @@ class FixesTestCase(unittest.TestCase):
         db.create_all()
 
         # Create test user
-        self.test_user = User(
-            email="testuser@example.com",
-            first_name="Test",
-            last_name="User"
-        )
+        self.test_user = User(email="testuser@example.com", first_name="Test", last_name="User")
         self.test_user.set_password("password123")
         db.session.add(self.test_user)
         db.session.commit()
 
         # Get JWT token for authenticated requests
         response = self.client.post(
-            "/api/v1/auth/login",
-            json={"email": "testuser@example.com", "password": "password123"}
+            "/api/v1/auth/login", json={"email": "testuser@example.com", "password": "password123"}
         )
         self.token = response.json.get("access_token")
 
@@ -53,7 +48,7 @@ class FixesTestCase(unittest.TestCase):
         self.assertIsNotNone(current_app.config.get("ENCRYPTION_KEY"))
 
         # Import the middleware module to test its availability
-        from app.middleware import register_middleware, ensure_encryption_key, DEFAULT_ENCRYPTION_KEY
+        from app.middleware import DEFAULT_ENCRYPTION_KEY, ensure_encryption_key, register_middleware
 
         # Ensure default key matches expected value
         self.assertEqual(DEFAULT_ENCRYPTION_KEY, "wx3XysUzuC2Um5gRWIiqqxsG1iy62F8T9f_WQoLlquA")
@@ -61,7 +56,7 @@ class FixesTestCase(unittest.TestCase):
         # Simulate clearing the key and test that ensure_encryption_key resets it
         test_app = create_app("testing")
         test_app.config["ENCRYPTION_KEY"] = None
-        
+
         with test_app.app_context():
             ensure_encryption_key(test_app)
             self.assertEqual(test_app.config.get("ENCRYPTION_KEY"), DEFAULT_ENCRYPTION_KEY)
@@ -104,14 +99,14 @@ class FixesTestCase(unittest.TestCase):
                     "/api/v1/auth/me/picture",
                     headers={"Authorization": f"Bearer {self.token}"},
                     data={"profile_picture": test_image},
-                    content_type="multipart/form-data"
+                    content_type="multipart/form-data",
                 )
-                
+
                 # Verify the endpoint responded correctly
                 self.assertEqual(response.status_code, 200)
                 self.assertTrue(response.json.get("success"))
                 self.assertIn("url", response.json)
-                
+
                 # Verify that save was called
                 mock_save.assert_called_once()
 
@@ -129,7 +124,7 @@ class FixesTestCase(unittest.TestCase):
             "/api/v1/auth/me/picture",
             headers={"Authorization": f"Bearer {self.token}"},
             data={"profile_picture": invalid_file},
-            content_type="multipart/form-data"
+            content_type="multipart/form-data",
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("Invalid file extension", response.json.get("error", ""))
@@ -139,7 +134,7 @@ class FixesTestCase(unittest.TestCase):
             "/api/v1/auth/me/picture",
             headers={"Authorization": f"Bearer {self.token}"},
             data={},
-            content_type="multipart/form-data"
+            content_type="multipart/form-data",
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("No profile picture", response.json.get("error", ""))
