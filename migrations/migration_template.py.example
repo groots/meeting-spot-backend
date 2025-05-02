@@ -1,0 +1,137 @@
+"""${message}
+
+Revision ID: ${revision}
+Revises: ${down_revision}
+Create Date: ${create_date}
+
+"""
+import sqlalchemy as sa
+from alembic import op
+from sqlalchemy import inspect, text
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('alembic.migration')
+
+# revision identifiers, used by Alembic.
+revision = ${repr(revision)}
+down_revision = ${repr(down_revision)}
+branch_labels = ${repr(branch_labels)}
+depends_on = ${repr(depends_on)}
+
+
+def table_exists(table_name):
+    """Check if a table exists in the database."""
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    return table_name in inspector.get_table_names()
+
+
+def column_exists(table_name, column_name):
+    """Check if a column exists in a table."""
+    conn = op.get_bind()
+    inspector = inspect(conn)
+
+    if not table_exists(table_name):
+        return False
+
+    columns = [col['name'] for col in inspector.get_columns(table_name)]
+    return column_name in columns
+
+
+def index_exists(table_name, index_name):
+    """Check if an index exists on a table."""
+    conn = op.get_bind()
+    inspector = inspect(conn)
+
+    if not table_exists(table_name):
+        return False
+
+    indices = [idx['name'] for idx in inspector.get_indexes(table_name)]
+    return index_name in indices
+
+
+def upgrade():
+    """
+    Upgrade database schema and/or data.
+
+    IMPORTANT:
+    1. Make this migration idempotent (safe to run multiple times)
+    2. Include proper error handling
+    3. Add logging for important operations
+    4. For data migrations, consider performance on large tables
+    """
+    # Example: Adding a new column safely
+    if table_exists('users'):
+        if not column_exists('users', 'new_column_name'):
+            logger.info("Adding new_column_name to users table")
+            op.add_column('users', sa.Column('new_column_name', sa.String(255), nullable=True))
+
+            # Create an index if needed
+            if not index_exists('users', 'ix_users_new_column_name'):
+                op.create_index('ix_users_new_column_name', 'users', ['new_column_name'], unique=False)
+
+            logger.info("Successfully added new_column_name to users table")
+        else:
+            logger.info("Column new_column_name already exists in users table")
+    else:
+        logger.warning("Table users does not exist, skipping column addition")
+
+    # Example: Data migration with batching for large tables
+    # conn = op.get_bind()
+    # try:
+    #     # Process in batches of 1000 records for large tables
+    #     batch_size = 1000
+    #     offset = 0
+    #
+    #     while True:
+    #         result = conn.execute(text(
+    #             f"SELECT id FROM users WHERE processed = FALSE ORDER BY id LIMIT {batch_size} OFFSET {offset}"
+    #         ))
+    #         rows = result.fetchall()
+    #
+    #         if not rows:
+    #             break
+    #
+    #         for row in rows:
+    #             # Process each record
+    #             user_id = row[0]
+    #             conn.execute(text(
+    #                 f"UPDATE users SET processed = TRUE, updated_at = NOW() WHERE id = {user_id}"
+    #             ))
+    #
+    #         # Commit each batch
+    #         conn.execute(text("COMMIT"))
+    #         offset += batch_size
+    #         logger.info(f"Processed batch of {len(rows)} records, offset {offset}")
+    #
+    # except Exception as e:
+    #     logger.error(f"Error during data migration: {str(e)}")
+    #     raise
+
+
+def downgrade():
+    """
+    Revert the changes made in the upgrade function.
+
+    IMPORTANT:
+    1. Make downgrades as safe as upgrades
+    2. Consider if data migrations can be reverted
+    3. Include proper error handling
+    """
+    # Example: Removing the column safely
+    if table_exists('users'):
+        if column_exists('users', 'new_column_name'):
+            # Drop the index first
+            if index_exists('users', 'ix_users_new_column_name'):
+                logger.info("Dropping index ix_users_new_column_name")
+                op.drop_index('ix_users_new_column_name', table_name='users')
+
+            logger.info("Removing new_column_name from users table")
+            op.drop_column('users', 'new_column_name')
+            logger.info("Successfully removed new_column_name from users table")
+        else:
+            logger.info("Column new_column_name does not exist in users table")
+    else:
+        logger.warning("Table users does not exist, skipping column removal")

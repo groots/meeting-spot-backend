@@ -1,0 +1,121 @@
+# Database Migration Step for CI/CD Pipeline
+# This configuration can be integrated into GitHub Actions, GitLab CI, or other CI/CD platforms
+
+name: Database Migration
+
+# This step should run after tests pass and before deployment
+# For GitHub Actions:
+on:
+  workflow_call:  # Makes this reusable in other workflows
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: 'Environment to deploy to (staging or production)'
+
+jobs:
+  migrate-database:
+    name: Migrate Database
+    runs-on: ubuntu-latest
+    # For production, you might want to add approval requirements
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Migration dry run
+        working-directory: ./backend
+        run: |
+          # Set up environment variables securely from GitHub Secrets
+          export FLASK_APP=app:create_app
+          export FLASK_ENV=${{ inputs.environment }}
+          export DATABASE_URL=${{ secrets.DATABASE_URL }}
+
+          # Run migrations in dry-run mode first to check
+          python deploy_db_migrations.py --dry-run
+
+      - name: Apply database migrations
+        if: success()  # Only run if the dry run was successful
+        working-directory: ./backend
+        run: |
+          export FLASK_APP=app:create_app
+          export FLASK_ENV=${{ inputs.environment }}
+          export DATABASE_URL=${{ secrets.DATABASE_URL }}
+
+          # Apply migrations
+          python deploy_db_migrations.py
+
+      - name: Verify database state
+        if: success()  # Only run if migrations were successful
+        working-directory: ./backend
+        run: |
+          export FLASK_APP=app:create_app
+          export FLASK_ENV=${{ inputs.environment }}
+          export DATABASE_URL=${{ secrets.DATABASE_URL }}
+
+          # Verify database state using Flask-Migrate
+          flask db current
+
+          # Simple database connectivity test
+          python -c "
+          from app import create_app, db
+          from sqlalchemy import text
+          app = create_app()
+          with app.app_context():
+              result = db.session.execute(text('SELECT 1'))
+              assert next(result)[0] == 1, 'Database connection failed'
+              print('Database connection verified')
+          "
+
+      - name: Notify team on migration success
+        if: success()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { repo, owner } = context.repo;
+            const run_id = context.runId;
+            const run_url = `https://github.com/${owner}/${repo}/actions/runs/${run_id}`;
+
+            github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: context.issue.number,
+              body: `✅ Database migration successfully applied to ${inputs.environment} environment.\n[View details](${run_url})`
+            });
+
+      - name: Notify team on migration failure
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { repo, owner } = context.repo;
+            const run_id = context.runId;
+            const run_url = `https://github.com/${owner}/${repo}/actions/runs/${run_id}`;
+
+            github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: context.issue.number,
+              body: `❌ Database migration failed for ${inputs.environment} environment.\n[View details](${run_url})\nPlease check the logs and resolve before deployment!`
+            });
