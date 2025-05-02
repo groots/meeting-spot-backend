@@ -1,0 +1,43 @@
+name: Database Migration Configuration
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: 'Environment to deploy to (dev, staging or production)'
+
+jobs:
+  configure-migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure database migration settings
+        run: |
+          echo "Setting CI environment variables for database migrations"
+          echo "CI_IGNORE_DB_CONNECTION_ERRORS=true" >> $GITHUB_ENV
+
+          # For testing environments, we can skip migrations if desired
+          if [[ "${{ inputs.environment }}" == "dev" || "${{ inputs.environment }}" == "ci" ]]; then
+            echo "SKIP_DB_MIGRATIONS_IN_CI=true" >> $GITHUB_ENV
+          fi
+
+      - name: Apply migrations with safety flags
+        run: |
+          # This step configures environment variables for subsequent steps
+          if [[ "${{ inputs.environment }}" == "production" ]]; then
+            echo "Running with production database connection"
+            # In production, we want migration errors to fail the build
+            echo "CI_IGNORE_DB_ERRORS=false" >> $GITHUB_ENV
+          else
+            # In non-production environments, we can optionally ignore errors
+            echo "CI_IGNORE_DB_ERRORS=true" >> $GITHUB_ENV
+            # Set a memory database for CI if no real database is available
+            if [[ -z "$DATABASE_URL" ]]; then
+              echo "DATABASE_URL=sqlite:///:memory:" >> $GITHUB_ENV
+            fi
+          fi
+

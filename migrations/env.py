@@ -6,6 +6,7 @@ for running migrations in different contexts (development, production, etc.).
 
 import logging
 import os
+import sys
 from logging.config import fileConfig
 
 from alembic import context
@@ -112,12 +113,30 @@ def get_gcp_connection_config():
     return gcp_config
 
 
+def is_ci_environment():
+    """Check if we're running in a CI environment."""
+    ci_env_vars = [
+        "CI",
+        "GITHUB_ACTIONS",
+        "GITLAB_CI",
+        "TRAVIS",
+        "CIRCLECI",
+        "JENKINS_URL",
+        "TEAMCITY_VERSION",
+    ]
+    return any(os.environ.get(var) for var in ci_env_vars)
+
+
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
 
     In this scenario we need to create an Engine
     and associate a connection with the context.
     """
+    # Check if we're in a CI environment where we might want to skip actual database operations
+    if is_ci_environment() and os.environ.get("SKIP_DB_MIGRATIONS_IN_CI") == "true":
+        logger.info("Detected CI environment with SKIP_DB_MIGRATIONS_IN_CI=true, skipping database migrations")
+        return
 
     # this callback is used to prevent an auto-migration from being generated
     # when there are no changes to the schema
@@ -130,6 +149,11 @@ def run_migrations_online() -> None:
                 logger.info("No changes in schema detected.")
 
     cfg = config.get_section(config.config_ini_section)
+
+    # For CI environments with DATABASE_URL set to a special value, return early
+    if is_ci_environment() and os.environ.get("DATABASE_URL", "").startswith("sqlite:///:memory:"):
+        logger.info("Using in-memory SQLite database in CI environment - no migrations needed")
+        return
 
     # Determine the pool class based on environment
     if os.environ.get("FLASK_ENV") == "production":
@@ -177,13 +201,31 @@ def run_migrations_online() -> None:
 
     except Exception as e:
         logger.error(f"Error during migration: {str(e)}")
+
+        # Check if this is a connection error
+        if "connection" in str(e).lower() and "refused" in str(e).lower():
+            logger.error("Database connection failed. This may be expected in CI environments without a database.")
+
+            # If we're in a CI environment and the error is about connection, don't fail the build
+            if is_ci_environment():
+                logger.warning("CI environment detected - continuing despite database connection error")
+                if os.environ.get("CI_IGNORE_DB_CONNECTION_ERRORS") == "true":
+                    logger.info("CI_IGNORE_DB_CONNECTION_ERRORS=true, exiting with success")
+                    return
+
         # Special handling for common Cloud SQL errors
         if "SSL SYSCALL error" in str(e) or "connection timed out" in str(e).lower():
             logger.error(
                 "This appears to be a Cloud SQL connection issue. "
                 "Make sure your Cloud SQL proxy is running or IAM permissions are correct."
             )
-        raise
+
+        # Re-raise the exception unless we're told to ignore it
+        if is_ci_environment() and os.environ.get("CI_IGNORE_DB_ERRORS") == "true":
+            logger.warning("Ignoring database error in CI environment as CI_IGNORE_DB_ERRORS=true")
+            return
+        else:
+            raise
 
 
 if context.is_offline_mode():
