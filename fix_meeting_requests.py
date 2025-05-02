@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import os
+
 os.environ["ENCRYPTION_KEY"] = "wx3XysUzuC2Um5gRWIiqqxsG1iy62F8T9f_WQoLlquA"
 from app import create_app
 from app.models.meeting_request import MeetingRequest
+
 app = create_app("development")
 with app.app_context():
     print("Testing MeetingRequest query...")
