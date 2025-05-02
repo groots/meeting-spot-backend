@@ -32,6 +32,8 @@ class User(db.Model):
     phone = db.Column(db.String(50), nullable=True, index=True)
     facebook_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
 
+    profile_picture_url = db.Column(db.String(255), nullable=True)
+
     # Required columns that should exist in all database versions
     password_hash = db.Column(db.String(256))
     google_oauth_id = db.Column(db.String(255), unique=True, nullable=True, index=True)
@@ -196,6 +198,9 @@ class User(db.Model):
 
         try:
             if hasattr(self, "phone") and self.phone:
+
+            if hasattr(self, "profile_picture_url") and self.profile_picture_url:
+                result["profile_picture_url"] = self.profile_picture_url
                 result["phone"] = self.phone
         except:
             pass
