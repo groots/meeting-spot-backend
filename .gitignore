@@ -63,3 +63,4 @@ cloud_sql_proxy
 cloud_sql_proxy
 Dockerfile.verify
 *.bak
+/logs/*
