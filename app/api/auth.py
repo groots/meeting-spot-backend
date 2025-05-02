@@ -10,11 +10,13 @@ from flask import current_app, request
 from flask_jwt_extended import create_access_token, create_refresh_token, get_jwt_identity, jwt_required
 from flask_restx import Namespace, Resource, fields
 from google.oauth2 import id_token
+from sqlalchemy import inspect
 from werkzeug.security import check_password_hash
 
 from .. import db
 from ..models import User
 
+# Create auth namespace
 api = Namespace("auth", description="Authentication operations")
 
 # Swagger models
@@ -1122,3 +1124,111 @@ class TokenRefresh(Resource):
             current_app.logger.error(f"Error during token refresh: {str(e)}")
             current_app.logger.error(traceback.format_exc())
             return {"error": "An error occurred during token refresh"}, 401
+
+
+@api.route("/me/picture")
+class UserProfilePicture(Resource):
+    @api.doc("upload_profile_picture")
+    @api.response(200, "Profile picture uploaded successfully")
+    @api.response(400, "Invalid file")
+    @api.response(401, "Unauthorized")
+    @api.response(500, "Server error")
+    @jwt_required()
+    def post(self) -> None:
+        """Upload a profile picture for the current user"""
+        try:
+            current_user_id = get_jwt_identity()
+            current_app.logger.info(f"[/me/picture] Uploading profile picture for user ID: {current_user_id}")
+
+            # Check if user exists
+            user = User.get_by_token_identity(current_user_id)
+            if not user:
+                current_app.logger.error(f"[/me/picture] User not found for profile picture upload: {current_user_id}")
+                return {"error": "User not found"}, 404
+
+            # Check if profile_picture file was uploaded
+            if "profile_picture" not in request.files:
+                current_app.logger.error("[/me/picture] No profile_picture part in the request")
+                return {"error": "No profile picture found in request"}, 400
+
+            file = request.files["profile_picture"]
+
+            # Check if file exists and has a filename
+            if file.filename == "":
+                current_app.logger.error("[/me/picture] Empty filename provided")
+                return {"error": "No file selected"}, 400
+
+            # Check file extension
+            allowed_extensions = {"png", "jpg", "jpeg", "gif"}
+            if not "." in file.filename or file.filename.rsplit(".", 1)[1].lower() not in allowed_extensions:
+                current_app.logger.error(f"[/me/picture] Invalid file extension: {file.filename}")
+                return {"error": "Invalid file extension. Allowed: png, jpg, jpeg, gif"}, 400
+
+            # Create storage directory if it doesn't exist
+            profile_pics_dir = os.path.join(current_app.instance_path, "profile_pictures")
+            os.makedirs(profile_pics_dir, exist_ok=True)
+
+            # Generate a unique filename
+            file_extension = file.filename.rsplit(".", 1)[1].lower()
+            new_filename = f"{current_user_id}.{file_extension}"
+            file_path = os.path.join(profile_pics_dir, new_filename)
+
+            # Save the file
+            file.save(file_path)
+            current_app.logger.info(f"[/me/picture] Profile picture saved to {file_path}")
+
+            # Update user model if it has a profile_picture_url field
+            try:
+                # Check if the column exists in the table
+                table_inspection = inspect(db.engine).get_columns("users")
+                columns = [col["name"] for col in table_inspection]
+
+                if "profile_picture_url" in columns:
+                    # Column exists, update it
+                    from sqlalchemy import text
+
+                    with db.engine.connect() as conn:
+                        update_sql = text(
+                            """
+                            UPDATE users
+                            SET profile_picture_url = :url, updated_at = :updated_at
+                            WHERE id = :user_id
+                        """
+                        )
+                        conn.execute(
+                            update_sql,
+                            {
+                                "url": f"/profile_pictures/{new_filename}",
+                                "updated_at": datetime.now(timezone.utc),
+                                "user_id": current_user_id,
+                            },
+                        )
+                        conn.commit()
+                    current_app.logger.info(f"[/me/picture] Updated profile_picture_url for user {current_user_id}")
+            except Exception as db_error:
+                current_app.logger.error(f"[/me/picture] Error updating profile_picture_url: {str(db_error)}")
+                # Continue despite this error
+
+            return {
+                "success": True,
+                "message": "Profile picture uploaded successfully",
+                "url": f"/profile_pictures/{new_filename}",
+            }, 200
+
+        except Exception as e:
+            current_app.logger.error(f"[/me/picture] Error uploading profile picture: {str(e)}")
+            current_app.logger.error(f"[/me/picture] Error details: {traceback.format_exc()}")
+            return {"error": "Failed to upload profile picture"}, 500
+
+    @api.doc("options_profile_picture")
+    def options(self) -> None:
+        """Preflight response for profile picture upload"""
+        response = current_app.make_default_options_response()
+        response.headers["Access-Control-Allow-Origin"] = current_app.config.get("CORS_ORIGIN", "*")
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+        response.headers[
+            "Access-Control-Allow-Headers"
+        ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Max-Age"] = "3600"
+        return response

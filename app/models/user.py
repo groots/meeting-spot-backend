@@ -198,10 +198,15 @@ class User(db.Model):
 
         try:
             if hasattr(self, "phone") and self.phone:
+                result["phone"] = self.phone
 
+                result["phone"] = self.phone
+        except:
+            pass
+
+        try:
             if hasattr(self, "profile_picture_url") and self.profile_picture_url:
                 result["profile_picture_url"] = self.profile_picture_url
-                result["phone"] = self.phone
         except:
             pass
 
