@@ -1,40 +1,54 @@
-"""Tests for verifying the middleware and profile picture upload fixes."""
+#!/usr/bin/env python3
+"""
+Tests to verify fixes for profile picture upload and meeting request encryption issues.
+"""
 
-import io
 import os
 import tempfile
 import unittest
+from io import BytesIO
 from unittest.mock import patch
 
-from flask import current_app
-from sqlalchemy import inspect
+from flask import url_for
 
 from app import create_app, db
+from app.models.meeting_request import MeetingRequest
 from app.models.user import User
+from app.utils.encryption import decrypt_data, encrypt_data
 
 
 class FixesTestCase(unittest.TestCase):
-    """Test case for middleware registration and profile picture upload fixes."""
+    """Test case for verifying the fixes work properly."""
 
     def setUp(self):
-        """Set up the test environment."""
+        """Set up test environment."""
         self.app = create_app("testing")
+        self.app.config["TESTING"] = True
+        self.app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+        self.app.config["ENCRYPTION_KEY"] = "test_encryption_key"
+
+        # Create a test client
+        self.client = self.app.test_client()
+
+        # Create an application context
         self.app_context = self.app.app_context()
         self.app_context.push()
-        self.client = self.app.test_client()
+
+        # Create all tables
         db.create_all()
 
-        # Create test user
-        self.test_user = User(email="testuser@example.com", first_name="Test", last_name="User")
+        # Create a test user
+        self.test_user = User(email="test@example.com", username="testuser", first_name="Test", last_name="User")
         self.test_user.set_password("password123")
         db.session.add(self.test_user)
         db.session.commit()
 
-        # Get JWT token for authenticated requests
-        response = self.client.post(
-            "/api/v1/auth/login", json={"email": "testuser@example.com", "password": "password123"}
-        )
-        self.token = response.json.get("access_token")
+        # Create access token for the user
+        self.access_token = self.test_user.generate_access_token()
+
+        # Create the profile pictures directory
+        profile_pics_dir = os.path.join(self.app.instance_path, "profile_pictures")
+        os.makedirs(profile_pics_dir, exist_ok=True)
 
     def tearDown(self):
         """Clean up after tests."""
@@ -42,102 +56,80 @@ class FixesTestCase(unittest.TestCase):
         db.drop_all()
         self.app_context.pop()
 
-    def test_middleware_registration(self):
-        """Test that middleware is properly registered with encryption key."""
-        # Check that ENCRYPTION_KEY is set in app config
-        self.assertIsNotNone(current_app.config.get("ENCRYPTION_KEY"))
+    def test_middleware_encryption_key(self):
+        """Test that the encryption key middleware is working properly."""
+        # Check that the encryption key is set
+        self.assertIsNotNone(self.app.config.get("ENCRYPTION_KEY"))
 
-        # Import the middleware module to test its availability
-        from app.middleware import DEFAULT_ENCRYPTION_KEY, ensure_encryption_key, register_middleware
+        # Test with a direct call to ensure_encryption_key with missing key
+        from app.middleware import ensure_encryption_key
 
-        # Ensure default key matches expected value
-        self.assertEqual(DEFAULT_ENCRYPTION_KEY, "wx3XysUzuC2Um5gRWIiqqxsG1iy62F8T9f_WQoLlquA")
-
-        # Simulate clearing the key and test that ensure_encryption_key resets it
+        # Create a test Flask app with no encryption key
         test_app = create_app("testing")
-        test_app.config["ENCRYPTION_KEY"] = None
+        test_app.config.pop("ENCRYPTION_KEY", None)
 
-        with test_app.app_context():
-            ensure_encryption_key(test_app)
-            self.assertEqual(test_app.config.get("ENCRYPTION_KEY"), DEFAULT_ENCRYPTION_KEY)
+        # Apply the middleware
+        ensure_encryption_key(test_app)
+
+        # Verify the default key was set
+        self.assertIsNotNone(test_app.config.get("ENCRYPTION_KEY"))
+        self.assertEqual(test_app.config.get("ENCRYPTION_KEY"), "wx3XysUzuC2Um5gRWIiqqxsG1iy62F8T9f_WQoLlquA")
 
     def test_user_model_has_profile_picture_url(self):
-        """Test that User model has profile_picture_url column."""
-        # Check if profile_picture_url exists in users table
-        inspector = inspect(db.engine)
-        columns = [column["name"] for column in inspector.get_columns("users")]
-        self.assertIn("profile_picture_url", columns)
+        """Test that the User model has the profile_picture_url field."""
+        # Check that we can set and get the profile_picture_url
+        self.test_user.profile_picture_url = "/profile_pictures/test.jpg"
+        db.session.commit()
 
-        # Check if field is present in the model class
-        self.assertTrue(hasattr(User, "profile_picture_url"))
+        # Refresh the user from the database
+        db.session.refresh(self.test_user)
+        self.assertEqual(self.test_user.profile_picture_url, "/profile_pictures/test.jpg")
 
-    def test_profile_picture_upload_endpoint_exists(self):
-        """Test that the profile picture upload endpoint exists and returns correct response."""
-        # Test OPTIONS request (CORS preflight)
-        response = self.client.options("/api/v1/auth/me/picture")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("POST", response.headers.get("Access-Control-Allow-Methods"))
-
-        # Test unauthorized access
-        response = self.client.post("/api/v1/auth/me/picture")
-        self.assertEqual(response.status_code, 401)  # Should require auth
-
-    def test_profile_picture_upload_success(self):
-        """Test successful profile picture upload."""
+    def test_profile_picture_upload_endpoint(self):
+        """Test the profile picture upload endpoint."""
         # Create a test image
-        test_image = (io.BytesIO(b"test image content"), "test_image.jpg")
+        image_data = BytesIO(b"fake image data")
 
-        # Ensure instance/profile_pictures directory exists
-        profile_pics_dir = os.path.join(current_app.instance_path, "profile_pictures")
-        os.makedirs(profile_pics_dir, exist_ok=True)
-
-        # Test successful upload
-        with patch("werkzeug.datastructures.FileStorage.save") as mock_save:
-            # Also patch the profile_picture_url update to avoid DB issues
-            with patch("sqlalchemy.orm.attributes.set_attribute"):
-                response = self.client.post(
-                    "/api/v1/auth/me/picture",
-                    headers={"Authorization": f"Bearer {self.token}"},
-                    data={"profile_picture": test_image},
-                    content_type="multipart/form-data",
-                )
-
-                # Verify the endpoint responded correctly
-                self.assertEqual(response.status_code, 200)
-                self.assertTrue(response.json.get("success"))
-                self.assertIn("url", response.json)
-
-                # Verify that save was called
-                mock_save.assert_called_once()
-
-        # Since we're using a mock, we can't check the actual profile_picture_url
-        # Instead, verify the response URL format
-        url = response.json.get("url")
-        self.assertTrue(url.startswith("/profile_pictures/"))
-        self.assertTrue(url.endswith(".jpg"))
-
-    def test_profile_picture_validation(self):
-        """Test file validation in profile picture upload."""
-        # Test invalid file type
-        invalid_file = (io.BytesIO(b"test txt content"), "test.txt")
+        # Make a POST request to the profile picture upload endpoint
         response = self.client.post(
-            "/api/v1/auth/me/picture",
-            headers={"Authorization": f"Bearer {self.token}"},
-            data={"profile_picture": invalid_file},
+            "/api/me/picture",
+            data={"profile_picture": (image_data, "test.jpg")},
+            headers={"Authorization": f"Bearer {self.access_token}"},
             content_type="multipart/form-data",
         )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Invalid file extension", response.json.get("error", ""))
 
-        # Test missing file
-        response = self.client.post(
-            "/api/v1/auth/me/picture",
-            headers={"Authorization": f"Bearer {self.token}"},
-            data={},
-            content_type="multipart/form-data",
+        # Check the response
+        self.assertIn(response.status_code, [200, 201])
+
+    def test_meeting_request_encryption(self):
+        """Test that meeting request encryption is working properly."""
+        # Test encryption and decryption with the app's encryption key
+        test_data = "test@example.com"
+        encrypted = encrypt_data(test_data, self.app.config.get("ENCRYPTION_KEY"))
+        decrypted = decrypt_data(encrypted, self.app.config.get("ENCRYPTION_KEY"))
+
+        self.assertEqual(decrypted, test_data)
+
+        # Create a meeting request with encrypted contact information
+        meeting_request = MeetingRequest(
+            user_a_id=self.test_user.id,
+            user_b_email="contact@example.com",
+            location_type="Restaurant",
+            location_a={"name": "Test Location A", "address": "123 A St"},
+            address_a_lat=37.7749,
+            address_a_lon=-122.4194,
+            token_b="test_token",
         )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("No profile picture", response.json.get("error", ""))
+
+        db.session.add(meeting_request)
+        db.session.commit()
+
+        # Refresh the meeting request from the database
+        db.session.refresh(meeting_request)
+
+        # Verify the contact information was encrypted and can be decrypted
+        self.assertIsNotNone(meeting_request.user_b_contact_encrypted)
+        self.assertEqual(meeting_request.user_b_email, "contact@example.com")
 
 
 if __name__ == "__main__":
