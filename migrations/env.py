@@ -131,22 +131,24 @@ def run_migrations_online() -> None:
 
     cfg = config.get_section(config.config_ini_section)
 
-    # Get GCP-specific configuration if in GCP environment
-    gcp_config = get_gcp_connection_config()
-
-    # Apply specific SQLAlchemy options for Cloud SQL if needed
-    if gcp_config:
-        for key, value in gcp_config.items():
-            if key != "connect_args":
-                cfg[f"sqlalchemy.{key}"] = str(value)
-
-    # Set up the connectable with appropriate pool class depending on environment
+    # Determine the pool class based on environment
     if os.environ.get("FLASK_ENV") == "production":
         # Use a QueuePool for production environments
         poolclass = pool.QueuePool
+
+        # Get GCP-specific configuration if in GCP environment
+        # Only apply these for QueuePool
+        gcp_config = get_gcp_connection_config()
+
+        # Apply specific SQLAlchemy options for Cloud SQL if needed
+        if gcp_config:
+            for key, value in gcp_config.items():
+                if key != "connect_args":
+                    cfg[f"sqlalchemy.{key}"] = str(value)
     else:
-        # Use a NullPool for development/testing
+        # Use a NullPool for development/testing - no pool config needed
         poolclass = pool.NullPool
+        gcp_config = {}
 
     connectable = engine_from_config(
         cfg,
