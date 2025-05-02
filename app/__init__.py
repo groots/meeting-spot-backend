@@ -11,6 +11,9 @@ from flask_sqlalchemy import SQLAlchemy
 # IMPORTANT: Import CORS setup early
 from .cors_middleware import setup_cors
 
+# Import encryption key middleware
+from .middleware import register_middleware
+
 db = SQLAlchemy()
 jwt = JWTManager()
 migrate = Migrate()
@@ -124,6 +127,9 @@ def create_app(config_name="development"):
 
     # *** IMPORTANT: Set up CORS with our simplified middleware BEFORE other extensions and blueprints ***
     setup_cors(app)
+
+    # Register encryption key middleware
+    register_middleware(app)
 
     # Initialize database and other extensions AFTER CORS
     db.init_app(app)
