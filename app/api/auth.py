@@ -78,25 +78,55 @@ def register():
 @auth_bp.route("/login", methods=["POST"])
 def login():
     """Login a user."""
-    data = request.get_json() or {}  # Handle None case
+    try:
+        data = request.get_json() or {}  # Handle None case
 
-    # Empty JSON or no JSON both mean missing credentials
-    email = data.get("email", "").lower().strip() if data.get("email") else ""
-    password = data.get("password", "")
+        # Log incoming request data (without password)
+        safe_data = {k: v for k, v in data.items() if k != "password"} if data else {}
+        current_app.logger.info(f"Login attempt with data: {safe_data}")
 
-    if not email or not password:
-        return jsonify({"error": "Email and password are required", "message": "Email and password are required"}), 400
+        # Empty JSON or no JSON both mean missing credentials
+        email = data.get("email", "").lower().strip() if data.get("email") else ""
+        password = data.get("password", "")
 
-    # Find user
-    user = User.query.filter_by(email=email).first()
+        if not email or not password:
+            current_app.logger.warning(f"Login failed: missing email or password")
+            return (
+                jsonify({"error": "Email and password are required", "message": "Email and password are required"}),
+                400,
+            )
 
-    if not user or not user.check_password(password):
-        return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
+        # Find user
+        try:
+            user = User.query.filter_by(email=email).first()
+            if not user:
+                current_app.logger.warning(f"Login failed: user not found for email {email}")
+                return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
+        except Exception as db_error:
+            current_app.logger.error(f"Database error looking up user: {str(db_error)}")
+            return jsonify({"error": "Server error", "message": "Error processing login request"}), 500
 
-    # Generate token
-    access_token = user.generate_access_token()
+        # Check password
+        try:
+            if not user.check_password(password):
+                current_app.logger.warning(f"Login failed: incorrect password for user {email}")
+                return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
+        except Exception as pwd_error:
+            current_app.logger.error(f"Password check error for user {email}: {str(pwd_error)}")
+            return jsonify({"error": "Server error", "message": "Error processing login request"}), 500
 
-    return jsonify({"message": "Login successful", "user": user.to_dict(), "access_token": access_token}), 200
+        # Generate token
+        try:
+            access_token = user.generate_access_token()
+            current_app.logger.info(f"Login successful for user {email}")
+            return jsonify({"message": "Login successful", "user": user.to_dict(), "access_token": access_token}), 200
+        except Exception as token_error:
+            current_app.logger.error(f"Token generation error for user {email}: {str(token_error)}")
+            return jsonify({"error": "Server error", "message": "Error generating authentication token"}), 500
+
+    except Exception as e:
+        current_app.logger.error(f"Unhandled exception in login endpoint: {str(e)}")
+        return jsonify({"error": "Server error", "message": "An unexpected error occurred"}), 500
 
 
 @auth_bp.route("/me", methods=["GET"])
