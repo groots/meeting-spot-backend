@@ -6,11 +6,19 @@ api = Blueprint("api", __name__)
 
 # Import blueprints
 from .auth import auth_bp
+from .contacts import contacts_bp
+from .geocoding import geocoding_bp
 from .meeting_requests import meeting_requests_bp
+from .payments import payments_bp
+from .users import users_bp
 
 # Register blueprints
 api.register_blueprint(auth_bp, url_prefix="/auth")
 api.register_blueprint(meeting_requests_bp, url_prefix="/meeting-requests")
+api.register_blueprint(contacts_bp, url_prefix="/contacts")
+api.register_blueprint(payments_bp, url_prefix="/payments")
+api.register_blueprint(geocoding_bp, url_prefix="/geocoding")
+api.register_blueprint(users_bp, url_prefix="/users")
 
 # Import any other routes after all blueprints are registered
 # This is for routes that are registered directly on the api blueprint

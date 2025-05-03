@@ -1,17 +1,20 @@
 import uuid
 
 from flask import Blueprint, request
-from flask_restx import Namespace, Resource, fields
+from flask_restx import Api, Namespace, Resource, fields
 from werkzeug.security import generate_password_hash
 
-from .. import db
-from ..models import User
+from app import db
+from app.models import User
 
 # Create Flask blueprint
 users_bp = Blueprint("users", __name__)
 
+# Initialize Flask-RestX API
+api_restx = Api(users_bp, version="1.0", title="Users API", description="API for user operations", doc="/docs")
+
 # Create RESTx namespace
-api = Namespace("users", description="User operations")
+api = api_restx.namespace("users", description="User operations")
 
 # Swagger models
 user_model = api.model(

@@ -7,16 +7,16 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 from flask import Blueprint, current_app, g, jsonify, request, url_for
-from flask_restx import Namespace, Resource, fields
+from flask_restx import Api, Namespace, Resource, fields
 from sqlalchemy import text
 
-from .. import db
-from ..decorators import auth_required, token_required
-from ..models import Subscription, User
-from ..utils.stripe_helpers import PLAN_DETAILS
-from ..utils.stripe_helpers import cancel_subscription
-from ..utils.stripe_helpers import cancel_subscription as stripe_cancel_subscription
-from ..utils.stripe_helpers import (
+from app import db
+from app.decorators import auth_required, token_required
+from app.models import Subscription, User
+from app.utils.stripe_helpers import PLAN_DETAILS
+from app.utils.stripe_helpers import cancel_subscription
+from app.utils.stripe_helpers import cancel_subscription as stripe_cancel_subscription
+from app.utils.stripe_helpers import (
     create_checkout_session,
     create_stripe_customer,
     get_customer_payment_methods,
@@ -34,8 +34,17 @@ logger = logging.getLogger(__name__)
 # Create Flask blueprint
 payments_bp = Blueprint("payments", __name__)
 
+# Initialize Flask-RestX API
+api_restx = Api(
+    payments_bp,
+    version="1.0",
+    title="Payments API",
+    description="API for payment and subscription management",
+    doc="/docs",
+)
+
 # Create API namespace
-api = Namespace("payments", description="Subscription and payment operations")
+api = api_restx.namespace("payments", description="Subscription and payment operations")
 
 # Request and response models
 plan_model = api.model(

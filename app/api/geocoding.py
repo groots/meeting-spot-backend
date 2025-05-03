@@ -1,13 +1,18 @@
 from flask import Blueprint, current_app, request
-from flask_restx import Namespace, Resource, fields
+from flask_restx import Api, Namespace, Resource, fields
 
-from ..utils.geocoding import geocode_address, reverse_geocode_coordinates, validate_address
+from app.utils.geocoding import geocode_address, reverse_geocode_coordinates, validate_address
 
 # Create Flask blueprint
 geocoding_bp = Blueprint("geocoding", __name__)
 
+# Initialize Flask-RestX API
+api_restx = Api(
+    geocoding_bp, version="1.0", title="Geocoding API", description="API for geocoding operations", doc="/docs"
+)
+
 # Create geocoding namespace
-api = Namespace("geocoding", description="Geocoding operations")
+api = api_restx.namespace("geocoding", description="Geocoding operations")
 
 # Define geocoding response model
 geocoding_response = api.model(
