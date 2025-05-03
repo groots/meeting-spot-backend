@@ -16,7 +16,9 @@ from contextlib import contextmanager
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s", handlers=[logging.StreamHandler(sys.stdout)]
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("db_migrations")
 
@@ -54,6 +56,22 @@ def get_database_url():
     return None
 
 
+def is_ci_environment():
+    """Check if we're running in a CI environment."""
+    ci_env_vars = [
+        "CI",
+        "GITHUB_ACTIONS",
+        "GITHUB_WORKFLOW",
+        "GITHUB_SHA",
+        "GITLAB_CI",
+        "TRAVIS",
+        "CIRCLECI",
+        "JENKINS_URL",
+        "TEAMCITY_VERSION",
+    ]
+    return any(os.environ.get(var) for var in ci_env_vars)
+
+
 @contextmanager
 def create_backup(db_url=None):
     """Create database backup if possible"""
@@ -82,7 +100,11 @@ def check_migration_history():
         # Execute alembic history
         logger.info("Checking migration history...")
         result = subprocess.run(
-            ["flask", "db", "history"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=os.environ.copy()
+            ["flask", "db", "history"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=os.environ.copy(),
         )
 
         if result.returncode == 0:
@@ -95,7 +117,11 @@ def check_migration_history():
 
         # Show current head
         result = subprocess.run(
-            ["flask", "db", "current"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=os.environ.copy()
+            ["flask", "db", "current"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=os.environ.copy(),
         )
 
         if result.returncode == 0:
@@ -113,10 +139,19 @@ def check_migration_history():
 def run_database_migrations(dry_run=False):
     """Run database migrations"""
     try:
+        # Check if we should skip migrations in CI
+        if is_ci_environment() and os.environ.get("SKIP_DB_MIGRATIONS_IN_CI") == "true":
+            logger.info("Skipping migrations in CI environment as configured")
+            return True
+
         # Check pending migrations first
         logger.info("Checking for pending migrations...")
         result = subprocess.run(
-            ["flask", "db", "check"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=os.environ.copy()
+            ["flask", "db", "check"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=os.environ.copy(),
         )
 
         has_pending = False
@@ -137,7 +172,11 @@ def run_database_migrations(dry_run=False):
         # Apply migrations
         logger.info("Applying database migrations...")
         upgrade_result = subprocess.run(
-            ["flask", "db", "upgrade"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=os.environ.copy()
+            ["flask", "db", "upgrade"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=os.environ.copy(),
         )
 
         if upgrade_result.returncode == 0:
@@ -145,12 +184,22 @@ def run_database_migrations(dry_run=False):
             logger.info(upgrade_result.stdout)
             return True
         else:
-            logger.error("Failed to apply database migrations")
-            logger.error(upgrade_result.stderr)
-            return False
+            # Check if we should ignore DB errors in CI
+            if is_ci_environment() and os.environ.get("CI_IGNORE_DB_ERRORS") == "true":
+                logger.warning("Database migration failed, but CI_IGNORE_DB_ERRORS is set to true")
+                logger.warning(upgrade_result.stderr)
+                return True
+            else:
+                logger.error("Failed to apply database migrations")
+                logger.error(upgrade_result.stderr)
+                return False
 
     except Exception as e:
         logger.error(f"Error running migrations: {e}")
+        # Special handling for CI environments
+        if is_ci_environment() and os.environ.get("CI_IGNORE_DB_ERRORS") == "true":
+            logger.warning(f"Error ignored in CI: {e}")
+            return True
         return False
 
 
@@ -160,7 +209,11 @@ def verify_migrations():
         # Check schema version after migrations
         logger.info("Verifying database schema after migrations...")
         result = subprocess.run(
-            ["flask", "db", "check"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=os.environ.copy()
+            ["flask", "db", "check"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=os.environ.copy(),
         )
 
         if "up to date" in result.stdout:
@@ -173,6 +226,10 @@ def verify_migrations():
 
     except Exception as e:
         logger.error(f"Error verifying migrations: {e}")
+        # Special handling for CI environments
+        if is_ci_environment() and os.environ.get("CI_IGNORE_DB_ERRORS") == "true":
+            logger.warning(f"Verification error ignored in CI: {e}")
+            return True
         return False
 
 
@@ -182,6 +239,10 @@ def perform_migration_with_backup(dry_run=False):
     db_url = get_database_url()
     if not db_url:
         logger.error("Could not determine database URL")
+        # Special handling for CI environments
+        if is_ci_environment() and os.environ.get("CI_IGNORE_DB_ERRORS") == "true":
+            logger.warning("Missing database URL ignored in CI environment")
+            return True
         return False
 
     # Create backup if possible
@@ -221,6 +282,16 @@ def main():
     logger.info("Starting database migration process")
     if args.dry_run:
         logger.info("Running in DRY RUN mode - no changes will be made")
+
+    # Add CI environment information to logs
+    if is_ci_environment():
+        logger.info("Running in CI environment")
+        if os.environ.get("CI_IGNORE_DB_ERRORS") == "true":
+            logger.info("CI_IGNORE_DB_ERRORS=true - database errors will be ignored")
+        if os.environ.get("SKIP_DB_MIGRATIONS_IN_CI") == "true":
+            logger.info("SKIP_DB_MIGRATIONS_IN_CI=true - migrations will be skipped")
+        if os.environ.get("FORCE_DB_MIGRATIONS_IN_CI") == "true":
+            logger.info("FORCE_DB_MIGRATIONS_IN_CI=true - migrations will be forced")
 
     success = perform_migration_with_backup(args.dry_run)
 

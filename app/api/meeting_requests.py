@@ -1,864 +1,112 @@
+"""Meeting requests related endpoints."""
+
 import uuid
 from datetime import datetime, timedelta, timezone
 
-import jwt
-from flask import current_app, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
-from flask_restx import Namespace, Resource, fields
 
 from .. import db
-from ..models import Contact, ContactType, MeetingRequest, MeetingRequestStatus, User
-from ..utils.geocoding import geocode_address
-from ..utils.location import process_meeting_request
-from ..utils.notifications import send_email
-from ..utils.stripe_helpers import is_premium_feature
+from ..models.meeting_request import MeetingRequest, MeetingRequestStatus
+from ..models.user import User
 
-api = Namespace("meeting-requests", description="Meeting request operations")
+# Create blueprint
+meeting_requests_bp = Blueprint("meeting_requests", __name__)
 
-# Swagger models
-meeting_request_model = api.model(
-    "MeetingRequest",
-    {
-        "request_id": fields.String(description="Unique identifier for the request"),
-        "user_a_id": fields.String(description="ID of the user who initiated the request"),
-        "user_b_contact_type": fields.String(description="Type of contact for user B (email, phone, sms)"),
-        "user_b_contact": fields.String(description="Contact information of user B (email/phone/etc)"),
-        "user_b_email": fields.String(description="Email address of user B (legacy field)"),
-        "user_b_name": fields.String(description="Name of user B"),
-        "location_type": fields.String(description="Type of location (e.g., Restaurant / Food)"),
-        "address_a_lat": fields.Float(description="Latitude of user A's location"),
-        "address_a_lon": fields.Float(description="Longitude of user A's location"),
-        "address_b_lat": fields.Float(description="Latitude of user B's location"),
-        "address_b_lon": fields.Float(description="Longitude of user B's location"),
-        "status": fields.String(description="Current status of the request"),
-        "created_at": fields.DateTime(description="When the request was created"),
-        "updated_at": fields.DateTime(description="When the request was last updated"),
-        "expires_at": fields.DateTime(description="When the request expires"),
-    },
-)
 
-create_request_model = api.model(
-    "CreateRequest",
-    {
-        "address_a": fields.String(required=True, description="Address of user A"),
-        "location_type": fields.String(required=True, description="Type of location"),
-        "user_b_contact_type": fields.String(required=True, description="Type of contact for user B"),
-        "user_b_contact": fields.String(required=True, description="Contact information for user B"),
-        "user_b_name": fields.String(description="Name of user B"),
-        "save_as_contact": fields.Boolean(description="Whether to save user B as a contact"),
-    },
-)
+@meeting_requests_bp.route("", methods=["POST"])
+@jwt_required(optional=True)
+def create_meeting_request():
+    """Create a new meeting request."""
+    data = request.get_json()
 
-update_request_model = api.model(
-    "UpdateRequest",
-    {
-        "status": fields.String(description="New status of the request"),
-        "meeting_location": fields.String(description="New meeting location details"),
-    },
-)
+    if not data:
+        return jsonify({"error": "No input data provided"}), 400
 
+    # Get user ID if authenticated
+    current_user_id = get_jwt_identity()
+    user = None
 
-@api.route("/")
-class MeetingRequestList(Resource):
-    @api.doc("create_request")
-    @api.expect(create_request_model)
-    @api.response(201, "Request created successfully")
-    @api.response(400, "Invalid input")
-    @jwt_required()
-    def post(self) -> None:
-        """Create a new meeting request"""
-        try:
-            data = request.get_json()
-            current_app.logger.info(f"Meeting request creation data: {data}")
+    if current_user_id:
+        user = User.query.get(current_user_id)
+        if not user:
+            return jsonify({"error": "Authenticated user not found"}), 404
 
-            # Get user from JWT token
-            user_id = get_jwt_identity()
-            user = User.get_by_token_identity(user_id)
-            if not user:
-                current_app.logger.error(f"User not found with ID: {user_id}")
-                return {"error": "User not found"}, 404
+    # Validate required fields
+    required_fields = ["location_a", "user_b_email", "location_type"]
+    missing_fields = [field for field in required_fields if field not in data]
 
-            current_app.logger.info(f"Creating meeting request for user: {user.email}")
+    if missing_fields:
+        return jsonify({"error": f"Missing required fields: {', '.join(missing_fields)}"}), 400
 
-            # Validate required fields
-            required_fields = [
-                "address_a",
-                "location_type",
-                "user_b_contact_type",
-                "user_b_contact",
-            ]
-            missing_fields = [field for field in required_fields if field not in data]
-            if missing_fields:
-                current_app.logger.error(f"Missing required fields: {missing_fields}")
-                return {"error": f"Missing required fields: {', '.join(missing_fields)}"}, 400
+    try:
+        # Create new meeting request
+        meeting_request = MeetingRequest(
+            request_id=uuid.uuid4(),
+            user_a_id=current_user_id,
+            user_b_email=data["user_b_email"],
+            user_b_name=data.get("user_b_name", ""),
+            location_type=data["location_type"],
+            location_a=data["location_a"],
+            address_a_lat=data["location_a"].get("latitude", 0),
+            address_a_lon=data["location_a"].get("longitude", 0),
+            token_b=str(uuid.uuid4().hex),
+            status=MeetingRequestStatus.PENDING_B_ADDRESS,
+            session_identifier_a=data.get("session_identifier") if not current_user_id else None,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        )
 
-            try:
-                # Encrypt user_b_contact for storage
-                user_b_contact = data["user_b_contact"]
-                contact_type = ContactType(data["user_b_contact_type"].lower())
-                current_app.logger.info(f"Contact type: {contact_type.name}, Contact: {user_b_contact}")
+        db.session.add(meeting_request)
+        db.session.commit()
 
-                # Get location data
-                address_a = data["address_a"]
-                current_app.logger.info(f"Processing location: {address_a}")
+        return (
+            jsonify({"message": "Meeting request created successfully", "meeting_request": meeting_request.to_dict()}),
+            201,
+        )
 
-                # Handle special format of "Location (lat, lng)"
-                import re
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error creating meeting request: {str(e)}")
+        return jsonify({"error": "Error creating meeting request"}), 500
 
-                location_pattern = re.compile(r"Location \((-?\d+\.\d+), (-?\d+\.\d+)\)")
-                location_match = location_pattern.match(address_a) if address_a else None
 
-                if location_match:
-                    # Extract coordinates directly from the string
-                    address_a_lat = float(location_match.group(1))
-                    address_a_lon = float(location_match.group(2))
-                    current_app.logger.info(f"Extracted coordinates: ({address_a_lat}, {address_a_lon})")
-                elif "address_a_lat" in data and "address_a_lon" in data:
-                    address_a_lat = float(data["address_a_lat"])
-                    address_a_lon = float(data["address_a_lon"])
-                    current_app.logger.info(f"Using provided coordinates: ({address_a_lat}, {address_a_lon})")
-                else:
-                    # If coordinates not provided, try to geocode the address
-                    current_app.logger.info(f"Geocoding address: {address_a}")
-                    result = geocode_address(address_a)
+@meeting_requests_bp.route("", methods=["GET"])
+@jwt_required()
+def get_meeting_requests():
+    """Get all meeting requests for the current user."""
+    current_user_id = get_jwt_identity()
 
-                    if result["success"] and "coordinates" in result:
-                        address_a_lat = result["coordinates"]["lat"]
-                        address_a_lon = result["coordinates"]["lng"]
-                        current_app.logger.info(f"Geocoded address to: ({address_a_lat}, {address_a_lon})")
-                    else:
-                        # If geocoding fails, use default SF coordinates
-                        current_app.logger.warning(
-                            f"Geocoding failed, using default coordinates. Error: {result.get('error')}"
-                        )
-                        address_a_lat = 37.7749  # Default SF latitude
-                        address_a_lon = -122.4194  # Default SF longitude
+    # Get user
+    user = User.query.get(current_user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
 
-                location_a = {"address": address_a, "latitude": address_a_lat, "longitude": address_a_lon}
-                current_app.logger.info(f"Final location_a: {location_a}")
+    # Get all meeting requests initiated by the user
+    meeting_requests = MeetingRequest.query.filter_by(user_a_id=current_user_id).all()
 
-                # Create meeting request
-                user_b_name = data.get("user_b_name", "")
+    return jsonify({"meeting_requests": [req.to_dict() for req in meeting_requests]}), 200
 
-                # First check if the user table has all the needed columns
-                try:
-                    # Create a new meeting request - avoid setting user_b_name in constructor if database doesn't have the column
-                    new_request = MeetingRequest(
-                        user_a_id=user.id if user else None,
-                        address_a_lat=address_a_lat,
-                        address_a_lon=address_a_lon,
-                        location_a=location_a,
-                        location_type=data["location_type"],
-                        user_b_contact_type=contact_type,
-                        user_b_contact=user_b_contact,
-                        token_b=uuid.uuid4().hex,
-                        status=MeetingRequestStatus.PENDING_B_ADDRESS,
-                        created_at=datetime.now(timezone.utc),
-                        updated_at=datetime.now(timezone.utc),
-                        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
-                    )
 
-                    # Set user_b_name after creation to use the hybrid property
-                    if user_b_name:
-                        try:
-                            new_request.user_b_name = user_b_name
-                        except Exception as name_err:
-                            current_app.logger.warning(f"Could not set user_b_name: {str(name_err)}")
+@meeting_requests_bp.route("/<uuid:request_id>", methods=["GET"])
+@jwt_required(optional=True)
+def get_meeting_request(request_id):
+    """Get a specific meeting request."""
+    current_user_id = get_jwt_identity()
 
-                    db.session.add(new_request)
-                    current_app.logger.info(f"Created meeting request with ID: {new_request.request_id}")
+    # Get meeting request
+    meeting_request = MeetingRequest.query.get(request_id)
 
-                    # If user wants to save as contact and is premium, create a contact
-                    save_as_contact = data.get("save_as_contact", False)
-                    if save_as_contact:
-                        current_app.logger.info("Saving as contact requested")
-                        # Check if contacts is a premium feature
-                        if is_premium_feature("contacts") and not user.is_premium():
-                            return {
-                                "error": "Premium subscription required",
-                                "message": "Saving contacts requires a premium subscription",
-                                "request_created": False,
-                            }, 402
+    if not meeting_request:
+        return jsonify({"error": "Meeting request not found"}), 404
 
-                        # Check if contact with this email already exists
-                        if user_b_name:
-                            existing_contact = Contact.query.filter_by(user_id=user.id, email=user_b_name).first()
+    # Check if the user is authorized to view this meeting request
+    if current_user_id and str(meeting_request.user_a_id) != current_user_id:
+        return jsonify({"error": "Unauthorized to view this meeting request"}), 403
 
-                            if existing_contact:
-                                current_app.logger.info(f"Contact already exists: {existing_contact.id}")
-                                # Update existing contact with new info if provided
-                                if user_b_name and not existing_contact.name:
-                                    existing_contact.name = user_b_name
-                                    existing_contact.updated_at = datetime.now(timezone.utc)
+    return jsonify(meeting_request.to_dict()), 200
 
-                                # Associate the meeting request with the existing contact
-                                new_request.contacts.append(existing_contact)
-                            else:
-                                current_app.logger.info("Creating new contact")
-                                # Create new contact
-                                contact = Contact(
-                                    user_id=user.id,
-                                    name=user_b_name or "Unknown",
-                                    email=user_b_name,
-                                )
-                                db.session.add(contact)
 
-                                # Associate the meeting request with the new contact
-                                new_request.contacts.append(contact)
+# Register the blueprint with the api
+from . import api
 
-                    db.session.commit()
-                    current_app.logger.info("Meeting request saved to database")
-
-                except Exception as db_err:
-                    db.session.rollback()
-                    current_app.logger.exception(f"Database error creating meeting request: {str(db_err)}")
-                    return {"error": f"Database error: {str(db_err)}"}, 500
-
-            except (ValueError, TypeError) as e:
-                current_app.logger.exception(f"Error processing coordinates: {str(e)}")
-                return {"error": f"Invalid coordinate format: {str(e)}"}, 400
-
-            # Send email to user B if contact type is email
-            if new_request.user_b_contact_type == ContactType.EMAIL:
-                try:
-                    base_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
-                    response_url = f"{base_url}/request/{new_request.request_id}?token={new_request.token_b}"
-
-                    subject = "You've been invited to find a meeting spot!"
-                    body = f"""
-    Hello{f' {user_b_name}' if user_b_name else ''}!
-
-    {user.email} has invited you to find a convenient meeting spot.
-
-    To respond with your location, please click the following link:
-    {response_url}
-
-    This link will expire in 24 hours.
-
-    Best regards,
-    Find a Meeting Spot Team
-    """
-                    send_email(user_b_contact, subject, body)
-                    current_app.logger.info(f"Email sent to {user_b_contact}")
-                except Exception as email_err:
-                    current_app.logger.error(f"Failed to send email: {str(email_err)}")
-                    # Continue processing even if email fails
-
-            response_data = new_request.to_dict()
-            # Add request_id to the response for backward compatibility
-            response_data["request_id"] = str(new_request.request_id)
-            current_app.logger.info(f"Meeting request created successfully: {new_request.request_id}")
-            return response_data, 201
-
-        except Exception as e:
-            current_app.logger.exception(f"Unexpected error in meeting request creation: {str(e)}")
-            return {"error": f"Server error: {str(e)}"}, 500
-
-    @api.doc("get_requests_list")
-    @api.response(200, "List of requests")
-    @jwt_required()
-    def get(self) -> None:
-        """Get a list of meeting requests for the current user"""
-        try:
-            user_id = get_jwt_identity()
-            user = User.get_by_token_identity(user_id)
-            if not user:
-                return {"error": "User not found", "code": "USER_NOT_FOUND"}, 404
-
-            meeting_requests = MeetingRequest.query.filter_by(user_a_id=user.id).all()
-            return [request.to_dict() for request in meeting_requests]
-        except jwt.exceptions.ExpiredSignatureError:
-            # If token is expired, return a specific error
-            current_app.logger.warning("JWT token expired during meeting requests list fetch")
-            return {"error": "Your session has expired. Please log in again.", "code": "TOKEN_EXPIRED"}, 401
-        except jwt.exceptions.InvalidTokenError:
-            # Handle other JWT errors
-            current_app.logger.warning("Invalid JWT token during meeting requests list fetch")
-            return {"error": "Invalid authentication token. Please log in again.", "code": "INVALID_TOKEN"}, 401
-        except Exception as e:
-            # Log unexpected errors
-            current_app.logger.exception(f"Error in meeting request list fetch: {str(e)}")
-            return {"error": "An unexpected error occurred", "code": "SERVER_ERROR"}, 500
-
-    def options(self):
-        """Handle OPTIONS requests for the meeting request list endpoint."""
-        response = current_app.make_default_options_response()
-
-        # Get origin from request headers
-        origin = request.headers.get("Origin")
-        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
-
-        # Add CORS headers if origin is allowed
-        if origin and (origin in allowed_origins or "*" in allowed_origins):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-            response.headers[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-
-        return response
-
-
-@api.route("/<string:request_id>")
-@api.param("request_id", "The request identifier")
-class MeetingRequestResource(Resource):
-    @api.doc("get_request")
-    @api.response(200, "Request found")
-    @api.response(404, "Request not found")
-    @jwt_required()
-    def get(self, request_id) -> None:
-        """Get a meeting request by ID"""
-        try:
-            request_id = uuid.UUID(request_id)
-        except ValueError:
-            return {"error": "Invalid request ID format", "code": "INVALID_ID"}, 400
-
-        try:
-            # Get the user from the JWT token
-            user_id = get_jwt_identity()
-            user = User.get_by_token_identity(user_id)
-            if not user:
-                return {"error": "User not found", "code": "USER_NOT_FOUND"}, 404
-
-            meeting_request = MeetingRequest.query.get(request_id)
-            if not meeting_request:
-                return {"error": "Request not found", "code": "REQUEST_NOT_FOUND"}, 404
-
-            return meeting_request.to_dict()
-        except jwt.exceptions.ExpiredSignatureError:
-            # If token is expired, return a specific error
-            current_app.logger.warning(f"JWT token expired during meeting request fetch: {request_id}")
-            return {"error": "Your session has expired. Please log in again.", "code": "TOKEN_EXPIRED"}, 401
-        except jwt.exceptions.InvalidTokenError:
-            # Handle other JWT errors
-            current_app.logger.warning(f"Invalid JWT token during meeting request fetch: {request_id}")
-            return {"error": "Invalid authentication token. Please log in again.", "code": "INVALID_TOKEN"}, 401
-        except Exception as e:
-            # Log unexpected errors
-            current_app.logger.exception(f"Error in meeting request fetch: {str(e)}")
-            return {"error": "An unexpected error occurred", "code": "SERVER_ERROR"}, 500
-
-    @api.doc("update_request")
-    @api.expect(update_request_model)
-    @api.response(200, "Request updated successfully")
-    @api.response(404, "Request not found")
-    @jwt_required()
-    def put(self, request_id):
-        """Update a meeting request."""
-        try:
-            request_id_uuid = uuid.UUID(request_id)
-            user_id = get_jwt_identity()
-            user = User.get_by_token_identity(user_id)
-            if not user:
-                return {"message": "User not found"}, 404
-
-            data = request.get_json()
-
-            meeting_request = MeetingRequest.query.get(request_id_uuid)
-            if not meeting_request:
-                return {"message": "Meeting request not found"}, 404
-
-            if meeting_request.user_a_id != user.id:
-                return {"message": "Unauthorized"}, 403
-
-            # Handle address_b coordinates
-            if "address_b_lat" in data and "address_b_lon" in data:
-                meeting_request.address_b_lat = data["address_b_lat"]
-                meeting_request.address_b_lon = data["address_b_lon"]
-                # When address_b is provided, automatically set status to CALCULATING
-                meeting_request.status = MeetingRequestStatus.CALCULATING
-            elif "status" in data:
-                try:
-                    meeting_request.status = MeetingRequestStatus(data["status"])
-                except ValueError:
-                    return {"message": "Invalid status value"}, 400
-
-            if "meeting_location" in data:
-                # TODO: Geocode meeting_location to get lat/lon
-                meeting_request.selected_place_details = data["meeting_location"]
-
-            meeting_request.updated_at = datetime.now(timezone.utc)
-            db.session.commit()
-
-            return meeting_request.to_dict()
-
-        except ValueError:
-            return {"message": "Invalid request ID format"}, 400
-
-    @api.doc("delete_request")
-    @api.response(204, "Request deleted successfully")
-    @api.response(404, "Request not found")
-    @jwt_required()
-    def delete(self, request_id):
-        """Delete a meeting request."""
-        try:
-            request_id_uuid = uuid.UUID(request_id)
-            user_id = get_jwt_identity()
-            user = User.get_by_token_identity(user_id)
-            if not user:
-                return {"message": "User not found"}, 404
-
-            meeting_request = MeetingRequest.query.get(request_id_uuid)
-            if not meeting_request:
-                return {"message": "Meeting request not found"}, 404
-
-            if meeting_request.user_a_id != user.id:
-                return {"message": "Unauthorized"}, 403
-
-            db.session.delete(meeting_request)
-            db.session.commit()
-
-            return "", 204
-
-        except ValueError:
-            return {"message": "Invalid request ID format"}, 400
-
-    def options(self, request_id):
-        """Handle OPTIONS requests for the meeting request resource endpoint."""
-        response = current_app.make_default_options_response()
-
-        # Get origin from request headers
-        origin = request.headers.get("Origin")
-        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
-
-        # Add CORS headers if origin is allowed
-        if origin and (origin in allowed_origins or "*" in allowed_origins):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, PUT, DELETE, OPTIONS"
-            response.headers[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-
-        return response
-
-
-@api.route("/<string:request_id>/status")
-@api.param("request_id", "The request identifier")
-class MeetingRequestStatusResource(Resource):
-    @api.doc("get_request_status")
-    @api.response(200, "Status retrieved successfully")
-    @api.response(404, "Request not found")
-    @jwt_required()
-    def get(self, request_id) -> None:
-        """Get the status of a meeting request"""
-        try:
-            request_id = uuid.UUID(request_id)
-        except ValueError:
-            return {"error": "Invalid request ID format", "code": "INVALID_ID"}, 400
-
-        try:
-            # Get user from JWT token
-            user_id = get_jwt_identity()
-            user = User.get_by_token_identity(user_id)
-            if not user:
-                return {"error": "User not found", "code": "USER_NOT_FOUND"}, 404
-
-            meeting_request = MeetingRequest.query.get(request_id)
-            if not meeting_request:
-                return {"error": "Request not found", "code": "REQUEST_NOT_FOUND"}, 404
-
-            # Check if user owns the request
-            if meeting_request.user_a_id != user.id:
-                return {"error": "Unauthorized", "code": "UNAUTHORIZED"}, 403
-
-            return {
-                "request_id": str(request_id),
-                "status": meeting_request.status.value,
-                "created_at": meeting_request.created_at.isoformat(),
-                "expires_at": meeting_request.expires_at.isoformat(),
-            }
-        except jwt.exceptions.ExpiredSignatureError:
-            # If token is expired, return a specific error
-            current_app.logger.warning(f"JWT token expired during status fetch: {request_id}")
-            return {"error": "Your session has expired. Please log in again.", "code": "TOKEN_EXPIRED"}, 401
-        except jwt.exceptions.InvalidTokenError:
-            # Handle other JWT errors
-            current_app.logger.warning(f"Invalid JWT token during status fetch: {request_id}")
-            return {"error": "Invalid authentication token. Please log in again.", "code": "INVALID_TOKEN"}, 401
-        except Exception as e:
-            # Log unexpected errors
-            current_app.logger.exception(f"Error in meeting request status fetch: {str(e)}")
-            return {"error": "An unexpected error occurred", "code": "SERVER_ERROR"}, 500
-
-    def options(self, request_id):
-        """Handle OPTIONS requests for the meeting request status endpoint."""
-        response = current_app.make_default_options_response()
-
-        # Get origin from request headers
-        origin = request.headers.get("Origin")
-        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
-
-        # Add CORS headers if origin is allowed
-        if origin and (origin in allowed_origins or "*" in allowed_origins):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-            response.headers[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-
-        return response
-
-
-@api.route("/<string:request_id>/respond")
-@api.param("request_id", "The request identifier")
-class MeetingRequestResponseResource(Resource):
-    @api.doc("respond_to_request")
-    @api.response(200, "Response submitted successfully")
-    @api.response(400, "Invalid input")
-    @api.response(404, "Request not found")
-    def post(self, request_id) -> None:
-        """Submit a response to a meeting request"""
-        try:
-            request_id = uuid.UUID(request_id)
-        except ValueError:
-            return {"error": "Invalid request ID format"}, 400
-
-        data = request.get_json()
-        if not data or "address_b" not in data or "token" not in data:
-            return {"error": "Missing required fields"}, 400
-
-        meeting_request = MeetingRequest.query.get(request_id)
-        if not meeting_request:
-            return {"error": "Request not found"}, 404
-
-        if meeting_request.token_b != data["token"]:
-            return {"error": "Invalid token"}, 400
-
-        # Extract coordinates from request data
-        try:
-            if "address_b_lat" in data and "address_b_lon" in data:
-                address_b_lat = float(data["address_b_lat"])
-                address_b_lon = float(data["address_b_lon"])
-                # Validate coordinate ranges
-                if not (-90 <= address_b_lat <= 90) or not (-180 <= address_b_lon <= 180):
-                    return {
-                        "error": "Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180"
-                    }, 400
-            else:
-                # Default coordinates if geocoding isn't implemented yet
-                current_app.logger.warning(f"Missing coordinates for request {request_id}, using defaults")
-                address_b_lat = 37.7833
-                address_b_lon = -122.4167
-
-            # Log coordinates being used
-            current_app.logger.info(f"User B coordinates for request {request_id}: ({address_b_lat}, {address_b_lon})")
-
-            # Ensure address_a coordinates are valid
-            if meeting_request.address_a_lat is None or meeting_request.address_a_lon is None:
-                current_app.logger.error(f"Missing address_a coordinates for request {request_id}")
-                meeting_request.status = MeetingRequestStatus.FAILED
-                db.session.commit()
-                return {"error": "Missing address_a coordinates"}, 400
-
-            meeting_request.address_b_lat = address_b_lat
-            meeting_request.address_b_lon = address_b_lon
-            meeting_request.status = MeetingRequestStatus.CALCULATING
-            meeting_request.updated_at = datetime.now(timezone.utc)
-
-            # Save the coordinates first
-            db.session.commit()
-
-        except (ValueError, TypeError) as e:
-            current_app.logger.exception(f"Error parsing coordinates for request {request_id}: {str(e)}")
-            return {"error": f"Invalid coordinate format: {str(e)}"}, 400
-
-        # Process the request to find meeting spots
-        try:
-            # Import here to avoid circular imports
-            from ..utils.location import process_meeting_request
-
-            # Calculate equidistant meeting spots
-            success = process_meeting_request(meeting_request)
-
-            if success:
-                current_app.logger.info(f"Successfully processed meeting request {meeting_request.request_id}")
-            else:
-                current_app.logger.error(f"Failed to process meeting request {meeting_request.request_id}")
-
-            # Save the updated meeting request with results
-            db.session.commit()
-
-            return {"status": meeting_request.status.value}
-        except Exception as e:
-            db.session.rollback()
-            current_app.logger.exception(f"Error processing meeting request: {str(e)}")
-            meeting_request.status = MeetingRequestStatus.FAILED
-            db.session.commit()
-            return {"error": "Failed to process meeting request", "status": "failed"}, 500
-
-    def options(self, request_id):
-        """Handle OPTIONS requests for the meeting request response endpoint."""
-        response = current_app.make_default_options_response()
-
-        # Get origin from request headers
-        origin = request.headers.get("Origin")
-        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
-
-        # Add CORS headers if origin is allowed
-        if origin and (origin in allowed_origins or "*" in allowed_origins):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-            response.headers[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-
-        return response
-
-
-@api.route("/<string:request_id>/results")
-@api.param("request_id", "The request identifier")
-class MeetingRequestResultsResource(Resource):
-    @api.doc("get_request_results")
-    @api.response(200, "Results retrieved successfully")
-    @api.response(404, "Request not found")
-    @jwt_required()
-    def get(self, request_id) -> None:
-        """Get the results of a meeting request"""
-        try:
-            request_id = uuid.UUID(request_id)
-        except ValueError:
-            return {"error": "Invalid request ID format", "code": "INVALID_ID"}, 400
-
-        try:
-            # Get user from JWT token
-            user_id = get_jwt_identity()
-            user = User.get_by_token_identity(user_id)
-            if not user:
-                return {"error": "User not found", "code": "USER_NOT_FOUND"}, 404
-
-            meeting_request = MeetingRequest.query.get(request_id)
-            if not meeting_request:
-                return {"error": "Request not found", "code": "REQUEST_NOT_FOUND"}, 404
-
-            # Check if user owns the request
-            if meeting_request.user_a_id != user.id:
-                return {"error": "Unauthorized", "code": "UNAUTHORIZED"}, 403
-
-            # If meeting request is still in CALCULATING status, try to process it
-            if meeting_request.status == MeetingRequestStatus.CALCULATING:
-                try:
-                    # Check if we have all required coordinates
-                    if (
-                        meeting_request.address_a_lat is None
-                        or meeting_request.address_a_lon is None
-                        or meeting_request.address_b_lat is None
-                        or meeting_request.address_b_lon is None
-                    ):
-                        current_app.logger.error(
-                            f"Missing coordinates for meeting request {meeting_request.request_id}"
-                        )
-                        meeting_request.status = MeetingRequestStatus.FAILED
-                        db.session.commit()
-                        return {
-                            "error": "Missing coordinates",
-                            "status": meeting_request.status.value,
-                            "request_id": str(request_id),
-                            "code": "MISSING_COORDINATES",
-                        }, 400
-
-                    from ..utils.location import process_meeting_request
-
-                    current_app.logger.info(
-                        f"Attempting to process meeting request {meeting_request.request_id} during results fetch"
-                    )
-                    process_success = process_meeting_request(meeting_request)
-                    if process_success:
-                        db.session.commit()
-                        current_app.logger.info(
-                            f"Processed meeting request {meeting_request.request_id} during results fetch"
-                        )
-                    else:
-                        current_app.logger.warning(
-                            f"Failed to process meeting request {meeting_request.request_id} during results fetch"
-                        )
-                except Exception as e:
-                    current_app.logger.exception(f"Error processing meeting request during results fetch: {str(e)}")
-
-            # Calculate midpoint for frontend reference
-            midpoint = None
-            if (
-                meeting_request.address_a_lat is not None
-                and meeting_request.address_a_lon is not None
-                and meeting_request.address_b_lat is not None
-                and meeting_request.address_b_lon is not None
-            ):
-                try:
-                    from ..utils.location import calculate_midpoint
-
-                    mid_lat, mid_lon = calculate_midpoint(
-                        meeting_request.address_a_lat,
-                        meeting_request.address_a_lon,
-                        meeting_request.address_b_lat,
-                        meeting_request.address_b_lon,
-                    )
-                    midpoint = {"lat": mid_lat, "lng": mid_lon}
-                except Exception as e:
-                    current_app.logger.exception(f"Error calculating midpoint: {str(e)}")
-                    midpoint = None
-
-            # Prepare response locations data if both coordinates exist
-            locations = None
-            if meeting_request.address_a_lat is not None and meeting_request.address_a_lon is not None:
-                locations = {"a": {"lat": meeting_request.address_a_lat, "lng": meeting_request.address_a_lon}}
-
-                if meeting_request.address_b_lat is not None and meeting_request.address_b_lon is not None:
-                    locations["b"] = {"lat": meeting_request.address_b_lat, "lng": meeting_request.address_b_lon}
-
-            return {
-                "request_id": str(request_id),
-                "status": meeting_request.status.value,
-                "suggested_options": meeting_request.suggested_options or [],
-                "selected_place": meeting_request.selected_place_details,
-                "midpoint": midpoint,
-                "locations": locations,
-            }
-        except jwt.exceptions.ExpiredSignatureError:
-            # If token is expired, return a specific error
-            current_app.logger.warning(f"JWT token expired during results fetch: {request_id}")
-            return {"error": "Your session has expired. Please log in again.", "code": "TOKEN_EXPIRED"}, 401
-        except jwt.exceptions.InvalidTokenError:
-            # Handle other JWT errors
-            current_app.logger.warning(f"Invalid JWT token during results fetch: {request_id}")
-            return {"error": "Invalid authentication token. Please log in again.", "code": "INVALID_TOKEN"}, 401
-        except Exception as e:
-            # Log unexpected errors
-            current_app.logger.exception(f"Error in meeting request results fetch: {str(e)}")
-            return {"error": "An unexpected error occurred", "code": "SERVER_ERROR"}, 500
-
-    def options(self, request_id):
-        """Handle OPTIONS requests for the meeting request results endpoint."""
-        response = current_app.make_default_options_response()
-
-        # Get origin from request headers
-        origin = request.headers.get("Origin")
-        allowed_origins = current_app.config.get("CORS_ORIGINS", [])
-
-        # Add CORS headers if origin is allowed
-        if origin and (origin in allowed_origins or "*" in allowed_origins):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-            response.headers[
-                "Access-Control-Allow-Headers"
-            ] = "Content-Type, Authorization, Accept, X-Requested-With, Origin"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-
-        return response
-
-
-@api.route("/<string:request_id>/resend-invitation")
-@api.param("request_id", "The request identifier")
-class MeetingRequestResendInvitationResource(Resource):
-    @api.doc("resend_invitation")
-    @api.response(200, "Invitation resent successfully")
-    @api.response(400, "Invalid input or rate limited")
-    @api.response(404, "Request not found")
-    @jwt_required()
-    def post(self, request_id) -> None:
-        """Resend the invitation email for a meeting request"""
-        try:
-            request_id = uuid.UUID(request_id)
-        except ValueError:
-            return {"error": "Invalid request ID format", "code": "INVALID_ID"}, 400
-
-        try:
-            # Get user from JWT token
-            user_id = get_jwt_identity()
-            user = User.get_by_token_identity(user_id)
-            if not user:
-                return {"error": "User not found", "code": "USER_NOT_FOUND"}, 404
-
-            # Find the meeting request
-            meeting_request = MeetingRequest.query.get(request_id)
-            if not meeting_request:
-                return {"error": "Request not found", "code": "REQUEST_NOT_FOUND"}, 404
-
-            # Check if user owns the request
-            if meeting_request.user_a_id != user.id:
-                return {"error": "Unauthorized", "code": "UNAUTHORIZED"}, 403
-
-            # Make sure the meeting request is in a state where resending makes sense
-            if meeting_request.status not in [
-                MeetingRequestStatus.PENDING_B_ADDRESS,
-                MeetingRequestStatus.PENDING_B_RESPONSE,
-            ]:
-                return {
-                    "error": f"Cannot resend invitation for a request with status {meeting_request.status.value}",
-                    "code": "INVALID_STATUS",
-                }, 400
-
-            # Check if it's been at least 30 minutes since the last update
-            cooldown_period = 30  # minutes
-
-            # Make sure both datetimes are timezone-aware
-            if meeting_request.updated_at.tzinfo is None:
-                cooldown_time = meeting_request.updated_at.replace(tzinfo=timezone.utc) + timedelta(
-                    minutes=cooldown_period
-                )
-            else:
-                cooldown_time = meeting_request.updated_at + timedelta(minutes=cooldown_period)
-
-            current_time = datetime.now(timezone.utc)
-
-            if current_time < cooldown_time:
-                time_remaining = cooldown_time - current_time
-                minutes_remaining = int(time_remaining.total_seconds() / 60)
-                return {
-                    "error": f"Please wait {minutes_remaining} more minutes before resending",
-                    "code": "RATE_LIMITED",
-                    "minutes_remaining": minutes_remaining,
-                }, 429
-
-            # Get the user's name
-            user_name = user.name or user.email.split("@")[0]
-
-            # Get the unique response URL
-            response_url = f"{current_app.config.get('FRONTEND_URL')}/request/{meeting_request.request_id}?token={meeting_request.token_b}"
-
-            # Send the invitation email
-            if meeting_request.user_b_contact_type == ContactType.EMAIL:
-                # Compose email
-                subject = f"{user_name} wants to find a meeting spot with you"
-                body = f"""
-                <p>Hi {meeting_request.user_b_name or 'there'},</p>
-                <p>{user_name} would like to find a convenient place to meet using Find A Meeting Spot.</p>
-                <p>Click the link below to provide your location and see suggestions:</p>
-                <p><a href="{response_url}">{response_url}</a></p>
-                <p>This link will expire in 24 hours.</p>
-                <p>Thank you,<br>Find A Meeting Spot Team</p>
-                """
-
-                # Send the email
-                send_email(meeting_request.user_b_contact, subject, body)
-                current_app.logger.info(f"Resent invitation email to {meeting_request.user_b_contact}")
-
-                # Update the meeting request
-                meeting_request.updated_at = datetime.now(timezone.utc)
-                db.session.commit()
-
-                return {"message": "Invitation email resent successfully"}, 200
-            else:
-                return {
-                    "error": "Only email invitations can be resent at this time",
-                    "code": "UNSUPPORTED_CONTACT_TYPE",
-                }, 400
-        except jwt.exceptions.ExpiredSignatureError:
-            # If token is expired, return a specific error
-            current_app.logger.warning(f"JWT token expired during invitation resend: {request_id}")
-            return {"error": "Your session has expired. Please log in again.", "code": "TOKEN_EXPIRED"}, 401
-        except jwt.exceptions.InvalidTokenError:
-            # Handle other JWT errors
-            current_app.logger.warning(f"Invalid JWT token during invitation resend: {request_id}")
-            return {"error": "Invalid authentication token. Please log in again.", "code": "INVALID_TOKEN"}, 401
-        except Exception as e:
-            # Log unexpected errors
-            current_app.logger.exception(f"Error in meeting request invitation resend: {str(e)}")
-            return {"error": "An unexpected error occurred", "code": "SERVER_ERROR"}, 500
+api.register_blueprint(meeting_requests_bp, url_prefix="/meeting-requests")

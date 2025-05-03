@@ -90,6 +90,102 @@ class User(db.Model):
         """Check if password matches hash."""
         return check_password_hash(self.password_hash, password)
 
+    def to_dict(self):
+        """Convert user instance to dictionary."""
+        # Check for active subscription
+        active_subscription = None
+        try:
+            active_subscription = next((sub for sub in self.subscriptions if sub.status == "active"), None)
+        except Exception:
+            # If there's an error (e.g., table doesn't exist), leave active_subscription as None
+            pass
+
+        # Start with required fields that should always be present
+        result = {
+            "id": str(self.id),
+            "email": self.email,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "is_oauth_user": bool(
+                self.google_oauth_id or (hasattr(self, "facebook_oauth_id") and self.facebook_oauth_id)
+            ),
+            "is_premium": self.is_premium(),
+            "subscription": active_subscription.to_dict() if active_subscription else None,
+        }
+
+        # Add optional fields only if they exist and are accessible
+        try:
+            if hasattr(self, "username") and self.username:
+                result["username"] = self.username
+        except:
+            pass
+
+        try:
+            if hasattr(self, "first_name") and self.first_name:
+                result["first_name"] = self.first_name
+        except:
+            pass
+
+        try:
+            if hasattr(self, "last_name") and self.last_name:
+                result["last_name"] = self.last_name
+        except:
+            pass
+
+        try:
+            if hasattr(self, "phone") and self.phone:
+                result["phone"] = self.phone
+        except:
+            pass
+
+        try:
+            if hasattr(self, "profile_picture_url") and self.profile_picture_url:
+                result["profile_picture_url"] = self.profile_picture_url
+        except:
+            pass
+
+        try:
+            if hasattr(self, "first_name") or hasattr(self, "last_name"):
+                result["full_name"] = self.full_name
+        except:
+            pass
+
+        return result
+
+    def generate_auth_token(self, expiration=86400):
+        """Generate a JWT token for authentication."""
+        payload = {
+            "exp": datetime.utcnow() + timedelta(seconds=expiration),
+            "iat": datetime.utcnow(),
+            "sub": str(self.id),
+        }
+
+        # Only add optional fields if they exist and are accessible
+        try:
+            if hasattr(self, "first_name") and self.first_name:
+                payload["first_name"] = self.first_name
+        except:
+            pass
+
+        try:
+            if hasattr(self, "username") and self.username:
+                payload["username"] = self.username
+        except:
+            pass
+
+        token = jwt.encode(payload, current_app.config.get("JWT_SECRET_KEY"), algorithm="HS256")
+        return token
+
+    @staticmethod
+    def verify_auth_token(token):
+        """Verify the JWT token and return the user."""
+        try:
+            payload = jwt.decode(token, current_app.config.get("JWT_SECRET_KEY"), algorithms=["HS256"])
+            user_id = payload["sub"]
+            return User.query.get(user_id)
+        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, Exception):
+            return None
+
     def generate_access_token(self, expires_delta=None) -> str:
         """Generate a JWT token for the user."""
         if expires_delta is None:
@@ -154,119 +250,8 @@ class User(db.Model):
             # If subscriptions table doesn't exist or there's another error, assume not premium
             return False
 
-    def to_dict(self):
-        """Convert user instance to dictionary."""
-        # Check for active subscription
-        active_subscription = None
-        try:
-            active_subscription = next((sub for sub in self.subscriptions if sub.status == "active"), None)
-        except Exception:
-            # If there's an error (e.g., table doesn't exist), leave active_subscription as None
-            pass
-
-        # Start with required fields that should always be present
-        result = {
-            "id": str(self.id),
-            "email": self.email,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "is_oauth_user": bool(
-                self.google_oauth_id or (hasattr(self, "facebook_oauth_id") and self.facebook_oauth_id)
-            ),
-            "is_premium": self.is_premium(),
-            "subscription": active_subscription.to_dict() if active_subscription else None,
-        }
-
-        # Add optional fields only if they exist and are accessible
-        try:
-            if hasattr(self, "username") and self.username:
-                result["username"] = self.username
-        except:
-            pass
-
-        try:
-            if hasattr(self, "first_name") and self.first_name:
-                result["first_name"] = self.first_name
-        except:
-            pass
-
-        try:
-            if hasattr(self, "last_name") and self.last_name:
-                result["last_name"] = self.last_name
-        except:
-            pass
-
-        try:
-            if hasattr(self, "phone") and self.phone:
-                result["phone"] = self.phone
-
-                result["phone"] = self.phone
-        except:
-            pass
-
-        try:
-            if hasattr(self, "profile_picture_url") and self.profile_picture_url:
-                result["profile_picture_url"] = self.profile_picture_url
-        except:
-            pass
-
-        try:
-            if hasattr(self, "first_name") or hasattr(self, "last_name"):
-                result["full_name"] = self.full_name
-        except:
-            pass
-
-        return result
-
-    def generate_auth_token(self, expiration=86400):
-        """Generate a JWT token for authentication."""
-        payload = {
-            "exp": datetime.utcnow() + timedelta(seconds=expiration),
-            "iat": datetime.utcnow(),
-            "sub": str(self.id),
-        }
-
-        # Only add optional fields if they exist and are accessible
-        try:
-            if hasattr(self, "first_name") and self.first_name:
-                payload["first_name"] = self.first_name
-        except:
-            pass
-
-        try:
-            if hasattr(self, "username") and self.username:
-                payload["username"] = self.username
-        except:
-            pass
-
-        token = jwt.encode(payload, current_app.config.get("JWT_SECRET_KEY"), algorithm="HS256")
-        return token
-
-    @staticmethod
-    def verify_auth_token(token):
-        """Verify the JWT token and return the user."""
-        try:
-            payload = jwt.decode(token, current_app.config.get("JWT_SECRET_KEY"), algorithms=["HS256"])
-            user_id = payload["sub"]
-            return User.get_by_token_identity(user_id)
-        except:
-            return None
-
     @staticmethod
     def identity(payload):
+        """Get user from JWT payload (used by Flask-JWT)."""
         user_id = payload["identity"]
-        return User.get_by_token_identity(user_id)
-
-
-# Subscription class has been moved to app/models/subscription.py
-
-
-def get_user_by_token(token):
-    """Get a user by their auth token."""
-    try:
-        # Decode the token and extract user_id
-        decoded_token = jwt.decode(token, current_app.config["JWT_SECRET_KEY"], algorithms=["HS256"])
-        user_id = decoded_token["sub"]
-        return User.get_by_token_identity(user_id)
-    except:
-        return None
+        return User.query.get(user_id)

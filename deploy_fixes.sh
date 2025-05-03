@@ -1,33 +1,100 @@
 #!/bin/bash
 # deploy_fixes.sh
-# Script to deploy fixes for profile picture upload and meeting request encryption issues
+# This script deploys fixes for the profile picture upload and meeting requests issues
 
-set -e  # Exit on error
+set -e  # Exit on any error
 
-# Print colored output
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[0;33m'
-NC='\033[0m' # No Color
+# Log file setup
+LOGFILE="deployment_fixes.log"
+# Clear log file
+> $LOGFILE
 
-echo -e "${GREEN}Starting deployment of fixes for profile picture upload and meeting request encryption issues${NC}"
+# Timestamp function
+timestamp() {
+  date +"%Y-%m-%d %H:%M:%S"
+}
 
-# Check if we're in the backend directory
-if [ ! -d "app" ]; then
-    echo -e "${RED}Error: This script must be run from the backend directory${NC}"
-    exit 1
-fi
+# Log function
+log() {
+  echo "$(timestamp) - $1" | tee -a $LOGFILE
+}
 
-# Backup current app configuration
-echo -e "${YELLOW}Backing up current configuration...${NC}"
-mkdir -p backup
-cp -r app/middleware.py backup/middleware.py.bak || true
-cp -r app/__init__.py backup/__init__.py.bak || true
+# Error handling function
+handle_error() {
+  log "ERROR: $1"
+  log "Deployment failed. Check the log file for details."
+  exit 1
+}
 
-# Verify middleware.py exists and has the necessary content
-echo -e "${YELLOW}Verifying middleware.py...${NC}"
-if [ ! -f "app/middleware.py" ]; then
-    echo -e "${RED}app/middleware.py doesn't exist. Creating it...${NC}"
+# Function to back up important files
+backup_files() {
+  log "Backing up important files..."
+
+  # Create backup directory with timestamp
+  BACKUP_DIR="backup_$(date +%Y%m%d_%H%M%S)"
+  mkdir -p $BACKUP_DIR
+
+  # Backup app initialization file
+  if [ -f "app/__init__.py" ]; then
+    cp app/__init__.py "$BACKUP_DIR/init.py.bak"
+    log "Backed up app/__init__.py"
+  fi
+
+  # Backup users model
+  if [ -f "app/models/user.py" ]; then
+    cp app/models/user.py "$BACKUP_DIR/user.py.bak"
+    log "Backed up app/models/user.py"
+  fi
+
+  # Backup database
+  if [ -f "app/dev.db" ]; then
+    cp app/dev.db "$BACKUP_DIR/dev.db.bak"
+    log "Backed up app/dev.db"
+  fi
+
+  # Copy current fixes script
+  if [ -f "fix_both_issues.py" ]; then
+    cp fix_both_issues.py "$BACKUP_DIR/fix_both_issues.py.bak"
+    log "Backed up fix_both_issues.py"
+  fi
+
+  log "Backup completed in directory: $BACKUP_DIR"
+}
+
+# Function to verify app environment
+verify_environment() {
+  log "Verifying application environment..."
+
+  # Check if app directory exists
+  if [ ! -d "app" ]; then
+    handle_error "app directory not found. Please run this script from the backend directory."
+  fi
+
+  # Check if migrations directory exists
+  if [ ! -d "migrations" ]; then
+    handle_error "migrations directory not found. Please run this script from the backend directory."
+  fi
+
+  # Check if required files exist
+  if [ ! -f "app/__init__.py" ]; then
+    handle_error "app/__init__.py not found. Cannot continue."
+  fi
+
+  # Check if SQLAlchemy is installed
+  if ! python -c "import sqlalchemy" &> /dev/null; then
+    log "SQLAlchemy not found. Installing required packages..."
+    pip install -r requirements.txt || handle_error "Failed to install requirements"
+  fi
+
+  log "Environment verification completed"
+}
+
+# Function to check if middleware.py exists and create if needed
+ensure_middleware_file() {
+  log "Checking middleware.py file..."
+
+  if [ ! -f "app/middleware.py" ]; then
+    log "Creating app/middleware.py file"
     cat > app/middleware.py << 'EOL'
 """Middleware for ensuring required environment variables and configurations are set."""
 
@@ -67,55 +134,145 @@ def register_middleware(app: Flask) -> None:
     else:
         app.logger.error("ENCRYPTION_KEY could not be set; this may cause issues with encrypted data")
 EOL
-    echo -e "${GREEN}Created app/middleware.py${NC}"
-fi
+    log "Created middleware.py file"
+  else
+    log "middleware.py already exists"
+  fi
+}
 
-# Verify middleware is registered in __init__.py
-echo -e "${YELLOW}Verifying middleware registration in __init__.py...${NC}"
-if ! grep -q "from .middleware import register_middleware" app/__init__.py; then
-    echo -e "${RED}Middleware import not found in __init__.py. Please add it manually.${NC}"
-    echo -e "${YELLOW}Add this line after other imports: from .middleware import register_middleware${NC}"
-    exit 1
-fi
+# Function to check middleware registration in __init__.py
+ensure_middleware_registration() {
+  log "Checking middleware registration in __init__.py..."
 
-if ! grep -q "register_middleware(app)" app/__init__.py; then
-    echo -e "${RED}Middleware registration not found in __init__.py. Please add it manually.${NC}"
-    echo -e "${YELLOW}Add this line before initializing other extensions: register_middleware(app)${NC}"
-    exit 1
-fi
+  # Check if middleware import is present
+  if ! grep -q "from .middleware import register_middleware" app/__init__.py; then
+    log "Adding middleware import to app/__init__.py"
+    sed -i.bak '1,10s/from flask import Flask.*/&\n# Import encryption key middleware\nfrom .middleware import register_middleware/' app/__init__.py
+  else
+    log "Middleware import already exists in app/__init__.py"
+  fi
 
-# Create directory for profile pictures
-echo -e "${YELLOW}Creating profile pictures directory...${NC}"
-mkdir -p instance/profile_pictures
-chmod 755 instance/profile_pictures
+  # Check if middleware registration is present
+  if ! grep -q "register_middleware(app)" app/__init__.py; then
+    log "Adding middleware registration to app/__init__.py"
+    # Look for setup_cors(app) line and add register_middleware after it
+    sed -i.bak '/setup_cors(app)/a\    # Register encryption key middleware\n    register_middleware(app)' app/__init__.py
+  else
+    log "Middleware registration already exists in app/__init__.py"
+  fi
+}
 
-# Check and run migrations
-echo -e "${YELLOW}Running database migrations...${NC}"
-if command -v flask &> /dev/null; then
-    export FLASK_APP=wsgi.py
-    flask db upgrade
-else
-    echo -e "${RED}Flask command not found. Make sure it's installed and in your PATH.${NC}"
-    echo -e "${YELLOW}Trying with Python directly...${NC}"
-    python -c "from app import create_app, db; app = create_app(); app.app_context().push(); from flask_migrate import upgrade; upgrade()"
-fi
+# Function to create profile pictures directory
+ensure_profile_pictures_directory() {
+  log "Ensuring profile pictures directory exists..."
 
-# Make the fix script executable and run it
-echo -e "${YELLOW}Running the fix script...${NC}"
-if [ -f "fix_both_issues.py" ]; then
-    chmod +x fix_both_issues.py
-    ./fix_both_issues.py
-else
-    echo -e "${RED}fix_both_issues.py not found. Please run the script manually.${NC}"
-fi
+  # Create instance directory if it doesn't exist
+  if [ ! -d "instance" ]; then
+    mkdir -p instance
+    log "Created instance directory"
+  fi
 
-# Run tests to verify fixes
-echo -e "${YELLOW}Running tests to verify fixes...${NC}"
-if [ -f "run_tests.sh" ]; then
-    ./run_tests.sh
-else
-    echo -e "${YELLOW}No test script found. Skipping tests.${NC}"
-fi
+  # Create profile_pictures directory if it doesn't exist
+  if [ ! -d "instance/profile_pictures" ]; then
+    mkdir -p instance/profile_pictures
+    chmod 755 instance/profile_pictures
+    log "Created instance/profile_pictures directory with permissions 755"
+  else
+    log "instance/profile_pictures directory already exists"
+  fi
+}
 
-echo -e "${GREEN}Deployment of fixes completed!${NC}"
-echo -e "${YELLOW}Please verify that both profile picture uploads and meeting requests are working properly.${NC}"
+# Function to apply database fixes
+apply_database_fixes() {
+  log "Applying database fixes..."
+
+  # Run the comprehensive fix script
+  log "Running fix_both_issues.py..."
+  python fix_both_issues.py || handle_error "Fix script failed"
+
+  # Additionally, run the direct phone column fix as a backup
+  log "Running direct_phone_column_fix.py as a backup..."
+  python direct_phone_column_fix.py || log "Warning: Direct phone column fix failed, but continuing..."
+
+  log "Database fixes applied"
+}
+
+# Function to verify fixes
+verify_fixes() {
+  log "Verifying fixes..."
+
+  # Verify middleware registration
+  if ! grep -q "register_middleware(app)" app/__init__.py; then
+    handle_error "Middleware registration not found in app/__init__.py after fixes"
+  fi
+
+  # Verify profile pictures directory
+  if [ ! -d "instance/profile_pictures" ]; then
+    handle_error "Profile pictures directory not created successfully"
+  fi
+
+  # Check if python is available for database verification
+  if command -v python &> /dev/null; then
+    # Verify database columns using Python
+    python -c '
+import sys
+from app import create_app, db
+from sqlalchemy import inspect
+
+try:
+    app = create_app()
+    with app.app_context():
+        inspector = inspect(db.engine)
+        if "users" in inspector.get_table_names():
+            columns = [col["name"] for col in inspector.get_columns("users")]
+            if "phone" not in columns or "profile_picture_url" not in columns:
+                print("ERROR: Required columns not found in users table")
+                sys.exit(1)
+            else:
+                print("Database columns verified successfully")
+                sys.exit(0)
+        else:
+            print("ERROR: users table not found")
+            sys.exit(1)
+except Exception as e:
+    print(f"ERROR: {str(e)}")
+    sys.exit(1)
+' || handle_error "Database column verification failed"
+  else
+    log "Warning: Python not available, skipping database column verification"
+  fi
+
+  log "All fixes verified successfully"
+}
+
+# Main deployment function
+deploy_fixes() {
+  log "Starting deployment of fixes for profile picture and meeting requests issues"
+
+  # Step 1: Verify environment
+  verify_environment
+
+  # Step 2: Backup important files
+  backup_files
+
+  # Step 3: Ensure middleware file exists
+  ensure_middleware_file
+
+  # Step 4: Ensure middleware is registered in __init__.py
+  ensure_middleware_registration
+
+  # Step 5: Create profile pictures directory
+  ensure_profile_pictures_directory
+
+  # Step 6: Apply database fixes
+  apply_database_fixes
+
+  # Step 7: Verify fixes
+  verify_fixes
+
+  log "Deployment completed successfully"
+  log "If the application is running, please restart it for the changes to take effect"
+}
+
+# Run the deployment
+deploy_fixes

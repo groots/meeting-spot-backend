@@ -136,177 +136,35 @@ def create_app(config_name="development"):
     jwt.init_app(app)
     migrate.init_app(app, db)
 
-    # Define function to apply the Facebook column migration
-    def apply_facebook_column_migration():
-        try:
-            # Skip migration if configured to do so
-            if app.config.get("SKIP_FACEBOOK_MIGRATION", False):
-                app.logger.info("Skipping Facebook OAuth column migration due to configuration")
-                return
+    # Create necessary directories
+    create_storage_directories(app)
 
-            from sqlalchemy import inspect
+    # Import and register blueprints
+    from app.api import api as api_blueprint
 
-            inspector = inspect(db.engine)
-            if "users" in inspector.get_table_names():
-                columns = [column["name"] for column in inspector.get_columns("users")]
-                if "facebook_oauth_id" not in columns:
-                    app.logger.info("Adding facebook_oauth_id column to users table")
-                    with db.engine.begin() as conn:
-                        conn.execute("ALTER TABLE users ADD COLUMN facebook_oauth_id VARCHAR(255) UNIQUE")
-                        conn.execute("CREATE INDEX ix_users_facebook_oauth_id ON users (facebook_oauth_id)")
-                    app.logger.info("Successfully added facebook_oauth_id column")
-        except Exception as e:
-            app.logger.error(f"Error applying facebook column migration: {str(e)}")
+    app.register_blueprint(api_blueprint, url_prefix="/api/v1")
 
-    # Add a root route handler for the welcome page
+    # Add a root route for health checks
     @app.route("/")
     def index():
-        return """
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Find A Meeting Spot API</title>
-            <style>
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-                    line-height: 1.6;
-                    color: #333;
-                    max-width: 800px;
-                    margin: 0 auto;
-                    padding: 20px;
-                }
-                h1 {
-                    color: #3498db;
-                    border-bottom: 2px solid #f1f1f1;
-                    padding-bottom: 10px;
-                }
-                .container {
-                    background-color: #fff;
-                    border-radius: 5px;
-                    padding: 20px;
-                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-                }
-                code {
-                    background-color: #f8f9fa;
-                    padding: 2px 5px;
-                    border-radius: 3px;
-                    font-family: 'Courier New', Courier, monospace;
-                }
-                ul {
-                    margin-top: 20px;
-                }
-                li {
-                    margin-bottom: 10px;
-                }
-                .footer {
-                    margin-top: 30px;
-                    text-align: center;
-                    font-size: 0.9em;
-                    color: #666;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>Find A Meeting Spot API</h1>
-                <p>Welcome to the Find A Meeting Spot API service! This is the backend server that powers the Find A Meeting Spot application.</p>
-
-                <h2>API Endpoints</h2>
-                <p>The API endpoints are available under the following paths:</p>
-                <ul>
-                    <li><code>/api/v1/...</code> - API version 1 endpoints</li>
-                    <li><code>/api/v2/...</code> - API version 2 endpoints</li>
-                    <li><code>/debug/...</code> - Debug and monitoring endpoints</li>
-                </ul>
-
-                <h2>Documentation</h2>
-                <p>For detailed API documentation, please visit <a href="https://findameetingspot.com">Find A Meeting Spot</a> website.</p>
-
-                <div class="footer">
-                    <p>&copy; 2025 Find A Meeting Spot</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-
-    # Add CORS check route to easily test CORS configuration
-    @app.route("/debug/cors-check")
-    def cors_check():
-        """Endpoint to check CORS configuration."""
-        origin = request.headers.get("Origin", "No origin provided")
-        cors_logger = logging.getLogger("cors")
-        cors_logger.info(f"CORS check requested from origin: {origin}")
-
-        allowed_origins = app.config.get("CORS_ORIGINS", [])
-        is_allowed = origin in allowed_origins or "*" in allowed_origins
-
-        return jsonify(
-            {
-                "origin": origin,
-                "is_allowed": is_allowed,
-                "allowed_origins": allowed_origins,
-                "debug_mode": app.config.get("DEBUG", False),
-                "environment": app.config.get("ENV", "unknown"),
-            }
-        )
-
-    # Log all requests
-    @app.before_request
-    def log_request():
-        """Log request details."""
-        cors_logger = logging.getLogger("cors")
-        cors_logger.info(
-            "Request: %s %s\nHeaders: %s\nOrigin: %s\n",
-            request.method,
-            request.path,
-            dict(request.headers),
-            request.headers.get("Origin"),
-        )
-
-    # Add security headers middleware
-    @app.after_request
-    def add_security_headers(response):
-        """Add security headers to all responses."""
-        cors_logger = logging.getLogger("cors")
-
-        # Add security headers
-        if app.config.get("SECURITY_HEADERS"):
-            for header, value in app.config["SECURITY_HEADERS"].items():
-                response.headers[header] = value
-
-        # Log response details
-        cors_logger.info("Response:\nStatus: %s\nHeaders: %s\n", response.status_code, dict(response.headers))
-
-        return response
+        return jsonify({"status": "ok", "message": "Find A Meeting Spot API is running"})
 
     # Add error handlers
     @app.errorhandler(500)
     def internal_error(error):
-        app.logger.error("Server Error: %s", error)
-        return jsonify(error="Internal server error"), 500
-
-    @app.errorhandler(503)
-    def service_unavailable(error):
-        app.logger.error("Service Unavailable: %s", error)
-        return jsonify(error="Service temporarily unavailable"), 503
-
-    with app.app_context():
-        # Apply database migrations
-        try:
-            app.logger.info("Running Facebook column migration check...")
-            apply_facebook_column_migration()
-        except Exception as e:
-            app.logger.error(f"Error during database migration: {str(e)}")
-
-        # Register API blueprints
-        from app.api import init_app as init_api
-
-        init_api(app)
-
-        # Create database tables
-        # db.create_all()
+        app.logger.error(f"Internal error: {error}")
+        return jsonify({"error": "Internal server error"}), 500
 
     return app
+
+
+def create_storage_directories(app):
+    """Create necessary storage directories for the application."""
+    # Create instance directory if it doesn't exist
+    os.makedirs(os.path.join(app.instance_path), exist_ok=True)
+
+    # Create profile pictures directory if it doesn't exist
+    profile_pictures_dir = os.path.join(app.instance_path, "profile_pictures")
+    os.makedirs(profile_pictures_dir, exist_ok=True)
+
+    app.logger.info(f"Storage directories created: {profile_pictures_dir}")
