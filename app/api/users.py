@@ -1,12 +1,16 @@
 import uuid
 
-from flask import request
+from flask import Blueprint, request
 from flask_restx import Namespace, Resource, fields
 from werkzeug.security import generate_password_hash
 
 from .. import db
 from ..models import User
 
+# Create Flask blueprint
+users_bp = Blueprint("users", __name__)
+
+# Create RESTx namespace
 api = Namespace("users", description="User operations")
 
 # Swagger models

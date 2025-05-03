@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
-from flask import current_app, g, jsonify, request, url_for
+from flask import Blueprint, current_app, g, jsonify, request, url_for
 from flask_restx import Namespace, Resource, fields
 from sqlalchemy import text
 
@@ -30,6 +30,9 @@ from ..utils.stripe_helpers import (
 
 # Configure logger
 logger = logging.getLogger(__name__)
+
+# Create Flask blueprint
+payments_bp = Blueprint("payments", __name__)
 
 # Create API namespace
 api = Namespace("payments", description="Subscription and payment operations")

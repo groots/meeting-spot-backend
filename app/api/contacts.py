@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from flask import current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from flask_restx import Namespace, Resource, abort, fields
 
 from app import db
@@ -11,6 +11,10 @@ from app.decorators import token_required
 from app.models import Contact, MeetingRequest
 from app.utils.stripe_helpers import is_premium_feature
 
+# Create a Flask blueprint
+contacts_bp = Blueprint("contacts", __name__)
+
+# Create RESTx API namespace for documentation
 api = Namespace("contacts", description="Contact management operations")
 
 # Model definitions for swagger documentation

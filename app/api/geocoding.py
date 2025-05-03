@@ -1,7 +1,10 @@
-from flask import current_app, request
+from flask import Blueprint, current_app, request
 from flask_restx import Namespace, Resource, fields
 
 from ..utils.geocoding import geocode_address, reverse_geocode_coordinates, validate_address
+
+# Create Flask blueprint
+geocoding_bp = Blueprint("geocoding", __name__)
 
 # Create geocoding namespace
 api = Namespace("geocoding", description="Geocoding operations")
