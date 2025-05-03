@@ -211,21 +211,42 @@ def run_migrations_online() -> None:
 
         # Apply connect_args if present in GCP config and we're using QueuePool
         if poolclass == pool.QueuePool and gcp_config and "connect_args" in gcp_config:
-            # Fix for pg8000 adapter which doesn't have connect_args attribute
-            if hasattr(connectable.dialect, "create_connect_args"):
-                # For older SQLAlchemy versions or adapters that support create_connect_args
-                existing_args = connectable.dialect.create_connect_args(connectable.url)[1]
-                for key, value in gcp_config["connect_args"].items():
-                    existing_args[key] = value
-            elif hasattr(connectable.dialect, "connect_args"):
-                # For adapters that have connect_args dictionary
-                for key, value in gcp_config["connect_args"].items():
-                    connectable.dialect.connect_args[key] = value
-            else:
-                # Log a warning but don't fail
-                logger.warning(
-                    f"Could not apply connect_args to dialect {connectable.dialect.name}. This may affect connection parameters."
-                )
+            # Get the dialect-specific connect_args
+            try:
+                # First try the direct dialect.connect_args access
+                if hasattr(connectable.dialect, "connect_args"):
+                    for key, value in gcp_config["connect_args"].items():
+                        connectable.dialect.connect_args[key] = value
+                    logger.info("Applied connect_args to dialect.connect_args")
+                # Then try create_connect_args approach
+                elif hasattr(connectable.dialect, "create_connect_args"):
+                    logger.info("Using dialect.create_connect_args approach")
+                    # For SQLAlchemy that uses create_connect_args
+                    # We need to modify the URL object instead for proper connection arg handling
+                    url = connectable.url
+                    for key, value in gcp_config["connect_args"].items():
+                        if not hasattr(url.query, key):
+                            url.query[key] = value
+                # If neither method works, try setting connect_args on the Engine.dialect
+                else:
+                    # Some versions of pg8000 with SQLAlchemy use a different approach
+                    logger.info(f"Using generic approach for {connectable.dialect.name}")
+                    # Set default connection parameters without failing if they don't exist
+                    if not hasattr(connectable, "_connect_args"):
+                        setattr(connectable, "_connect_args", {})
+
+                    # Apply connect args to every available location that might be used
+                    for key, value in gcp_config["connect_args"].items():
+                        # Try engine connect_args
+                        if hasattr(connectable, "connect_args"):
+                            connectable.connect_args[key] = value
+                        # Try engine._connect_args
+                        if hasattr(connectable, "_connect_args"):
+                            connectable._connect_args[key] = value
+            except Exception as connect_args_error:
+                # Log but don't fail
+                logger.warning(f"Could not apply connect_args: {str(connect_args_error)}")
+                logger.warning(f"Connection may proceed without these parameters: {gcp_config['connect_args']}")
 
         # Try to connect and run migrations
         with connectable.connect() as connection:
