@@ -18,7 +18,7 @@ contacts_bp = Blueprint("contacts", __name__)
 api_restx = Api(contacts_bp, version="1.0", title="Contacts API", description="API for contact management", doc="/docs")
 
 # Create RESTx API namespace for documentation
-api = api_restx.namespace("contacts", description="Contact management operations")
+api = api_restx.namespace("", description="Contact management operations")
 
 # Model definitions for swagger documentation
 contact_model = api.model(
@@ -84,8 +84,6 @@ contact_with_meetings_model = api.model(
 )
 
 
-@api.route("/")
-@api.route("")
 class ContactList(Resource):
     @api.doc("list_contacts")
     @api.marshal_list_with(contact_model)
@@ -156,8 +154,6 @@ class ContactList(Resource):
         return contact.to_dict(), 201
 
 
-@api.route("/<string:id>")
-@api.param("id", "The contact identifier")
 class ContactResource(Resource):
     @api.doc("get_contact")
     @api.marshal_with(contact_with_meetings_model)
@@ -269,8 +265,6 @@ class ContactResource(Resource):
         return {"message": f"Contact {id} deleted successfully"}, 200
 
 
-@api.route("/from-meeting/<string:meeting_id>")
-@api.param("meeting_id", "The meeting request identifier")
 class CreateContactFromMeeting(Resource):
     @api.doc("create_contact_from_meeting")
     @api.expect(contact_create_model)
@@ -333,59 +327,52 @@ class CreateContactFromMeeting(Resource):
         return contact.to_dict(), 201
 
 
-@api.route("", doc=False)
 class ContactsRootOptions(Resource):
     def options(self):
-        """Handle OPTIONS requests for the contacts endpoint without trailing slash."""
-        response = current_app.make_default_options_response()
-        origin = request.headers.get("Origin")
-
-        # Log detailed information for debugging
-        current_app.logger.info("OPTIONS request for contacts endpoint without trailing slash")
-        current_app.logger.info(f"Request origin: {origin}")
-        current_app.logger.info(f"Request headers: {request.headers}")
-
-        # Always allow Origin for test/debug
-        if origin:
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-
-            # Log response headers
-            current_app.logger.info(f"Response headers: {response.headers}")
-        else:
-            current_app.logger.warning("No Origin header in request")
-
-        return response
+        """Handle OPTIONS request for CORS preflight."""
+        return (
+            "",
+            200,
+            {
+                "Allow": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            },
+        )
 
 
-@api.route("/<string:id>", doc=False)
 class ContactIdOptions(Resource):
     def options(self, id):
-        """Handle OPTIONS requests for individual contact endpoints."""
-        response = current_app.make_default_options_response()
-        origin = request.headers.get("Origin")
-        if origin:
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, PUT, DELETE, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-        return response
+        """Handle OPTIONS request for CORS preflight."""
+        return (
+            "",
+            200,
+            {
+                "Allow": "GET, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Methods": "GET, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            },
+        )
 
 
-@api.route("/from-meeting/<string:meeting_id>", doc=False)
 class MeetingContactOptions(Resource):
     def options(self, meeting_id):
-        """Handle OPTIONS requests for creating contacts from meeting endpoint."""
-        response = current_app.make_default_options_response()
-        origin = request.headers.get("Origin")
-        if origin:
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Max-Age"] = "3600"
-        return response
+        """Handle OPTIONS request for CORS preflight."""
+        return (
+            "",
+            200,
+            {
+                "Allow": "POST, OPTIONS",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            },
+        )
+
+
+# Register routes
+api.add_resource(ContactList, "/")
+api.add_resource(ContactResource, "/<string:id>")
+api.add_resource(CreateContactFromMeeting, "/from-meeting/<string:meeting_id>")
+api.add_resource(ContactsRootOptions, "/", endpoint="contacts_root_options")
+api.add_resource(ContactIdOptions, "/<string:id>", endpoint="contact_id_options")
+api.add_resource(MeetingContactOptions, "/from-meeting/<string:meeting_id>", endpoint="meeting_contact_options")
