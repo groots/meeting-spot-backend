@@ -106,7 +106,4 @@ def get_meeting_request(request_id):
     return jsonify(meeting_request.to_dict()), 200
 
 
-# Register the blueprint with the api
-from . import api
-
-api.register_blueprint(meeting_requests_bp, url_prefix="/meeting-requests")
+# Routes for updating, deleting, and other meeting request operations would go here
