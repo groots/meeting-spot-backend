@@ -211,8 +211,21 @@ def run_migrations_online() -> None:
 
         # Apply connect_args if present in GCP config and we're using QueuePool
         if poolclass == pool.QueuePool and gcp_config and "connect_args" in gcp_config:
-            for key, value in gcp_config["connect_args"].items():
-                connectable.dialect.dbapi.connect_args[key] = value
+            # Fix for pg8000 adapter which doesn't have connect_args attribute
+            if hasattr(connectable.dialect, "create_connect_args"):
+                # For older SQLAlchemy versions or adapters that support create_connect_args
+                existing_args = connectable.dialect.create_connect_args(connectable.url)[1]
+                for key, value in gcp_config["connect_args"].items():
+                    existing_args[key] = value
+            elif hasattr(connectable.dialect, "connect_args"):
+                # For adapters that have connect_args dictionary
+                for key, value in gcp_config["connect_args"].items():
+                    connectable.dialect.connect_args[key] = value
+            else:
+                # Log a warning but don't fail
+                logger.warning(
+                    f"Could not apply connect_args to dialect {connectable.dialect.name}. This may affect connection parameters."
+                )
 
         # Try to connect and run migrations
         with connectable.connect() as connection:

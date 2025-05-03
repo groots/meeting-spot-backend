@@ -15,7 +15,7 @@ cryptography==42.0.5
 # Database
 psycopg2-binary==2.9.9
 python-dotenv==1.0.1
-pg8000>=1.31.1
+pg8000==1.29.8
 
 # Google Cloud
 cloud-sql-python-connector[pg8000]==1.12.1
