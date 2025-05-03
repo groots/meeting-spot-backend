@@ -15,9 +15,16 @@ from app.utils.stripe_helpers import is_premium_feature
 contacts_bp = Blueprint("contacts", __name__)
 
 # Initialize Flask-RestX API
-api_restx = Api(contacts_bp, version="1.0", title="Contacts API", description="API for contact management", doc="/docs")
+api_restx = Api(
+    contacts_bp,
+    version="1.0",
+    title="Contacts API",
+    description="API for contact management",
+    doc="/docs",
+    prefix="",  # Empty prefix since the blueprint already has a prefix
+)
 
-# Create RESTx API namespace for documentation
+# Create RESTx API namespace for documentation with empty prefix
 api = api_restx.namespace("", description="Contact management operations")
 
 # Model definitions for swagger documentation

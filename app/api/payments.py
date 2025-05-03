@@ -41,10 +41,11 @@ api_restx = Api(
     title="Payments API",
     description="API for payment and subscription management",
     doc="/docs",
+    prefix="",  # Empty prefix since the blueprint already has a prefix
 )
 
 # Create API namespace
-api = api_restx.namespace("payments", description="Subscription and payment operations")
+api = api_restx.namespace("", description="Subscription and payment operations")
 
 # Request and response models
 plan_model = api.model(

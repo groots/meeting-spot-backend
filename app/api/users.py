@@ -11,10 +11,17 @@ from app.models import User
 users_bp = Blueprint("users", __name__)
 
 # Initialize Flask-RestX API
-api_restx = Api(users_bp, version="1.0", title="Users API", description="API for user operations", doc="/docs")
+api_restx = Api(
+    users_bp,
+    version="1.0",
+    title="Users API",
+    description="API for user operations",
+    doc="/docs",
+    prefix="",  # Empty prefix since the blueprint already has a prefix
+)
 
 # Create RESTx namespace
-api = api_restx.namespace("users", description="User operations")
+api = api_restx.namespace("", description="User operations")
 
 # Swagger models
 user_model = api.model(

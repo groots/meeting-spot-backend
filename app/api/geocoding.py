@@ -8,11 +8,16 @@ geocoding_bp = Blueprint("geocoding", __name__)
 
 # Initialize Flask-RestX API
 api_restx = Api(
-    geocoding_bp, version="1.0", title="Geocoding API", description="API for geocoding operations", doc="/docs"
+    geocoding_bp,
+    version="1.0",
+    title="Geocoding API",
+    description="API for geocoding operations",
+    doc="/docs",
+    prefix="",  # Empty prefix since the blueprint already has a prefix
 )
 
 # Create geocoding namespace
-api = api_restx.namespace("geocoding", description="Geocoding operations")
+api = api_restx.namespace("", description="Geocoding operations")
 
 # Define geocoding response model
 geocoding_response = api.model(
