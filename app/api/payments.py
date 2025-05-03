@@ -7,8 +7,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 from flask import Blueprint, current_app, g, jsonify, request, url_for
-from flask_restx import Api, Namespace, Resource, fields
-from sqlalchemy import text
 
 from app import db
 from app.decorators import auth_required, token_required
@@ -24,483 +22,278 @@ from app.utils.stripe_helpers import (
     get_subscription_prices,
     handle_checkout_completed,
     handle_subscription_updated,
-    initialize_stripe,
-    is_premium_feature,
 )
-
-# Configure logger
-logger = logging.getLogger(__name__)
 
 # Create Flask blueprint
 payments_bp = Blueprint("payments", __name__)
 
-# Initialize Flask-RestX API
-api_restx = Api(
-    payments_bp,
-    version="1.0",
-    title="Payments API",
-    description="API for payment and subscription management",
-    doc="/docs",
-    prefix="",  # Empty prefix since the blueprint already has a prefix
-)
 
-# Create API namespace
-api = api_restx.namespace("", description="Subscription and payment operations")
+@payments_bp.route("/plans", methods=["GET"])
+def get_plans():
+    """Get available subscription plans."""
+    plans = []
+    for plan_id, details in PLAN_DETAILS.items():
+        plan = {
+            "id": plan_id,
+            "name": details["name"],
+            "description": details["description"],
+            "features": details["features"],
+            "price_monthly": details["price_monthly"],
+            "price_yearly": details["price_yearly"],
+            "currency": details["currency"],
+            "popular": details.get("popular", False),
+        }
+        plans.append(plan)
 
-# Request and response models
-plan_model = api.model(
-    "Plan",
-    {
-        "id": fields.String(required=True, description="Plan ID"),
-        "name": fields.String(required=True, description="Plan name"),
-        "description": fields.String(required=True, description="Plan description"),
-        "price": fields.Float(required=True, description="Plan price"),
-        "interval": fields.String(required=False, description="Billing interval"),
-        "features": fields.List(fields.String, description="List of features"),
-    },
-)
-
-subscription_model = api.model(
-    "Subscription",
-    {
-        "id": fields.String(description="The subscription identifier"),
-        "user_id": fields.String(description="The user identifier"),
-        "plan_id": fields.String(description="Subscription plan type"),
-        "status": fields.String(description="Subscription status"),
-        "current_period_start": fields.DateTime(description="Start date of subscription"),
-        "current_period_end": fields.DateTime(description="End date of subscription"),
-        "cancel_at_period_end": fields.Boolean(description="Whether subscription will cancel at end of period"),
-        "created_at": fields.DateTime(description="Creation timestamp"),
-        "updated_at": fields.DateTime(description="Last update timestamp"),
-    },
-)
-
-checkout_model = api.model(
-    "CheckoutSession",
-    {
-        "price_id": fields.String(required=True, description="Stripe Price ID"),
-        "success_url": fields.String(required=True, description="URL to redirect after successful payment"),
-        "cancel_url": fields.String(required=True, description="URL to redirect after canceled payment"),
-    },
-)
-
-checkout_response = api.model(
-    "CheckoutResponse",
-    {
-        "checkout_url": fields.String(required=True, description="URL for Stripe Checkout"),
-        "session_id": fields.String(required=True, description="Stripe Checkout Session ID"),
-    },
-)
-
-payment_method_model = api.model(
-    "PaymentMethod",
-    {
-        "id": fields.String(required=True, description="Payment method ID"),
-        "brand": fields.String(required=True, description="Card brand"),
-        "last4": fields.String(required=True, description="Last 4 digits of card"),
-        "exp_month": fields.Integer(required=True, description="Expiration month"),
-        "exp_year": fields.Integer(required=True, description="Expiration year"),
-        "is_default": fields.Boolean(required=True, description="Whether this is the default payment method"),
-    },
-)
-
-webhook_response = api.model(
-    "WebhookResponse",
-    {
-        "received": fields.Boolean(required=True, description="Whether webhook was received successfully"),
-        "type": fields.String(required=False, description="Type of webhook event"),
-    },
-)
-
-create_subscription_model = api.model(
-    "CreateSubscription",
-    {
-        "plan_id": fields.String(required=True, description="Subscription plan type"),
-        "payment_provider": fields.String(required=True, description="Payment provider"),
-        "payment_id": fields.String(description="Payment ID from provider"),
-    },
-)
-
-payment_webhook_model = api.model(
-    "PaymentWebhook",
-    {
-        "event_type": fields.String(required=True, description="Event type from payment provider"),
-        "payment_id": fields.String(required=True, description="Payment ID from provider"),
-        "data": fields.Raw(description="Event data from provider"),
-    },
-)
+    return jsonify(plans)
 
 
-@api.route("/plans")
-class PlanList(Resource):
-    """Resource for retrieving available subscription plans."""
-
-    @api.doc("list_plans")
-    @api.marshal_list_with(plan_model)
-    def get(self):
-        """Get all available subscription plans."""
-        # Return the plan details from stripe_helpers
-        return [{"id": plan_id, **details} for plan_id, details in PLAN_DETAILS.items()]
+@payments_bp.route("/subscriptions", methods=["GET"])
+@token_required
+def get_subscriptions(current_user):
+    """Get user's subscriptions."""
+    subscriptions = [sub.to_dict() for sub in current_user.subscriptions]
+    return jsonify(subscriptions)
 
 
-@api.route("/subscriptions")
-class SubscriptionsList(Resource):
-    @api.doc("list_subscriptions")
-    @token_required
-    def get(self, current_user):
-        """Get current user's subscriptions"""
-        try:
-            # Check if user is authenticated
-            try:
-                current_user_id = current_user.id
-                current_app.logger.info(f"Getting subscriptions for user {current_user_id}")
+@payments_bp.route("/subscriptions", methods=["POST"])
+@token_required
+def create_subscription(current_user):
+    """Create a new subscription for the user."""
+    data = request.json
 
-                try:
-                    # First try the ORM approach
-                    subscriptions = Subscription.query.filter_by(user_id=current_user_id).all()
-                    return [sub.to_dict() for sub in subscriptions]
+    if not data or "plan_id" not in data:
+        return jsonify({"error": "Missing required field: plan_id"}), 400
 
-                except Exception as e:
-                    # Check if this is the facebook_oauth_id error
-                    error_str = str(e).lower()
-                    current_app.logger.warning(f"Database error occurred: {error_str}")
+    plan_id = data["plan_id"]
+    payment_provider = data.get("payment_provider", "stripe")
+    payment_id = data.get("payment_id")  # For webhook reconciliation
 
-                    # Use a more generic check for the column error
-                    if "column" in error_str and "facebook_oauth_id" in error_str:
-                        current_app.logger.info("Falling back to direct SQL due to facebook_oauth_id column issue")
+    # Special case for free plan - we can create it directly
+    if plan_id == "free":
+        # Check if user already has this plan
+        existing = Subscription.query.filter_by(user_id=current_user.id, plan_id=plan_id, status="active").first()
 
-                        # Use direct SQL to avoid the ORM issue
-                        sql = text(
-                            """
-                            SELECT id, user_id, plan_id, stripe_subscription_id, stripe_customer_id,
-                                   status, current_period_start, current_period_end,
-                                   cancel_at_period_end, created_at, updated_at
-                            FROM subscription
-                            WHERE user_id = :user_id
-                        """
-                        )
+        if existing:
+            return jsonify({"error": "User already has an active free plan"}), 400
 
-                        with db.engine.connect() as conn:
-                            result = conn.execute(sql, {"user_id": current_user_id})
-                            subscriptions = []
-
-                            for row in result:
-                                sub = {
-                                    "id": str(row[0]),
-                                    "user_id": str(row[1]),
-                                    "plan_id": row[2],
-                                    "stripe_subscription_id": row[3],
-                                    "stripe_customer_id": row[4],
-                                    "status": row[5],
-                                    "current_period_start": row[6].isoformat() if row[6] else None,
-                                    "current_period_end": row[7].isoformat() if row[7] else None,
-                                    "cancel_at_period_end": bool(row[8]),
-                                    "created_at": row[9].isoformat() if row[9] else None,
-                                    "updated_at": row[10].isoformat() if row[10] else None,
-                                }
-                                subscriptions.append(sub)
-
-                        current_app.logger.info(f"Found {len(subscriptions)} subscriptions via direct SQL")
-                        return subscriptions
-                    else:
-                        # Log the actual error for debugging
-                        current_app.logger.error(f"Database error in subscriptions endpoint: {error_str}")
-                        raise
-
-            except Exception as e:
-                current_app.logger.error(f"Error fetching subscriptions: {str(e)}")
-                return {"error": "Error fetching subscriptions", "message": str(e)}, 500
-
-        except Exception as e:
-            current_app.logger.error(f"Unexpected error in subscription list endpoint: {str(e)}")
-            return {"error": "Authentication error", "message": str(e)}, 401
-
-    @api.doc("create_subscription")
-    @api.expect(create_subscription_model)
-    @api.marshal_with(subscription_model, code=201)
-    @token_required
-    def post(self, current_user):
-        """Create a new subscription (direct creation without payment)"""
-        # This endpoint should only be used for free plans or testing
-        data = request.json
-
-        if data["plan_id"] != "free":
-            return {"message": "For paid plans, use the /checkout endpoint"}, 400
-
-        # Check if user already has an active subscription
-        active_sub = Subscription.query.filter_by(user_id=current_user.id, status="active").first()
-
-        if active_sub:
-            # End current subscription
-            active_sub.status = "canceled"
-            active_sub.updated_at = datetime.now(timezone.utc)
-            active_sub.cancel_at_period_end = True
-
-        # Create new subscription
-        new_subscription = Subscription(
+        # Create the subscription
+        subscription = Subscription(
+            id=str(uuid.uuid4()),
             user_id=current_user.id,
-            plan_id=data["plan_id"],
+            plan_id=plan_id,
             status="active",
-            stripe_subscription_id=data.get("payment_id"),
-            stripe_customer_id=data.get("payment_provider"),
             current_period_start=datetime.now(timezone.utc),
-            current_period_end=None,  # Free plan has no end date
+            current_period_end=datetime.now(timezone.utc) + timedelta(days=365),
             cancel_at_period_end=False,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            # Set the payment ID as the stripe subscription ID if provided
+            stripe_subscription_id=payment_id,
         )
 
-        db.session.add(new_subscription)
+        # Try to get or create a Stripe customer ID if possible
+        try:
+            if payment_provider == "stripe":
+                # Try to create a Stripe customer for the user
+                stripe_customer_id = create_stripe_customer(current_user)
+                if stripe_customer_id:
+                    subscription.stripe_customer_id = stripe_customer_id
+        except Exception as e:
+            current_app.logger.error(f"Error creating Stripe customer: {str(e)}")
+            # Continue without the Stripe customer ID
+
+        db.session.add(subscription)
         db.session.commit()
 
-        return new_subscription.to_dict(), 201
+        return jsonify(subscription.to_dict()), 201
 
-
-@api.route("/subscriptions/<string:id>")
-@api.param("id", "The subscription identifier")
-class SubscriptionResource(Resource):
-    @api.doc("get_subscription")
-    @api.marshal_with(subscription_model)
-    @token_required
-    def get(self, id, current_user):
-        """Get a specific subscription"""
+    # For paid plans, create a checkout session
+    if payment_provider == "stripe":
+        # Create a Stripe customer for the user if needed
         try:
-            uuid_obj = uuid.UUID(id)
-        except ValueError:
-            api.abort(400, "Invalid subscription ID format")
-
-        subscription = Subscription.query.filter_by(id=uuid_obj, user_id=current_user.id).first_or_404(
-            description=f"Subscription {id} not found"
-        )
-        return subscription.to_dict()
-
-    @api.doc("cancel_subscription")
-    @api.marshal_with(subscription_model)
-    @token_required
-    def delete(self, id, current_user):
-        """Cancel a subscription"""
-        try:
-            uuid_obj = uuid.UUID(id)
-        except ValueError:
-            api.abort(400, "Invalid subscription ID format")
-
-        subscription = Subscription.query.filter_by(id=uuid_obj, user_id=current_user.id).first_or_404(
-            description=f"Subscription {id} not found"
-        )
-
-        if subscription.status != "active":
-            api.abort(400, "Only active subscriptions can be canceled")
-
-        # If it's a Stripe subscription, cancel via Stripe
-        if subscription.stripe_subscription_id:
-            success, message = stripe_cancel_subscription(subscription.id)
-            if not success:
-                api.abort(400, message)
-        else:
-            # For free or test subscriptions, just update the status
-            subscription.status = "canceled"
-            subscription.cancel_at_period_end = True
-            subscription.updated_at = datetime.now(timezone.utc)
-            db.session.commit()
-
-        return subscription.to_dict()
-
-
-@api.route("/checkout")
-class CheckoutResource(Resource):
-    @api.doc("create_checkout_session")
-    @api.expect(checkout_model)
-    @token_required
-    def post(self, current_user):
-        """Create a Stripe checkout session"""
-        data = request.json
-        stripe = initialize_stripe()
-
-        try:
-            # Ensure user has a Stripe customer ID
             customer_id = create_stripe_customer(current_user)
-
-            # Create checkout session
-            checkout_session = stripe.checkout.Session.create(
-                customer=customer_id,
-                payment_method_types=["card"],
-                line_items=[
-                    {
-                        "price": data.get("price_id"),
-                        "quantity": 1,
-                    }
-                ],
-                mode="subscription",
-                success_url=data.get("success_url"),
-                cancel_url=data.get("cancel_url"),
-                metadata={"user_id": str(current_user.id)},
-            )
-
-            return {"checkout_url": checkout_session.url}, 200
-
+            if not customer_id:
+                return jsonify({"error": "Failed to create payment customer"}), 500
         except Exception as e:
-            current_app.logger.error(f"Stripe error: {str(e)}")
-            return {"error": str(e)}, 400
+            current_app.logger.error(f"Error creating Stripe customer: {str(e)}")
+            return jsonify({"error": "Failed to create payment customer"}), 500
+
+        # Create a checkout session
+        success_url = return_url or url_for("api.payments.get_subscriptions", _external=True)
+        cancel_url = return_url or url_for("api.payments.get_plans", _external=True)
+        checkout_session_id = create_checkout_session(current_user, plan_id, success_url, cancel_url)
+        checkout_url = f"https://checkout.stripe.com/pay/{checkout_session_id}"
+
+        return (
+            jsonify(
+                {
+                    "checkout_url": checkout_url,
+                    "status": "pending_payment",
+                    "message": "Please complete payment to activate subscription",
+                }
+            ),
+            201,
+        )
+
+    return jsonify({"error": f"Unsupported payment provider: {payment_provider}"}), 400
 
 
-@api.route("/payment-methods")
-class PaymentMethodsResource(Resource):
-    """Resource for managing payment methods."""
-
-    @api.doc("get_payment_methods")
-    @auth_required
-    @api.marshal_list_with(payment_method_model)
-    def get(self):
-        """Get user's payment methods."""
-        user = g.current_user
-
-        # Get payment methods from Stripe
-        payment_methods = get_customer_payment_methods(user)
-
-        return payment_methods
+@payments_bp.route("/subscriptions/<string:id>", methods=["GET"])
+@token_required
+def get_subscription(id, current_user):
+    """Get details of a specific subscription."""
+    subscription = Subscription.query.filter_by(id=id, user_id=current_user.id).first_or_404(
+        description=f"Subscription {id} not found"
+    )
+    return jsonify(subscription.to_dict())
 
 
-@api.route("/webhook")
-class PaymentWebhook(Resource):
-    @api.doc("payment_webhook")
-    def post(self):
-        """Handle Stripe webhook events."""
-        payload = request.data
-        sig_header = request.headers.get("Stripe-Signature")
+@payments_bp.route("/subscriptions/<string:id>", methods=["DELETE"])
+@token_required
+def cancel_subscription_endpoint(id, current_user):
+    """Cancel a subscription."""
+    subscription = Subscription.query.filter_by(id=id, user_id=current_user.id).first_or_404(
+        description=f"Subscription {id} not found"
+    )
 
-        if not sig_header:
-            current_app.logger.warning("No Stripe signature header")
-            return {"received": False}, 400
+    if subscription.status != "active":
+        return jsonify({"error": "Cannot cancel a subscription that is not active"}), 400
 
-        stripe = initialize_stripe()
-
+    # For Stripe subscriptions, use the Stripe API
+    if subscription.stripe_subscription_id:
         try:
-            # Verify the event with Stripe
-            webhook_secret = current_app.config.get("STRIPE_WEBHOOK_SECRET")
-            event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
-
-            # Handle different event types
-            event_type = event["type"]
-            data = event["data"]["object"]
-
-            if event_type == "checkout.session.completed":
-                handle_checkout_completed(data)
-            elif event_type in ["subscription.created", "subscription.updated"]:
-                handle_subscription_updated(data)
-            # Add other event types as needed
-
-            return {"received": True, "type": event_type}
-        except stripe.error.SignatureVerificationError:
-            current_app.logger.error("Invalid Stripe signature")
-            return {"error": "Invalid signature"}, 400
+            result = stripe_cancel_subscription(subscription.stripe_subscription_id)
+            if result:
+                # The webhook will update the subscription status
+                return jsonify(
+                    {
+                        "id": id,
+                        "status": "canceling",
+                        "cancel_at_period_end": True,
+                        "message": "Subscription will be canceled at the end of the billing period",
+                    }
+                )
         except Exception as e:
-            current_app.logger.error(f"Error handling webhook: {e}")
-            return {"error": str(e)}, 400
+            current_app.logger.error(f"Error canceling Stripe subscription: {str(e)}")
+            # Continue with direct cancellation
+
+    # For other providers or subscriptions without stripe_subscription_id, cancel directly
+    subscription.status = "canceled"
+    subscription.cancel_at_period_end = True
+    subscription.updated_at = datetime.now(timezone.utc)
+    db.session.commit()
+
+    return jsonify(
+        {"id": id, "status": "canceled", "cancel_at_period_end": True, "message": "Subscription has been canceled"}
+    )
 
 
-@api.route("/prices")
-class PriceResource(Resource):
-    """Resource for retrieving Stripe prices."""
+@payments_bp.route("/checkout", methods=["POST"])
+@token_required
+def create_checkout(current_user):
+    """Create a checkout session for a subscription."""
+    data = request.json
 
-    @api.doc("get_prices")
-    def get(self):
-        """Get all available subscription prices from Stripe."""
+    if not data or "plan_id" not in data:
+        return jsonify({"error": "Missing required field: plan_id"}), 400
+
+    plan_id = data["plan_id"]
+    return_url = data.get("return_url")
+
+    # Create a Stripe customer for the user if needed
+    try:
+        customer_id = create_stripe_customer(current_user)
+        if not customer_id:
+            return jsonify({"error": "Failed to create payment customer"}), 500
+    except Exception as e:
+        current_app.logger.error(f"Error creating Stripe customer: {str(e)}")
+        return jsonify({"error": "Failed to create payment customer"}), 500
+
+    # Create a checkout session
+    success_url = return_url or url_for("api.payments.get_subscriptions", _external=True)
+    cancel_url = return_url or url_for("api.payments.get_plans", _external=True)
+    checkout_session_id = create_checkout_session(current_user, plan_id, success_url, cancel_url)
+    checkout_url = f"https://checkout.stripe.com/pay/{checkout_session_id}"
+
+    return (
+        jsonify(
+            {
+                "checkout_url": checkout_url,
+                "status": "pending_payment",
+                "message": "Please complete payment to activate subscription",
+            }
+        ),
+        201,
+    )
+
+
+@payments_bp.route("/payment-methods", methods=["GET"])
+@token_required
+def list_payment_methods(current_user):
+    """List user's payment methods."""
+    try:
+        payment_methods = get_customer_payment_methods(current_user)
+        return jsonify(payment_methods)
+    except Exception as e:
+        current_app.logger.error(f"Error retrieving payment methods: {str(e)}")
+        return jsonify([])
+
+
+@payments_bp.route("/webhook", methods=["POST"])
+def webhook():
+    """Handle payment webhook events."""
+    # Get the webhook payload and signature
+    payload = request.data
+    sig_header = request.headers.get("Stripe-Signature")
+
+    # Process based on event type
+    try:
+        data = json.loads(payload)
+        event_type = data.get("event_type", data.get("type"))
+
+        current_app.logger.info(f"Processing payment webhook event: {event_type}")
+
+        if not event_type:
+            current_app.logger.error("No event type in webhook payload")
+            return jsonify({"error": "Invalid webhook payload"}), 400
+
+        # Handle different event types
+        if event_type == "checkout.session.completed":
+            handle_checkout_completed(data)
+        elif event_type == "customer.subscription.created":
+            # For subscription.created events, we handle this as part of the checkout.session.completed
+            # Just log it for now
+            current_app.logger.info(f"Received subscription created event: {data.get('id')}")
+        elif event_type == "customer.subscription.updated":
+            handle_subscription_updated(data)
+        elif event_type == "customer.subscription.deleted":
+            # Handle subscription cancellation manually
+            subscription_id = data.get("id")
+            if subscription_id:
+                subscription = Subscription.query.filter_by(stripe_subscription_id=subscription_id).first()
+                if subscription:
+                    subscription.status = "canceled"
+                    subscription.updated_at = datetime.now(timezone.utc)
+                    db.session.commit()
+                    current_app.logger.info(f"Subscription {subscription_id} marked as canceled")
+        else:
+            current_app.logger.error(f"Unhandled webhook event type: {event_type}")
+
+        return jsonify({"status": "success"})
+
+    except Exception as e:
+        current_app.logger.error(f"Error processing webhook: {str(e)}")
+        current_app.logger.exception(e)
+        return jsonify({"error": str(e)}), 400
+
+
+@payments_bp.route("/prices", methods=["GET"])
+def get_prices():
+    """Get subscription prices."""
+    try:
         prices = get_subscription_prices()
         return jsonify(prices)
-
-
-# OPTIONS route classes for CORS support
-@api.route("/plans", doc=False)
-class PlansOptions(Resource):
-    def options(self):
-        """Handle OPTIONS requests for the plans endpoint."""
-        response = current_app.make_default_options_response()
-        origin = request.headers.get("Origin")
-        if origin:
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-        return response
-
-
-@api.route("/subscriptions", doc=False)
-class SubscriptionsOptions(Resource):
-    def options(self):
-        """Handle OPTIONS requests for the subscriptions endpoint."""
-        response = current_app.make_default_options_response()
-        origin = request.headers.get("Origin")
-        if origin:
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-        return response
-
-
-@api.route("/subscriptions/<string:id>", doc=False)
-class SubscriptionIdOptions(Resource):
-    def options(self, id):
-        """Handle OPTIONS requests for the subscription ID endpoint."""
-        response = current_app.make_default_options_response()
-        origin = request.headers.get("Origin")
-        if origin:
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, DELETE, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-        return response
-
-
-@api.route("/checkout", doc=False)
-class CheckoutOptions(Resource):
-    def options(self):
-        """Handle OPTIONS requests for the checkout endpoint."""
-        response = current_app.make_default_options_response()
-        origin = request.headers.get("Origin")
-        if origin:
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-        return response
-
-
-@api.route("/payment-methods", doc=False)
-class PaymentMethodsOptions(Resource):
-    def options(self):
-        """Handle OPTIONS requests for the payment methods endpoint."""
-        response = current_app.make_default_options_response()
-        origin = request.headers.get("Origin")
-        if origin:
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-        return response
-
-
-@api.route("/webhook", doc=False)
-class WebhookOptions(Resource):
-    def options(self):
-        """Handle OPTIONS requests for the webhook endpoint."""
-        response = current_app.make_default_options_response()
-        origin = request.headers.get("Origin")
-        if origin:
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Stripe-Signature"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-        return response
-
-
-@api.route("/prices", doc=False)
-class PricesOptions(Resource):
-    def options(self):
-        """Handle OPTIONS requests for the prices endpoint."""
-        response = current_app.make_default_options_response()
-        origin = request.headers.get("Origin")
-        if origin:
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-        return response
+    except Exception as e:
+        current_app.logger.error(f"Error getting prices: {str(e)}")
+        return jsonify({"error": str(e)}), 500
