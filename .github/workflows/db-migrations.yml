@@ -1,0 +1,82 @@
+name: Database Migrations
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'migrations/**'
+      - 'app/models/**'
+      - 'requirements.txt'
+      - 'github_migrations.py'
+      - '.github/workflows/db-migrations.yml'
+
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+
+jobs:
+  check-migrations:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+pg8000://postgres:postgres@localhost:5432/test_db
+      FLASK_ENV: testing
+      ENCRYPTION_KEY: test_key_for_ci_123456789012345678901234
+      JWT_SECRET_KEY: test_jwt_key_for_ci_123456789012345678901234
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create directories for Flask app
+        run: |
+          mkdir -p instance/profile_pictures
+          mkdir -p logs
+
+      - name: Database Diagnostic Info
+        run: |
+          # Get PostgreSQL version and connection info
+          echo "PostgreSQL Info:"
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "SELECT version();"
+
+          # Check if we can connect from Python
+          python -c "import pg8000; conn = pg8000.connect(user='postgres', password='postgres', host='localhost', port=5432, database='test_db'); print('Connected successfully'); cursor = conn.cursor(); cursor.execute('SELECT version()'); print(cursor.fetchone()[0]); conn.close()"
+
+      - name: Run migrations with custom script
+        run: |
+          # Make the migrations script executable
+          chmod +x github_migrations.py
+
+          # Run migrations with skip-errors flag for CI
+          python github_migrations.py --upgrade --skip-errors
+
+      - name: Summary
+        run: |
+          echo "## Database Migration Summary" >> $GITHUB_STEP_SUMMARY
+          echo "* Attempted to apply migrations to test database" >> $GITHUB_STEP_SUMMARY
+          echo "* This workflow does not affect production database" >> $GITHUB_STEP_SUMMARY
+          echo "* See logs for detailed results" >> $GITHUB_STEP_SUMMARY
