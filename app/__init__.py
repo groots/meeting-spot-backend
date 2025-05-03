@@ -149,6 +149,11 @@ def create_app(config_name="development"):
     def index():
         return jsonify({"status": "ok", "message": "Find A Meeting Spot API is running"})
 
+    # Add a CORS test endpoint
+    @app.route("/api/v1/cors", methods=["GET", "POST", "PUT", "DELETE"])
+    def cors_test():
+        return jsonify({"message": "CORS test successful"})
+
     # Add error handlers
     @app.errorhandler(500)
     def internal_error(error):

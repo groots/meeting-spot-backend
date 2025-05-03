@@ -35,18 +35,18 @@ def register():
     data = request.get_json()
 
     if not data:
-        return jsonify({"msg": "No input data provided"}), 400
+        return jsonify({"error": "No input data provided", "message": "No input data provided"}), 400
 
     email = data.get("email", "").lower().strip()
     password = data.get("password", "")
 
     if not email or not password:
-        return jsonify({"msg": "Email and password are required"}), 400
+        return jsonify({"error": "Email and password are required", "message": "Email and password are required"}), 400
 
     # Check if user already exists
     existing_user = User.query.filter_by(email=email).first()
     if existing_user:
-        return jsonify({"msg": "User already exists"}), 409
+        return jsonify({"error": "User already exists", "message": "User already exists"}), 409
 
     # Create new user
     new_user = User(
@@ -66,39 +66,37 @@ def register():
         access_token = new_user.generate_access_token()
 
         return (
-            jsonify({"msg": "User created successfully", "user": new_user.to_dict(), "access_token": access_token}),
+            jsonify({"message": "User created successfully", "user": new_user.to_dict(), "access_token": access_token}),
             201,
         )
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error creating user: {str(e)}")
-        return jsonify({"msg": "Error creating user"}), 500
+        return jsonify({"error": "Error creating user", "message": "Error creating user"}), 500
 
 
 @auth_bp.route("/login", methods=["POST"])
 def login():
     """Login a user."""
-    data = request.get_json()
+    data = request.get_json() or {}  # Handle None case
 
-    if not data:
-        return jsonify({"msg": "No input data provided"}), 400
-
-    email = data.get("email", "").lower().strip()
+    # Empty JSON or no JSON both mean missing credentials
+    email = data.get("email", "").lower().strip() if data.get("email") else ""
     password = data.get("password", "")
 
     if not email or not password:
-        return jsonify({"msg": "Email and password are required"}), 400
+        return jsonify({"error": "Email and password are required", "message": "Email and password are required"}), 400
 
     # Find user
     user = User.query.filter_by(email=email).first()
 
     if not user or not user.check_password(password):
-        return jsonify({"msg": "Invalid email or password"}), 401
+        return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
 
     # Generate token
     access_token = user.generate_access_token()
 
-    return jsonify({"msg": "Login successful", "user": user.to_dict(), "access_token": access_token}), 200
+    return jsonify({"message": "Login successful", "user": user.to_dict(), "access_token": access_token}), 200
 
 
 @auth_bp.route("/me", methods=["GET"])
@@ -109,7 +107,7 @@ def get_current_user():
     user = User.query.get(current_user_id)
 
     if not user:
-        return jsonify({"msg": "User not found"}), 404
+        return jsonify({"error": "User not found", "message": "User not found"}), 404
 
     return jsonify(user.to_dict()), 200
 
