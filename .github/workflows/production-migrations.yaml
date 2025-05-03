@@ -28,7 +28,7 @@ jobs:
         cache: 'pip'
 
     - name: Install dependencies
-      working-directory: ./backend
+
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
@@ -59,7 +59,7 @@ jobs:
         ps aux | grep cloud_sql_proxy
 
     - name: Run database migrations
-      working-directory: ./backend
+
       env:
         # Use TCP connection to localhost:5432 where the proxy is forwarding
         DATABASE_URL: postgresql://postgres:${{ secrets.DB_PASSWORD }}@localhost:5432/findameetingspot
@@ -80,7 +80,7 @@ jobs:
         echo "Date: $(date)" >> $GITHUB_STEP_SUMMARY
 
     - name: Verify migrations
-      working-directory: ./backend
+
       env:
         DATABASE_URL: postgresql://postgres:${{ secrets.DB_PASSWORD }}@localhost:5432/findameetingspot
         FLASK_APP: app:create_app
