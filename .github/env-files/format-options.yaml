@@ -1,0 +1,3 @@
+# Black formatting options
+SKIP_BLACK_CHECK: "true"
+FORCE_FORMATTING: "true" 
