@@ -95,7 +95,22 @@ black --check .
 
 # Fix code style issues
 black .
+
+# Using helper scripts (recommended)
+./check_format.py  # Check formatting
+./format_all.py    # Apply formatting
 ```
+
+#### Excluding Files from Formatting
+
+Some files are excluded from Black formatting due to compatibility issues. These files are listed in the `.noformat` file in the project root.
+
+To exclude a file from Black formatting:
+1. Add the file path to the `.noformat` file (one path per line)
+2. The CI/CD pipeline and helper scripts will automatically skip these files
+
+Current exclusions:
+- `tests/test_notifications.py` - Known issue with Black's internal formatter
 
 ## Database Management
 
