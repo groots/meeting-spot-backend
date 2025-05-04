@@ -33,6 +33,12 @@ jobs:
           pip install -r requirements.txt
           pip install black==22.3.0 isort flake8==5.0.4 flake8-docstrings==1.7.0 pytest pytest-cov
 
+      - name: Create marker file for problematic tests
+        run: |
+          mkdir -p tests
+          echo "# This file marks tests/test_notifications.py to be excluded from Black formatting" > tests/.noformat_test_notifications
+          echo "# Created because Black has an internal error when formatting this file" >> tests/.noformat_test_notifications
+
       - name: Run black
         run: black --check --exclude tests/test_notifications.py .
 
