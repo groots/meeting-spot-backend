@@ -110,7 +110,7 @@ class User(db.Model):
                 self.google_oauth_id or (hasattr(self, "facebook_oauth_id") and self.facebook_oauth_id)
             ),
         }
-        
+
         # Safely add premium status and subscription
         try:
             result["is_premium"] = self.is_premium()

@@ -120,7 +120,7 @@ def login():
             access_token = user.generate_access_token()
             current_app.logger.info(f"Login successful for user {email}")
             response_data = {"message": "Login successful", "access_token": access_token}
-            
+
             # Try to add user data safely
             try:
                 response_data["user"] = user.to_dict()
@@ -131,7 +131,7 @@ def login():
                     "id": str(user.id),
                     "email": user.email,
                 }
-            
+
             return jsonify(response_data), 200
         except Exception as token_error:
             current_app.logger.error(f"Token generation error for user {email}: {str(token_error)}")
