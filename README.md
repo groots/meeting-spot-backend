@@ -114,18 +114,21 @@ Current exclusions:
 
 #### CI/CD Automated Formatting
 
-The CI/CD pipeline uses [rickstaa/action-black](https://github.com/rickstaa/action-black) to automatically format code when issues are detected:
+The CI/CD pipeline automatically formats Python code during deployment:
 
-1. When unformatted Python files are detected, a pull request is automatically created
-2. The PR contains all necessary formatting changes
-3. You can merge this PR to fix formatting issues
-4. This ensures consistent code style without blocking deployment
+1. When unformatted files are detected, Black automatically applies formatting
+2. These changes are committed directly to the main branch with a [skip ci] flag
+3. This ensures consistent code style across the codebase without requiring manual intervention
+4. The CI pipeline will never fail due to Black formatting issues
 
-If you encounter any GitHub Actions failures related to Black:
+This zero-maintenance approach ensures:
+- You don't need to manually review or merge formatting PRs
+- Code is always correctly formatted in the repository
+- The deployment process isn't interrupted by formatting issues
 
-1. Check the PR created by the Black formatter action 
-2. Merge the auto-formatting PR to resolve the issues
-3. Or manually run Black locally with `./format_all.py` and push changes
+If you want to ensure your code is properly formatted before pushing:
+1. Run `./format_all.py` locally
+2. This will apply the same formatting rules used in CI
 
 ## Database Management
 
