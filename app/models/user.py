@@ -109,9 +109,18 @@ class User(db.Model):
             "is_oauth_user": bool(
                 self.google_oauth_id or (hasattr(self, "facebook_oauth_id") and self.facebook_oauth_id)
             ),
-            "is_premium": self.is_premium(),
-            "subscription": active_subscription.to_dict() if active_subscription else None,
         }
+        
+        # Safely add premium status and subscription
+        try:
+            result["is_premium"] = self.is_premium()
+            if active_subscription:
+                result["subscription"] = active_subscription.to_dict()
+            else:
+                result["subscription"] = None
+        except Exception:
+            result["is_premium"] = False
+            result["subscription"] = None
 
         # Add optional fields only if they exist and are accessible
         try:
@@ -246,8 +255,9 @@ class User(db.Model):
                 None,
             )
             return bool(active_subscription)
-        except Exception:
-            # If subscriptions table doesn't exist or there's another error, assume not premium
+        except Exception as e:
+            # Handle case where subscriptions table doesn't exist or relationship isn't set up
+            current_app.logger.warning(f"Error checking premium status for user {self.email}: {str(e)}")
             return False
 
     @staticmethod
