@@ -61,7 +61,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install black==22.3.0 isort flake8==5.0.4 flake8-docstrings==1.7.0 pytest pytest-cov
+          pip install black==23.1.0 isort flake8==5.0.4 flake8-docstrings==1.7.0 pytest pytest-cov
 
       - name: Create marker file for problematic tests
         run: |
@@ -71,31 +71,40 @@ jobs:
 
       - name: Run black
         run: |
-          # First format files
-          if [ -f .noformat ]; then
-            EXCLUDE_PATTERN=$(cat .noformat | grep -v '^#' | tr '\n' '|' | sed 's/|$//')
-            if [ -n "$EXCLUDE_PATTERN" ]; then
-              # Apply formatting first
-              black --exclude "$EXCLUDE_PATTERN" .
-              # Then check to verify
-              black --check --exclude "$EXCLUDE_PATTERN" .
-            else
-              black .
-              black --check .
-            fi
+          # Make sure test_notifications.py is in the .noformat file
+          if [ ! -f .noformat ]; then
+            echo "tests/test_notifications.py" > .noformat
           else
-            black --exclude tests/test_notifications.py .
-            black --check --exclude tests/test_notifications.py .
+            grep -q "tests/test_notifications.py" .noformat || echo "tests/test_notifications.py" >> .noformat
           fi
           
-          # Check if any files were changed by formatting
+          # Format all Python files in the repository
+          EXCLUDE_PATTERN=$(cat .noformat | grep -v '^#' | tr '\n' '|' | sed 's/|$//')
+          echo "Exclude pattern: $EXCLUDE_PATTERN"
+          
+          # Apply Black formatting to all Python files
+          find . -type f -name "*.py" | grep -v -E "$EXCLUDE_PATTERN" | xargs black
+          
+          # Check if any files were changed
           if [[ -n $(git status -s) ]]; then
             echo "Files were formatted by Black. Committing changes."
             git config --global user.name "GitHub Actions Bot"
             git config --global user.email "actions@github.com"
+            
+            # Set up credentials for push
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+            
+            # Add and commit changes
             git add .
             git commit -m "Apply Black formatting [skip ci]"
             git push
+          fi
+          
+          # Verify all files are now properly formatted
+          if [ -n "$EXCLUDE_PATTERN" ]; then
+            black --check --exclude "$EXCLUDE_PATTERN" .
+          else
+            black --check .
           fi
 
       - name: Run isort
