@@ -3,6 +3,17 @@ name: Backend CI/CD Pipeline
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      # Don't run this workflow if only migration-related files changed
+      # These will be handled by the db-migrations.yml workflow
+      - 'migrations/**'
+      - 'github_migrations.py'
+      - '.github/workflows/db-migrations.yml'
+      # Only run when the changes actually affect the backend code
+      - '!app/**'
+      - '!requirements.txt'
+      - '!Dockerfile'
+      - '!.github/workflows/ci-cd.yml'
 
 jobs:
   quality-and-deploy:
