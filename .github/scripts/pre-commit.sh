@@ -13,4 +13,4 @@ if git diff --name-only | grep -q '\.py$'; then
     git add $(git diff --name-only | grep '\.py$')
 fi
 
-echo "Pre-commit checks complete!" 
+echo "Pre-commit checks complete!"

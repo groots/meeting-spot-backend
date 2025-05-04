@@ -20,4 +20,4 @@ black --exclude "tests/test_notifications.py" .
 echo "Running isort formatter..."
 isort .
 
-echo "Code formatting complete!" 
+echo "Code formatting complete!"
