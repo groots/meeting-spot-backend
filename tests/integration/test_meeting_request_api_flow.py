@@ -122,7 +122,7 @@ def test_meeting_request_full_flow(client, auth_user):
             MeetingRequestStatus.COMPLETED.value,
         ]
         assert "suggested_options" in response.json
-        
+
         # If suggested_options is not None, verify the content
         if response.json["suggested_options"]:
             assert len(response.json["suggested_options"]) > 0

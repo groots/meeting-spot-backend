@@ -83,14 +83,18 @@ Find a Meeting Spot Team
 """
         send_email(new_request.user_b_contact, subject, body)
 
-    response_data = new_request.to_dict() if hasattr(new_request, 'to_dict') else {
-        "request_id": str(new_request.request_id),
-        "status": new_request.status.value,
-        "user_b_contact_type": new_request.user_b_contact_type.value,
-        "location_type": new_request.location_type,
-        "created_at": new_request.created_at.isoformat()
-    }
-    
+    response_data = (
+        new_request.to_dict()
+        if hasattr(new_request, "to_dict")
+        else {
+            "request_id": str(new_request.request_id),
+            "status": new_request.status.value,
+            "user_b_contact_type": new_request.user_b_contact_type.value,
+            "location_type": new_request.location_type,
+            "created_at": new_request.created_at.isoformat(),
+        }
+    )
+
     return jsonify(response_data), 201
 
 
@@ -104,15 +108,20 @@ def get_meeting_requests():
         return jsonify({"error": "User not found"}), 404
 
     meeting_requests = MeetingRequest.query.filter_by(user_a_id=user.id).all()
-    
-    response_data = [request.to_dict() if hasattr(request, 'to_dict') else {
-        "request_id": str(request.request_id),
-        "status": request.status.value,
-        "user_b_contact_type": request.user_b_contact_type.value,
-        "location_type": request.location_type,
-        "created_at": request.created_at.isoformat()
-    } for request in meeting_requests]
-    
+
+    response_data = [
+        request.to_dict()
+        if hasattr(request, "to_dict")
+        else {
+            "request_id": str(request.request_id),
+            "status": request.status.value,
+            "user_b_contact_type": request.user_b_contact_type.value,
+            "location_type": request.location_type,
+            "created_at": request.created_at.isoformat(),
+        }
+        for request in meeting_requests
+    ]
+
     return jsonify(response_data), 200
 
 
@@ -133,14 +142,18 @@ def get_meeting_request(request_id):
     if meeting_request.user_a_id != user.id:
         return jsonify({"error": "Unauthorized"}), 403
 
-    response_data = meeting_request.to_dict() if hasattr(meeting_request, 'to_dict') else {
-        "request_id": str(meeting_request.request_id),
-        "status": meeting_request.status.value,
-        "user_b_contact_type": meeting_request.user_b_contact_type.value,
-        "location_type": meeting_request.location_type,
-        "created_at": meeting_request.created_at.isoformat()
-    }
-    
+    response_data = (
+        meeting_request.to_dict()
+        if hasattr(meeting_request, "to_dict")
+        else {
+            "request_id": str(meeting_request.request_id),
+            "status": meeting_request.status.value,
+            "user_b_contact_type": meeting_request.user_b_contact_type.value,
+            "location_type": meeting_request.location_type,
+            "created_at": meeting_request.created_at.isoformat(),
+        }
+    )
+
     return jsonify(response_data), 200
 
 
@@ -181,14 +194,18 @@ def update_meeting_request(request_id):
     meeting_request.updated_at = datetime.now(timezone.utc)
     db.session.commit()
 
-    response_data = meeting_request.to_dict() if hasattr(meeting_request, 'to_dict') else {
-        "request_id": str(meeting_request.request_id),
-        "status": meeting_request.status.value,
-        "user_b_contact_type": meeting_request.user_b_contact_type.value,
-        "location_type": meeting_request.location_type,
-        "updated_at": meeting_request.updated_at.isoformat()
-    }
-    
+    response_data = (
+        meeting_request.to_dict()
+        if hasattr(meeting_request, "to_dict")
+        else {
+            "request_id": str(meeting_request.request_id),
+            "status": meeting_request.status.value,
+            "user_b_contact_type": meeting_request.user_b_contact_type.value,
+            "location_type": meeting_request.location_type,
+            "updated_at": meeting_request.updated_at.isoformat(),
+        }
+    )
+
     return jsonify(response_data), 200
 
 
@@ -232,19 +249,24 @@ def get_meeting_request_status(request_id):
     if meeting_request.user_a_id != user.id:
         return jsonify({"error": "Unauthorized"}), 403
 
-    return jsonify({
-        "request_id": str(request_id),
-        "status": meeting_request.status.value,
-        "created_at": meeting_request.created_at.isoformat(),
-        "expires_at": meeting_request.expires_at.isoformat(),
-    }), 200
+    return (
+        jsonify(
+            {
+                "request_id": str(request_id),
+                "status": meeting_request.status.value,
+                "created_at": meeting_request.created_at.isoformat(),
+                "expires_at": meeting_request.expires_at.isoformat(),
+            }
+        ),
+        200,
+    )
 
 
 @meeting_requests_bp.route("/<uuid:request_id>/respond", methods=["POST"])
 def respond_to_meeting_request(request_id):
     """Respond to a meeting request with User B's address."""
     data = request.get_json()
-    
+
     # Validate required fields
     required_fields = ["token", "address_b_lat", "address_b_lon"]
     if not all(field in data for field in required_fields):
@@ -261,11 +283,11 @@ def respond_to_meeting_request(request_id):
     # Check if request has expired - ensure both are timezone aware
     now = datetime.now(timezone.utc)
     expires_at = meeting_request.expires_at
-    
+
     # If expires_at doesn't have a timezone, add UTC
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
-        
+
     if expires_at < now:
         return jsonify({"error": "Meeting request has expired"}), 403
 
@@ -279,19 +301,24 @@ def respond_to_meeting_request(request_id):
     # Call process_meeting_request - this will be mocked in tests
     # The import must match the one the test is patching
     from app.utils.location import process_meeting_request as process_func
+
     try:
         process_func(meeting_request)
     except Exception as e:
         current_app.logger.error(f"Error processing meeting request: {e}")
-    
+
     # Refresh meeting request from db to get current state
     db.session.refresh(meeting_request)
-    
-    response_data = meeting_request.to_dict() if hasattr(meeting_request, 'to_dict') else {
-        "request_id": str(meeting_request.request_id),
-        "status": meeting_request.status.value,
-    }
-    
+
+    response_data = (
+        meeting_request.to_dict()
+        if hasattr(meeting_request, "to_dict")
+        else {
+            "request_id": str(meeting_request.request_id),
+            "status": meeting_request.status.value,
+        }
+    )
+
     return jsonify(response_data), 200
 
 
@@ -312,12 +339,17 @@ def get_meeting_request_results(request_id):
     if meeting_request.user_a_id != user.id:
         return jsonify({"error": "Unauthorized"}), 403
 
-    suggested_options = getattr(meeting_request, 'suggested_options', None)
-    selected_place_details = getattr(meeting_request, 'selected_place_details', None)
+    suggested_options = getattr(meeting_request, "suggested_options", None)
+    selected_place_details = getattr(meeting_request, "selected_place_details", None)
 
-    return jsonify({
-        "request_id": str(request_id),
-        "status": meeting_request.status.value,
-        "suggested_options": suggested_options,
-        "selected_place": selected_place_details,
-    }), 200
+    return (
+        jsonify(
+            {
+                "request_id": str(request_id),
+                "status": meeting_request.status.value,
+                "suggested_options": suggested_options,
+                "selected_place": selected_place_details,
+            }
+        ),
+        200,
+    )

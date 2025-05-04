@@ -40,7 +40,18 @@ jobs:
           echo "# Created because Black has an internal error when formatting this file" >> tests/.noformat_test_notifications
 
       - name: Run black
-        run: black --check --exclude tests/test_notifications.py .
+        run: |
+          # Create the exclude pattern from .noformat file if it exists
+          if [ -f .noformat ]; then
+            EXCLUDE_PATTERN=$(cat .noformat | grep -v '^#' | tr '\n' '|' | sed 's/|$//')
+            if [ -n "$EXCLUDE_PATTERN" ]; then
+              black --check --exclude "$EXCLUDE_PATTERN" .
+            else
+              black --check .
+            fi
+          else
+            black --check --exclude tests/test_notifications.py .
+          fi
 
       - name: Run isort
         run: isort --check-only .
