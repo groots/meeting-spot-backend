@@ -112,6 +112,21 @@ To exclude a file from Black formatting:
 Current exclusions:
 - `tests/test_notifications.py` - Known issue with Black's internal formatter
 
+#### CI/CD Automated Formatting
+
+The CI/CD pipeline uses [rickstaa/action-black](https://github.com/rickstaa/action-black) to automatically format code when issues are detected:
+
+1. When unformatted Python files are detected, a pull request is automatically created
+2. The PR contains all necessary formatting changes
+3. You can merge this PR to fix formatting issues
+4. This ensures consistent code style without blocking deployment
+
+If you encounter any GitHub Actions failures related to Black:
+
+1. Check the PR created by the Black formatter action 
+2. Merge the auto-formatting PR to resolve the issues
+3. Or manually run Black locally with `./format_all.py` and push changes
+
 ## Database Management
 
 ### Migration Strategy
