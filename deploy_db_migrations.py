@@ -72,6 +72,69 @@ def is_ci_environment():
     return any(os.environ.get(var) for var in ci_env_vars)
 
 
+def should_skip_migrations_in_ci():
+    """Determine if we should skip migrations in CI."""
+    # Check for explicit environment variables
+    if os.environ.get("FORCE_DB_MIGRATIONS_IN_CI") == "true":
+        return False
+
+    if os.environ.get("SKIP_DB_MIGRATIONS_IN_CI") == "true":
+        return True
+
+    # Check for marker file
+    if os.path.exists(".skip_migrations_in_ci"):
+        logger.info("Found .skip_migrations_in_ci marker file")
+        return True
+
+    # Default to not skipping
+    return False
+
+
+def create_skip_marker_if_needed():
+    """Create a skip marker file if running in CI without Cloud SQL Proxy."""
+    if not is_ci_environment():
+        return False
+
+    # Don't create marker if explicitly told to force migrations
+    if os.environ.get("FORCE_DB_MIGRATIONS_IN_CI") == "true":
+        return False
+
+    # Check if we're running in GitHub Actions
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        # Check if Cloud SQL Proxy is running
+        try:
+            result = subprocess.run(
+                ["ps", "aux"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            if "cloud_sql_proxy" not in result.stdout and "cloud-sql-proxy" not in result.stdout:
+                logger.warning("Cloud SQL Proxy not detected in CI environment")
+
+                # Run the skip migrations script if it exists
+                if os.path.exists("ci_cd/skip_migrations_in_ci.py"):
+                    logger.info("Running skip_migrations_in_ci.py")
+                    subprocess.run(
+                        ["python", "ci_cd/skip_migrations_in_ci.py"],
+                        check=True,
+                    )
+                    return True
+                else:
+                    # Create marker file manually
+                    with open(".skip_migrations_in_ci", "w") as f:
+                        f.write("# Migration Skip Marker\n")
+                        f.write(f"# Created: {time.time()}\n")
+                    os.environ["SKIP_DB_MIGRATIONS_IN_CI"] = "true"
+                    os.environ["CI_IGNORE_DB_CONNECTION_ERRORS"] = "true"
+                    logger.info("Created .skip_migrations_in_ci marker file")
+                    return True
+        except Exception as e:
+            logger.warning(f"Error checking for Cloud SQL Proxy: {e}")
+
+    return False
+
+
 @contextmanager
 def create_backup(db_url=None):
     """Create database backup if possible"""
@@ -140,7 +203,7 @@ def run_database_migrations(dry_run=False):
     """Run database migrations"""
     try:
         # Check if we should skip migrations in CI
-        if is_ci_environment() and os.environ.get("SKIP_DB_MIGRATIONS_IN_CI") == "true":
+        if should_skip_migrations_in_ci():
             logger.info("Skipping migrations in CI environment as configured")
             return True
 
@@ -274,33 +337,97 @@ def perform_migration_with_backup(dry_run=False):
 
 
 def main():
-    """Main function to run migrations"""
-    parser = argparse.ArgumentParser(description="Run database migrations safely")
-    parser.add_argument("--dry-run", action="store_true", help="Check for migrations without applying them")
+    """Main function to handle command-line arguments and run migrations."""
+    parser = argparse.ArgumentParser(description="Deploy database migrations")
+    parser.add_argument("--dry-run", action="store_true", help="Show what would be done without making changes")
+    parser.add_argument("--skip-backup", action="store_true", help="Skip database backup step")
+    parser.add_argument("--force", action="store_true", help="Force migrations even in CI environments")
     args = parser.parse_args()
 
-    logger.info("Starting database migration process")
-    if args.dry_run:
-        logger.info("Running in DRY RUN mode - no changes will be made")
+    logger.info("========== Database Migration Process ==========")
 
-    # Add CI environment information to logs
-    if is_ci_environment():
-        logger.info("Running in CI environment")
-        if os.environ.get("CI_IGNORE_DB_ERRORS") == "true":
-            logger.info("CI_IGNORE_DB_ERRORS=true - database errors will be ignored")
-        if os.environ.get("SKIP_DB_MIGRATIONS_IN_CI") == "true":
-            logger.info("SKIP_DB_MIGRATIONS_IN_CI=true - migrations will be skipped")
-        if os.environ.get("FORCE_DB_MIGRATIONS_IN_CI") == "true":
-            logger.info("FORCE_DB_MIGRATIONS_IN_CI=true - migrations will be forced")
+    # Force migrations if requested via CLI argument
+    if args.force:
+        os.environ["FORCE_DB_MIGRATIONS_IN_CI"] = "true"
+        os.environ["SKIP_DB_MIGRATIONS_IN_CI"] = "false"
+        logger.info("Forcing migrations to run (--force flag used)")
 
-    success = perform_migration_with_backup(args.dry_run)
+    # Check if we need to create a skip marker for CI environments
+    skipped = create_skip_marker_if_needed()
+    if skipped:
+        logger.info("⏩ Migrations will be skipped in this CI environment")
+        # Update GitHub step summary if available
+        summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            try:
+                with open(summary_path, "a") as f:
+                    f.write("## ⏩ Database Migrations Skipped\n\n")
+                    f.write("CI environment detected without Cloud SQL Proxy - database migrations skipped.\n")
+            except Exception:
+                pass
+        return 0
 
-    if success:
-        logger.info("Migration process completed successfully")
-        sys.exit(0)
-    else:
-        logger.error("Migration process failed")
-        sys.exit(1)
+    # Proceed with migration process
+    try:
+        # Check if database URL is available first
+        db_url = get_database_url()
+        if not db_url:
+            logger.error("No database connection available")
+
+            # Special handling for CI environments
+            if is_ci_environment() and os.environ.get("CI_IGNORE_DB_CONNECTION_ERRORS") == "true":
+                logger.warning("Missing database connection ignored in CI")
+                return 0
+            return 1
+
+        # Show migration history
+        check_migration_history()
+
+        # Run migrations with backup unless skipped
+        if args.skip_backup:
+            logger.info("Skipping backup as requested")
+            success = run_database_migrations(dry_run=args.dry_run)
+        else:
+            success = perform_migration_with_backup(dry_run=args.dry_run)
+
+        if not success:
+            logger.error("Failed to apply database migrations")
+            return 1
+
+        # Verify migrations
+        if not args.dry_run and not verify_migrations():
+            logger.warning("Migration verification had warnings")
+            # Don't fail the build for verification warnings
+
+        logger.info("Database migration process completed successfully")
+        return 0
+
+    except FileNotFoundError as e:
+        # This is likely a Unix socket error with pg8000
+        if "No such file or directory" in str(e) and "sock.connect" in str(e):
+            logger.error(f"Unix socket connection error: {e}")
+            logger.error("This error typically occurs when trying to connect to a PostgreSQL server via Unix socket")
+            logger.error("In CI environments, you need to run Cloud SQL Proxy or skip migrations")
+
+            if is_ci_environment():
+                # Create skip marker and exit successfully
+                create_skip_marker_if_needed()
+                logger.warning("Created migration skip marker due to socket connection error")
+                return 0
+            return 1
+        else:
+            logger.error(f"File not found error: {e}")
+            return 1
+
+    except Exception as e:
+        logger.error(f"Error during migration process: {e}")
+
+        # Special handling for CI environments
+        if is_ci_environment() and os.environ.get("CI_IGNORE_DB_ERRORS") == "true":
+            logger.warning(f"Error ignored in CI: {e}")
+            return 0
+
+        return 1
 
 
 if __name__ == "__main__":

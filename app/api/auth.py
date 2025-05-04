@@ -135,7 +135,6 @@ def get_current_user():
     """Get current user information."""
     current_user_id = get_jwt_identity()
     user = User.query.get(current_user_id)
-
     if not user:
         return jsonify({"error": "User not found", "message": "User not found"}), 404
 
