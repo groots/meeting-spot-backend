@@ -1,4 +1,4 @@
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, make_response, request
 from sqlalchemy import text
 
 from .. import db
@@ -45,3 +45,20 @@ def health_check():
             ),
             500,
         )
+
+
+# Add auth endpoints
+@v1_bp.route("/auth/reset-password", methods=["POST", "OPTIONS"])
+def reset_password():
+    """Handle password reset request."""
+    # Handle OPTIONS request for CORS preflight
+    if request.method == "OPTIONS":
+        response = make_response()
+        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        return response
+
+    # For POST requests, forward to the main auth blueprint
+    from ..auth import reset_password as auth_reset_password
+
+    return auth_reset_password()
