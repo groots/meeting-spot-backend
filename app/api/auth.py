@@ -459,25 +459,24 @@ def reset_password():
             stmt = text("SELECT id, email FROM users WHERE email = :email")
             result = db.session.execute(stmt, {"email": email}).fetchone()
 
+            # Important: Always return success even if user doesn't exist (security best practice)
+            success_message = "If your email exists in our system, you will receive password reset instructions."
+
             if not result:
                 # Don't reveal that the user doesn't exist for security reasons
                 current_app.logger.info(f"Reset password requested for non-existent email: {email}")
-                return (
-                    jsonify(
-                        {"message": "If your email exists in our system, you will receive password reset instructions."}
-                    ),
-                    200,
-                )
+                current_app.logger.info(f"[SECURITY] No email will be sent since user doesn't exist")
+                return jsonify({"message": success_message}), 200
 
             # In a real implementation, we would generate a token and send an email
-            # For now, we'll just return success
             current_app.logger.info(f"Reset password requested for email: {email}")
-            return (
-                jsonify(
-                    {"message": "If your email exists in our system, you will receive password reset instructions."}
-                ),
-                200,
-            )
+            current_app.logger.info(f"[IMPLEMENTATION] Would send reset email to: {email} in production")
+
+            # TODO: Send the actual email
+            # from ..utils.notifications import send_password_reset_email
+            # send_password_reset_email(email, token)
+
+            return jsonify({"message": success_message}), 200
 
         except Exception as db_error:
             stack_trace = traceback.format_exc()
