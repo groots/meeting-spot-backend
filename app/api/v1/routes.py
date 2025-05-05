@@ -50,7 +50,7 @@ def health_check():
 # Add auth endpoints
 @v1_bp.route("/auth/reset-password", methods=["POST", "OPTIONS"])
 def reset_password():
-    """Handle password reset request."""
+    """Handle password reset request with improved error handling."""
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
@@ -58,10 +58,87 @@ def reset_password():
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         return response
 
-    # For POST requests, forward to the main auth blueprint
-    from ..auth import reset_password as auth_reset_password
+    # For POST requests, implement robust error handling
+    try:
+        data = request.get_json() or {}
 
-    return auth_reset_password()
+        # Log incoming request data (without sensitive information)
+        email = data.get("email", "").lower().strip() if data.get("email") else ""
+        current_app.logger.info(f"V1 Reset password request for email: {email}")
+
+        if not email:
+            current_app.logger.warning("V1 Reset password failed: missing email")
+            return jsonify({"error": "Email is required", "message": "Email is required"}), 400
+
+        # Basic database check
+        try:
+            db.session.execute(text("SELECT 1")).fetchone()
+        except Exception as db_error:
+            current_app.logger.error(f"V1 Database connection error: {str(db_error)}")
+            return jsonify({"error": "Server error", "message": "Database connection error"}), 500
+
+        # Check if user exists
+        try:
+            stmt = text("SELECT id, email FROM users WHERE email = :email")
+            result = db.session.execute(stmt, {"email": email}).fetchone()
+
+            # Always return success for security (don't reveal if email exists)
+            success_message = "If your email exists in our system, you will receive password reset instructions."
+
+            if not result:
+                current_app.logger.info(f"V1 Reset password: User not found for email: {email}")
+                return jsonify({"message": success_message}), 200
+
+            # Generate token for valid user
+            try:
+                user_id = result[0]
+
+                # Import security module and generate token
+                try:
+                    from ..utils.security import generate_reset_token
+
+                    token = generate_reset_token(str(user_id))  # Ensure user_id is a string
+
+                    current_app.logger.info(f"V1 Reset token generated for user ID: {user_id}")
+
+                    # Send reset email
+                    try:
+                        from ..utils.notifications import send_password_reset_email
+
+                        email_sent = send_password_reset_email(email, token)
+
+                        if email_sent:
+                            current_app.logger.info(f"V1 Reset password email sent to: {email}")
+                        else:
+                            current_app.logger.warning(f"V1 Failed to send reset email to: {email}")
+                    except ImportError as import_err:
+                        current_app.logger.error(f"V1 Import error with notifications: {str(import_err)}")
+                    except Exception as email_err:
+                        current_app.logger.error(f"V1 Error sending reset email: {str(email_err)}")
+
+                    # Return success regardless of email status (for security)
+                    return jsonify({"message": success_message}), 200
+
+                except ImportError as sec_import_err:
+                    current_app.logger.error(f"V1 Security module import error: {str(sec_import_err)}")
+                    return jsonify({"error": "Server configuration error"}), 500
+                except Exception as token_err:
+                    current_app.logger.error(f"V1 Token generation error: {str(token_err)}")
+                    return jsonify({"error": "Server error", "message": "Error generating reset token"}), 500
+
+            except Exception as user_err:
+                current_app.logger.error(f"V1 User processing error: {str(user_err)}")
+                return jsonify({"error": "Server error", "message": "Error processing user data"}), 500
+
+        except Exception as lookup_err:
+            current_app.logger.error(f"V1 User lookup error: {str(lookup_err)}")
+            return jsonify({"error": "Server error", "message": "Error looking up user data"}), 500
+
+    except Exception as e:
+        import traceback
+
+        current_app.logger.error(f"V1 Unhandled exception in reset password: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"error": "Server error", "message": "An unexpected error occurred"}), 500
 
 
 @v1_bp.route("/auth/me", methods=["GET", "OPTIONS"])
@@ -76,8 +153,9 @@ def get_current_user():
 
     # For GET requests, implement direct user lookup
     try:
-        # Import JWT modules
-        from flask_jwt_extended import get_jwt_identity, jwt_required, verify_jwt_in_request
+        import traceback
+
+        import jwt
 
         # Extract token from Authorization header directly
         auth_header = request.headers.get("Authorization", "")
@@ -88,72 +166,90 @@ def get_current_user():
         # Get the token
         token = auth_header.replace("Bearer ", "")
 
+        # Try to decode the token directly
         try:
-            # Verify the token manually
-            verify_jwt_in_request()
-            current_user_id = get_jwt_identity()
+            # Get the secret key from config
+            secret_key = current_app.config.get("SECRET_KEY")
+            if not secret_key:
+                current_app.logger.error("SECRET_KEY not configured")
+                return jsonify({"error": "Server configuration error"}), 500
 
-            if not current_user_id:
-                current_app.logger.warning("Could not extract user identity from token")
-                return jsonify({"error": "Invalid token", "message": "Invalid token"}), 401
-
-            current_app.logger.info(f"Fetching user info for ID: {current_user_id}")
-
-            # Direct SQL query to find user by ID
-            stmt = text(
-                """
-                SELECT id, email, username, first_name, last_name, created_at, updated_at,
-                       profile_picture_url, google_oauth_id, phone
-                FROM users WHERE id = :user_id
-            """
-            )
-
-            user_data = db.session.execute(stmt, {"user_id": current_user_id}).fetchone()
-
-            if not user_data:
-                current_app.logger.warning(f"User not found with ID: {current_user_id}")
-                return jsonify({"error": "User not found", "message": "User not found"}), 404
-
-            # Convert row to dictionary
-            result = {}
-            for idx, col in enumerate(user_data.keys()):
-                result[col] = user_data[idx]
-
-            # Check if user has premium subscription
+            # Manually decode the token
             try:
-                sub_stmt = text(
+                payload = jwt.decode(token, secret_key, algorithms=["HS256"])
+                current_user_id = payload.get("sub") or payload.get("user_id")
+
+                if not current_user_id:
+                    current_app.logger.warning("Could not extract user identity from token")
+                    return jsonify({"error": "Invalid token", "message": "Invalid token"}), 401
+
+                current_app.logger.info(f"Fetching user info for ID: {current_user_id}")
+
+                # Direct SQL query to find user by ID
+                stmt = text(
                     """
-                    SELECT id, status, plan_type, current_period_end
-                    FROM subscriptions
-                    WHERE user_id = :user_id AND status = 'active'
-                    ORDER BY created_at DESC LIMIT 1
+                    SELECT id, email, username, first_name, last_name, created_at, updated_at,
+                           profile_picture_url, google_oauth_id, phone
+                    FROM users WHERE id = :user_id
                 """
                 )
 
-                subscription = db.session.execute(sub_stmt, {"user_id": current_user_id}).fetchone()
+                user_data = db.session.execute(stmt, {"user_id": current_user_id}).fetchone()
 
-                if subscription:
-                    sub_dict = {}
-                    for idx, col in enumerate(subscription.keys()):
-                        sub_dict[col] = subscription[idx]
+                if not user_data:
+                    current_app.logger.warning(f"User not found with ID: {current_user_id}")
+                    return jsonify({"error": "User not found", "message": "User not found"}), 404
 
-                    result["subscription"] = sub_dict
-                    result["is_premium"] = True
-                else:
+                # Convert row to dictionary
+                result = {}
+                for idx, col in enumerate(user_data.keys()):
+                    result[col] = str(user_data[idx]) if col in ["id", "created_at", "updated_at"] else user_data[idx]
+
+                # Check if user has premium subscription
+                try:
+                    sub_stmt = text(
+                        """
+                        SELECT id, status, plan_type, current_period_end
+                        FROM subscriptions
+                        WHERE user_id = :user_id AND status = 'active'
+                        ORDER BY created_at DESC LIMIT 1
+                    """
+                    )
+
+                    subscription = db.session.execute(sub_stmt, {"user_id": current_user_id}).fetchone()
+
+                    if subscription:
+                        sub_dict = {}
+                        for idx, col in enumerate(subscription.keys()):
+                            sub_dict[col] = (
+                                str(subscription[idx]) if col in ["id", "current_period_end"] else subscription[idx]
+                            )
+
+                        result["subscription"] = sub_dict
+                        result["is_premium"] = True
+                    else:
+                        result["is_premium"] = False
+
+                except Exception as e:
+                    current_app.logger.error(f"Error fetching subscription: {str(e)}")
                     result["is_premium"] = False
 
-            except Exception as e:
-                current_app.logger.error(f"Error fetching subscription: {str(e)}")
-                result["is_premium"] = False
+                return jsonify(result), 200
 
-            return jsonify(result), 200
+            except jwt.ExpiredSignatureError:
+                current_app.logger.warning("Token has expired")
+                return jsonify({"error": "Unauthorized", "message": "Token has expired"}), 401
+            except jwt.InvalidTokenError as jwt_error:
+                current_app.logger.error(f"Invalid token: {str(jwt_error)}")
+                return jsonify({"error": "Unauthorized", "message": "Invalid token"}), 401
 
-        except Exception as jwt_error:
-            current_app.logger.error(f"JWT validation error: {str(jwt_error)}")
-            return jsonify({"error": "Unauthorized", "message": "Invalid or expired token"}), 401
+        except Exception as decode_error:
+            current_app.logger.error(f"Error decoding token: {str(decode_error)}")
+            return jsonify({"error": "Unauthorized", "message": "Invalid token format"}), 401
 
     except Exception as e:
-        current_app.logger.error(f"Error in /auth/me endpoint: {str(e)}", exc_info=True)
+        stack_trace = traceback.format_exc()
+        current_app.logger.error(f"Error in /auth/me endpoint: {str(e)}\n{stack_trace}", exc_info=True)
         return jsonify({"error": "Internal server error"}), 500
 
 
@@ -316,7 +412,7 @@ def register_v1():
 
 @v1_bp.route("/auth/login", methods=["POST", "OPTIONS"])
 def login_v1():
-    """Login endpoint for v1 routes that forwards to the auth blueprint."""
+    """Login endpoint for v1 routes that handles login directly."""
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
@@ -324,18 +420,90 @@ def login_v1():
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         return response
 
-    # For POST requests, forward to the main auth blueprint
-    from ..auth import login as auth_login
-
     try:
-        return auth_login()
+        import traceback
+
+        from werkzeug.security import check_password_hash
+
+        from ..auth import generate_direct_token
+
+        data = request.get_json() or {}
+
+        # Log incoming request data (without password)
+        safe_data = {k: v for k, v in data.items() if k != "password"} if data else {}
+        current_app.logger.info(f"V1 Login attempt with data: {safe_data}")
+
+        # Get credentials
+        email = data.get("email", "").lower().strip() if data.get("email") else ""
+        password = data.get("password", "")
+
+        if not email or not password:
+            current_app.logger.warning("V1 Login failed: missing email or password")
+            return jsonify({"error": "Email and password are required"}), 400
+
+        # Check database connection
+        try:
+            # Basic connection test
+            db.session.execute(text("SELECT 1")).fetchone()
+
+            # Direct SQL query to find user
+            stmt = text("SELECT id, email, password_hash FROM users WHERE email = :email")
+            result = db.session.execute(stmt, {"email": email}).fetchone()
+
+            if not result:
+                current_app.logger.warning(f"V1 Login failed: user not found for email {email}")
+                return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
+
+            # Extract user data
+            user_id, user_email, password_hash = result
+
+            # Verify password directly
+            if not check_password_hash(password_hash, password):
+                current_app.logger.warning(f"V1 Login failed: incorrect password for user {email}")
+                return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
+
+            # Generate token directly with extended expiry
+            access_token = generate_direct_token(user_id, user_email)
+
+            # Get additional user fields if possible
+            user_data = {"id": str(user_id), "email": user_email}
+
+            try:
+                extended_query = text(
+                    """
+                    SELECT id, email, first_name, last_name, username, phone, profile_picture_url,
+                           created_at, updated_at
+                    FROM users WHERE id = :user_id
+                """
+                )
+                extended_result = db.session.execute(extended_query, {"user_id": user_id}).fetchone()
+
+                if extended_result:
+                    for idx, col_name in enumerate(extended_result.keys()):
+                        if extended_result[idx] is not None:
+                            user_data[col_name] = (
+                                str(extended_result[idx])
+                                if col_name in ["id", "created_at", "updated_at"]
+                                else extended_result[idx]
+                            )
+            except Exception as e:
+                current_app.logger.warning(f"V1 Could not get extended user data: {str(e)}")
+
+            # Success response
+            current_app.logger.info(f"V1 Login successful for user {email}")
+            return jsonify({"message": "Login successful", "access_token": access_token, "user": user_data}), 200
+
+        except Exception as db_error:
+            stack_trace = traceback.format_exc()
+            current_app.logger.error(f"V1 Database error in login: {str(db_error)}\n{stack_trace}")
+            return jsonify({"error": "Server error", "message": "Database error"}), 500
+
     except Exception as e:
         import traceback
 
         stack_trace = traceback.format_exc()
-        current_app.logger.error(f"Error forwarding to auth login: {str(e)}\n{stack_trace}")
-        # If there's an error, try the direct login
-        return direct_login_v1()
+        current_app.logger.error(f"V1 Unhandled exception in login endpoint: {str(e)}\n{stack_trace}")
+        return jsonify({"error": "Server error", "message": "An unexpected error occurred"}), 500
 
 
 @v1_bp.route("/auth/login/direct", methods=["POST", "OPTIONS"])
@@ -352,3 +520,26 @@ def direct_login_v1():
     from ..auth import direct_login
 
     return direct_login()
+
+
+@v1_bp.route("/auth/google/callback", methods=["POST", "OPTIONS"])
+def google_callback_v1():
+    """Google authentication callback for v1 routes."""
+    # Handle OPTIONS request for CORS preflight
+    if request.method == "OPTIONS":
+        response = make_response()
+        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        return response
+
+    # For POST requests, forward to the auth blueprint
+    try:
+        from ..auth import direct_google_callback
+
+        return direct_google_callback()
+    except Exception as e:
+        import traceback
+
+        stack_trace = traceback.format_exc()
+        current_app.logger.error(f"Error in Google callback: {str(e)}\n{stack_trace}")
+        return jsonify({"error": "Error authenticating with Google", "message": str(e)}), 500

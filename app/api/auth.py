@@ -70,15 +70,59 @@ def debug_database():
 def generate_direct_token(user_id, email):
     """Generate a JWT token directly without using the User model."""
     try:
+        # Ensure user_id is a string
+        user_id = str(user_id)
+
+        # Log token generation for debugging
+        current_app.logger.info(f"Generating direct token for user: {email} with ID: {user_id}")
+
         # Create a simple claims dictionary with essential user info
         claims = {"email": email}
 
         # Generate the token directly using Flask-JWT-Extended
-        access_token = create_access_token(identity=str(user_id), additional_claims=claims)
+        try:
+            access_token = create_access_token(identity=user_id, additional_claims=claims)
 
-        return access_token
+            # Log token info for debugging (but not the full token)
+            token_preview = access_token[:15] + "..." if access_token else "None"
+            current_app.logger.info(f"Token generated successfully: {token_preview}")
+
+            return access_token
+        except Exception as jwt_error:
+            current_app.logger.error(f"JWT token generation error: {str(jwt_error)}")
+
+            # Fallback to manual JWT generation if Flask-JWT-Extended fails
+            try:
+                from datetime import datetime, timedelta, timezone
+
+                import jwt
+
+                # Get secret key from config
+                secret_key = current_app.config.get("SECRET_KEY")
+                if not secret_key:
+                    raise ValueError("SECRET_KEY not configured")
+
+                # Create payload with expiration
+                now = datetime.now(timezone.utc)
+                expiry_hours = current_app.config.get("TOKEN_EXPIRY_HOURS", 24)
+                payload = {
+                    "sub": user_id,
+                    "email": email,
+                    "iat": now,
+                    "exp": now + timedelta(hours=expiry_hours),
+                }
+
+                # Generate token with PyJWT
+                token = jwt.encode(payload, secret_key, algorithm="HS256")
+                current_app.logger.info(f"Fallback token generation successful for user: {email}")
+
+                return token
+            except Exception as manual_jwt_error:
+                current_app.logger.error(f"Manual JWT generation failed: {str(manual_jwt_error)}")
+                raise
+
     except Exception as e:
-        current_app.logger.error(f"Direct token generation error: {str(e)}")
+        current_app.logger.error(f"Direct token generation error: {str(e)}", exc_info=True)
         raise
 
 
