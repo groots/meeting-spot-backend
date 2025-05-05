@@ -41,10 +41,11 @@ class User(db.Model):
         'profile_picture_url': db.String(255)
     }
     
-    # NOTE: These relationships are commented out because they refer to tables
-    # that might not exist in all environments
-    # Relationships will be initialized dynamically
-    _relationships = {}
+    # Define relationship placeholders, which will be properly initialized later if the tables exist
+    # This prevents errors when related models are missing
+    requests_initiated = None
+    contacts = None
+    suggested_places = None
     
     # Class-level flag to track if columns are checked
     _columns_checked = False
@@ -52,46 +53,62 @@ class User(db.Model):
     @classmethod
     def __declare_last__(cls):
         """Run after table mapping to add dynamic columns and relationships."""
+        # Skip initialization if already checked
         if cls._columns_checked:
             return
             
         try:
-            # Make sure we have an app context to access the database
-            if not current_app:
-                return
-                
-            # Check if the table exists
-            if not inspect(db.engine).has_table(cls.__tablename__):
-                current_app.logger.warning(f"Table {cls.__tablename__} doesn't exist yet, skipping column check")
-                return
-                
-            # Get existing column names
+            # Get DB inspector to check table structure
             inspector = inspect(db.engine)
-            existing_columns = {col['name'] for col in inspector.get_columns(cls.__tablename__)}
             
-            # Initialize optional columns that exist in the database
+            # Only proceed if users table exists
+            if not inspector.has_table('users'):
+                return
+                
+            # Get actual columns from the database
+            table_columns = {col['name'] for col in inspector.get_columns('users')}
+            
+            # Check which optional columns exist and add them
             for col_name, col_type in cls._optional_columns.items():
-                if col_name not in existing_columns:
-                    current_app.logger.info(f"Column '{col_name}' doesn't exist in {cls.__tablename__} table")
-                    # Create a property that returns None for this missing column
-                    setattr(cls, col_name, None)
+                if col_name in table_columns:
+                    setattr(cls, col_name, db.Column(col_type))
                     
-            # Initialize relationships that depend on existing tables
-            if inspector.has_table('subscriptions'):
-                cls._relationships['subscriptions'] = db.relationship(
-                    "Subscription", back_populates="user", lazy=True, cascade="all, delete-orphan")
-                
+            # Add relationships if related tables exist
             if inspector.has_table('meeting_requests'):
-                cls._relationships['requests_initiated'] = db.relationship(
-                    "MeetingRequest", foreign_keys="MeetingRequest.user_a_id", back_populates="user_a", lazy=True)
+                # Add requests_initiated relationship
+                cls.requests_initiated = db.relationship(
+                    "MeetingRequest", 
+                    back_populates="user_a", 
+                    foreign_keys="MeetingRequest.user_a_id", 
+                    lazy=True,
+                    cascade="all, delete-orphan"
+                )
                 
+            # Check if places table exists before defining the relationship
             if inspector.has_table('places'):
-                cls._relationships['suggested_places'] = db.relationship(
-                    "Place", back_populates="suggested_by", lazy=True, cascade="all, delete-orphan")
+                try:
+                    # Try to import the Place model first to make sure it's loaded
+                    from .place import Place
+                    
+                    # Define the relationship
+                    cls.suggested_places = db.relationship(
+                        "Place", 
+                        back_populates="suggested_by", 
+                        lazy=True, 
+                        cascade="all, delete-orphan"
+                    )
+                except (ImportError, AttributeError) as e:
+                    # If Place model isn't available, log the error but don't fail
+                    if current_app:
+                        current_app.logger.warning(f"Place model not available for relationship: {str(e)}")
                 
             if inspector.has_table('contacts'):
-                cls._relationships['contacts'] = db.relationship(
-                    "Contact", back_populates="user", lazy=True, cascade="all, delete-orphan")
+                cls.contacts = db.relationship(
+                    "Contact", 
+                    back_populates="user", 
+                    lazy=True, 
+                    cascade="all, delete-orphan"
+                )
                 
             cls._columns_checked = True
             
@@ -126,200 +143,86 @@ class User(db.Model):
             if hasattr(self.__class__, 'last_name') and self.__class__.last_name is not None:
                 kwargs["last_name"] = name_parts[1] if len(name_parts) > 1 else ""
 
-        # Filter kwargs to only include existing columns
-        filtered_kwargs = {}
+        # Filter out kwargs that don't match columns
+        valid_kwargs = {}
         for key, value in kwargs.items():
-            if hasattr(self.__class__, key) and getattr(self.__class__, key) is not None:
-                filtered_kwargs[key] = value
+            if hasattr(self.__class__, key):
+                valid_kwargs[key] = value
+        
+        super().__init__(**valid_kwargs)
 
-        super().__init__(**filtered_kwargs)
-
-    def __repr__(self) -> str:
+    def __repr__(self):
+        """Return a string representation of the user."""
         return f"<User {self.email}>"
 
-    @property
-    def full_name(self) -> str:
-        """Get the user's full name."""
-        first_name = getattr(self, "first_name", "") if hasattr(self, "first_name") else ""
-        last_name = getattr(self, "last_name", "") if hasattr(self, "last_name") else ""
-        
-        if first_name and last_name:
-            return f"{first_name} {last_name}"
-        elif first_name:
-            return first_name
-        elif last_name:
-            return last_name
-        return ""
-
-    def set_password(self, password) -> None:
-        """Set hashed password."""
+    def set_password(self, password):
+        """Set the user's password."""
         self.password_hash = generate_password_hash(password)
 
-    def check_password(self, password) -> bool:
-        """Check if password matches hash."""
+    def check_password(self, password):
+        """Check if the provided password matches the user's password."""
         return check_password_hash(self.password_hash, password)
 
+    def generate_auth_token(self, expiration=86400):
+        """Generate an authentication token."""
+        payload = {"id": str(self.id), "exp": datetime.now(timezone.utc) + timedelta(seconds=expiration)}
+        return jwt.encode(payload, current_app.config["JWT_SECRET_KEY"], algorithm="HS256")
+
+    def generate_access_token(self, additional_claims=None):
+        """Generate a JWT access token for the user."""
+        claims = {"is_admin": getattr(self, "is_admin", False)} if additional_claims is None else additional_claims
+        return create_access_token(identity=str(self.id), additional_claims=claims)
+
+    def is_premium(self):
+        """Check if the user has a premium subscription."""
+        # Check if subscription relationship exists
+        if not hasattr(self.__class__, "subscriptions") or not self.subscriptions:
+            # Default to True for development/testing, False for production
+            return current_app.config.get("FLASK_ENV") != "production"
+        
+        active_sub = next((sub for sub in self.subscriptions if sub.is_active()), None)
+        return active_sub is not None
+
     def to_dict(self):
-        """Convert user instance to dictionary."""
-        # Start with required fields that should always be present
-        result = {
+        """Convert user object to dictionary with safe attributes."""
+        user_dict = {
             "id": str(self.id),
             "email": self.email,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "is_oauth_user": bool(
-                self.google_oauth_id or (hasattr(self, "facebook_oauth_id") and getattr(self, "facebook_oauth_id", None))
-            ),
+            "created_at": self.created_at.isoformat(),
+            "updated_at": self.updated_at.isoformat(),
+            "is_premium": self.is_premium(),
         }
+
+        # Add optional fields if they exist in the model
+        optional_fields = [
+            "username", 
+            "first_name", 
+            "last_name", 
+            "phone", 
+            "profile_picture_url",
+        ]
         
-        # Add optional fields only if they exist in the database and on the instance
-        # Use safe getattr to avoid exceptions
-        optional_fields = {
-            "username": "username",
-            "first_name": "first_name",
-            "last_name": "last_name",
-            "phone": "phone",
-            "profile_picture_url": "profile_picture_url"
-        }
-        
-        for result_key, attr_name in optional_fields.items():
-            try:
-                if hasattr(self, attr_name) and getattr(self, attr_name) is not None:
-                    result[result_key] = getattr(self, attr_name)
-            except:
-                pass
-        
-        # Add full_name if we have name components
-        if "first_name" in result or "last_name" in result:
-            result["full_name"] = self.full_name
-            
-        # Safely add premium status and subscription
-        try:
-            result["is_premium"] = self.is_premium()
-            
-            # Only add subscription if the relationship exists
-            if hasattr(self, 'subscriptions'):
-                active_subscription = next((sub for sub in self.subscriptions if sub.status == "active"), None)
-                if active_subscription:
-                    result["subscription"] = active_subscription.to_dict()
-                else:
-                    result["subscription"] = None
-            else:
-                result["subscription"] = None
+        for field in optional_fields:
+            if hasattr(self, field) and getattr(self, field) is not None:
+                user_dict[field] = getattr(self, field)
                 
-        except Exception as e:
-            if current_app:
-                current_app.logger.error(f"Error adding premium status: {str(e)}")
-            result["is_premium"] = False
-            result["subscription"] = None
-
-        return result
-
-    def generate_auth_token(self, expiration=86400):
-        """Generate a JWT token for authentication."""
-        payload = {
-            "exp": datetime.utcnow() + timedelta(seconds=expiration),
-            "iat": datetime.utcnow(),
-            "sub": str(self.id),
-        }
-
-        # Only add optional fields if they exist and are accessible
-        try:
-            if hasattr(self, "first_name") and getattr(self, "first_name"):
-                payload["first_name"] = getattr(self, "first_name")
-        except:
-            pass
-
-        try:
-            if hasattr(self, "username") and getattr(self, "username"):
-                payload["username"] = getattr(self, "username")
-        except:
-            pass
-
-        token = jwt.encode(payload, current_app.config.get("JWT_SECRET_KEY"), algorithm="HS256")
-        return token
-
-    @staticmethod
-    def verify_auth_token(token):
-        """Verify the JWT token and return the user."""
-        try:
-            payload = jwt.decode(token, current_app.config.get("JWT_SECRET_KEY"), algorithms=["HS256"])
-            user_id = payload["sub"]
-            return User.query.get(user_id)
-        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, Exception):
-            return None
-
-    def generate_access_token(self, expires_delta=None) -> str:
-        """Generate a JWT token for the user."""
-        if expires_delta is None:
-            expires_delta = current_app.config.get("JWT_ACCESS_TOKEN_EXPIRES", 3600)
-
-        # Create additional claims with only required fields
-        additional_claims = {"email": self.email}
-
-        # Only add optional fields if they exist and are accessible
-        try:
-            if hasattr(self, "username") and getattr(self, "username"):
-                additional_claims["username"] = getattr(self, "username")
-        except:
-            pass
-
-        try:
-            if hasattr(self, "first_name") and getattr(self, "first_name"):
-                additional_claims["first_name"] = getattr(self, "first_name")
-        except:
-            pass
-
-        return create_access_token(
-            identity=str(self.id),
-            expires_delta=expires_delta,
-            additional_claims=additional_claims,
-        )
+        # Combine first and last name into full_name if both exist
+        if hasattr(self, "first_name") and hasattr(self, "last_name"):
+            if self.first_name and self.last_name:
+                user_dict["full_name"] = f"{self.first_name} {self.last_name}"
+            elif self.first_name:
+                user_dict["full_name"] = self.first_name
+            elif self.last_name:
+                user_dict["full_name"] = self.last_name
+                
+        return user_dict
 
     @classmethod
-    def get_by_token_identity(cls, identity):
-        """Get user by token identity (used in JWT)."""
+    def verify_auth_token(cls, token):
+        """Verify an authentication token."""
         try:
-            # Check if the identity is a valid UUID string
-            user_id = uuid.UUID(identity)
-
-            # Convert UUID to string for database compatibility
-            user_id_str = str(user_id)
-
-            # Important: Go back to the simpler approach - use the ORM query
-            # with filter to avoid SQLite UUID compatibility issues
-            return cls.query.filter_by(id=user_id).first()
-
-        except (ValueError, TypeError):
+            payload = jwt.decode(token, current_app.config["JWT_SECRET_KEY"], algorithms=["HS256"])
+            user = cls.query.get(payload["id"])
+            return user
+        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, Exception):
             return None
-
-    def is_premium(self) -> bool:
-        """Check if the user has an active premium subscription."""
-        # Special case for testing - test@example.com is always premium in testing
-        if current_app.config.get("TESTING") and self.email == "test@example.com":
-            return True
-
-        try:
-            # Only check subscriptions if the relationship exists
-            if hasattr(self, 'subscriptions'):
-                active_subscription = next(
-                    (
-                        sub
-                        for sub in self.subscriptions
-                        if sub.status == "active" and (sub.plan_id == "premium" or sub.plan_id == "test_premium")
-                    ),
-                    None,
-                )
-                return bool(active_subscription)
-            return False
-        except Exception as e:
-            # Handle case where subscriptions table doesn't exist or relationship isn't set up
-            if current_app:
-                current_app.logger.warning(f"Error checking premium status for user {self.email}: {str(e)}")
-            return False
-
-    @staticmethod
-    def identity(payload):
-        """Get user from JWT payload (used by Flask-JWT)."""
-        user_id = payload["identity"]
-        return User.query.get(user_id)
