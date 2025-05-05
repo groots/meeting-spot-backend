@@ -1,5 +1,10 @@
 name: Backend CI/CD Pipeline
 
+# Add concurrency configuration to cancel in-progress runs on the same ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ main ]
@@ -14,7 +19,7 @@ on:
       - '!requirements.txt'
       - '!Dockerfile'
       - '!.github/workflows/ci-cd.yml'
-  
+
   # Allow manual trigger
   workflow_dispatch:
 
@@ -28,25 +33,25 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 2
-          
+
       - id: check
         name: Check if DB migrations workflow triggered
         run: |
           # Safer approach that doesn't rely on GitHub API for file diffs
           echo "Checking if migration files were changed..."
-          
+
           # Default to running the workflow if we can't determine changes
           echo "should_run=true" >> $GITHUB_OUTPUT
-          
+
           # Try to get the list of changed files, with fallbacks
           if ! CHANGED_FILES=$(git diff --name-only HEAD^ HEAD 2>/dev/null); then
             echo "Warning: Could not get file diff. Defaulting to run this workflow."
             exit 0  # Exit successfully to let the workflow continue
           fi
-          
+
           # Check if any migration files were changed
           MIGRATION_FILES=$(echo "$CHANGED_FILES" | grep -E '^migrations/|github_migrations.py' || echo "")
-          
+
           if [[ -n "$MIGRATION_FILES" ]]; then
             echo "Migration files changed, leaving to DB migration workflow"
             echo "should_run=false" >> $GITHUB_OUTPUT
@@ -79,10 +84,10 @@ jobs:
         run: |
           # Install Black with a specific version
           python -m pip install black==23.1.0
-          
+
           # Create .noformat file to exclude problematic files
           echo "tests/test_notifications.py" > .noformat
-          
+
           # Apply Black formatting to all files except excluded ones
           echo "Applying Black formatting to all files..."
           if [ -f .noformat ]; then
@@ -90,7 +95,7 @@ jobs:
           else
             black --quiet --exclude tests/test_notifications.py .
           fi
-          
+
           # If there are changes, commit and push them directly to the main branch
           if [[ -n $(git status -s) ]]; then
             echo "Files were formatted by Black. Committing changes..."
