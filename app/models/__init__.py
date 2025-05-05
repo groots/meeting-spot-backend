@@ -2,12 +2,14 @@
 
 from sqlalchemy import inspect
 
-from .contact import Contact
-from .enums import ContactType, MeetingRequestStatus
-from .meeting_request import MeetingRequest
+# Import the db instance for other modules that import it from here
+from .. import db
 
 # Import model classes - fix imports to use the correct modules
 from .user import User
+from .enums import ContactType, MeetingRequestStatus
+from .meeting_request import MeetingRequest
+from .contact import Contact
 
 # Import other models that might exist in different environments
 try:
