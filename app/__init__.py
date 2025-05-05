@@ -136,6 +136,15 @@ def create_app(config_name="development"):
     jwt.init_app(app)
     migrate.init_app(app, db)
 
+    # Initialize models based on database schema
+    try:
+        # Import here to avoid circular imports
+        from .models import init_models
+
+        init_models(app, db)
+    except Exception as e:
+        app.logger.error(f"Error initializing models: {str(e)}")
+
     # Create necessary directories
     create_storage_directories(app)
 

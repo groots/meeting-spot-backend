@@ -20,6 +20,7 @@ from flask import (
 )
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -48,14 +49,25 @@ def register():
     if existing_user:
         return jsonify({"error": "User already exists", "message": "User already exists"}), 409
 
-    # Create new user
-    new_user = User(
-        email=email,
-        username=data.get("username", email.split("@")[0]),
-        first_name=data.get("first_name", ""),
-        last_name=data.get("last_name", ""),
-        phone=data.get("phone", ""),
-    )
+    # Create new user with only the required fields to avoid issues with missing columns
+    user_data = {"email": email, "password_hash": generate_password_hash(password)}
+
+    # Add optional fields only if they're provided and exist in the User model
+    optional_fields = {
+        "username": data.get("username", email.split("@")[0]),
+        "first_name": data.get("first_name", ""),
+        "last_name": data.get("last_name", ""),
+        "phone": data.get("phone", ""),
+    }
+
+    for field, value in optional_fields.items():
+        if hasattr(User, field) and getattr(User, field) is not None:
+            user_data[field] = value
+
+    # Create the new user
+    new_user = User(**user_data)
+
+    # Set the password separately
     new_user.set_password(password)
 
     try:
@@ -96,12 +108,42 @@ def login():
                 400,
             )
 
-        # Find user
+        # Find user with detailed error handling
         try:
-            user = User.query.filter_by(email=email).first()
-            if not user:
-                current_app.logger.warning(f"Login failed: user not found for email {email}")
-                return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
+            # Simplified query that doesn't rely on specific columns
+            query = db.session.query(User.id, User.email, User.password_hash).filter(User.email == email)
+
+            try:
+                # Try to execute the query
+                user_data = query.first()
+
+                if not user_data:
+                    current_app.logger.warning(f"Login failed: user not found for email {email}")
+                    return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
+
+                # Get the full user object with a simple query to avoid column issues
+                user = User.query.get(user_data.id)
+
+            except SQLAlchemyError as e:
+                # Try a more minimal query as fallback
+                current_app.logger.error(f"Error querying user with columns: {str(e)}")
+                current_app.logger.info("Attempting fallback with simpler query")
+
+                # Raw SQL query to avoid SQLAlchemy model mapping issues
+                stmt = text("SELECT id, email, password_hash FROM users WHERE email = :email")
+                result = db.session.execute(stmt, {"email": email}).fetchone()
+
+                if not result:
+                    current_app.logger.warning(f"Login failed: user not found for email {email} in fallback query")
+                    return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
+
+                # Get the full user object
+                user = User.query.get(result.id)
+
+                if not user:
+                    current_app.logger.error(f"User found in raw query but not in ORM query for {email}")
+                    return jsonify({"error": "Server error", "message": "Error processing login request"}), 500
+
         except Exception as db_error:
             current_app.logger.error(f"Database error looking up user: {str(db_error)}")
             return jsonify({"error": "Server error", "message": "Error processing login request"}), 500
@@ -206,41 +248,29 @@ def upload_profile_picture():
     file_path = os.path.join(profile_pictures_dir, safe_filename)
     file.save(file_path)
 
-    # Build URL for the profile picture
-    profile_picture_url = url_for("api.auth.get_profile_picture", filename=safe_filename, _external=True)
-
+    # Update the user's profile picture URL if the column exists
     try:
-        # Check if the users table has profile_picture_url column
-        inspector = inspect(db.engine)
-        columns = [column["name"] for column in inspector.get_columns("users")]
-
-        # Update user model if it has a profile_picture_url field
-        if "profile_picture_url" in columns:
-            # Update using SQL to avoid issues with schema differences
-            now = datetime.now(timezone.utc)
-            db.session.execute(
-                text(
-                    """
-                UPDATE users
-                SET profile_picture_url = :url, updated_at = :updated_at
-                WHERE id = :user_id
-                """
-                ),
-                {"url": profile_picture_url, "updated_at": now, "user_id": current_user_id},
-            )
+        if hasattr(user, "profile_picture_url") and user.profile_picture_url is not None:
+            # Set the URL to access the image - the URL is based on the flask route
+            profile_picture_url = url_for("api.auth.get_profile_picture", filename=safe_filename, _external=True)
+            user.profile_picture_url = profile_picture_url
             db.session.commit()
-            current_app.logger.info(f"[/me/picture] Updated profile_picture_url for user {current_user_id}")
         else:
-            current_app.logger.warning(f"[/me/picture] profile_picture_url column not found in users table")
-    except Exception as db_error:
-        current_app.logger.error(f"[/me/picture] Error updating profile_picture_url: {str(db_error)}")
-        # Continue without failing the request
+            current_app.logger.warning(f"[/me/picture] profile_picture_url column not available for user {user.id}")
+    except Exception as e:
+        current_app.logger.error(f"[/me/picture] Error updating profile picture URL: {str(e)}")
+        # Continue anyway - the file was saved
 
-    return jsonify({"success": True, "profile_picture_url": profile_picture_url}), 200
+    return jsonify({"message": "Profile picture uploaded successfully", "filename": safe_filename}), 201
 
 
-@auth_bp.route("/profile-pictures/<filename>")
+@auth_bp.route("/profile/picture/<filename>")
 def get_profile_picture(filename):
-    """Serve a profile picture."""
+    """Get a user's profile picture by filename."""
+    # Validate filename to prevent directory traversal
+    if not filename or ".." in filename:
+        current_app.logger.error(f"[get_profile_picture] Invalid filename: {filename}")
+        return jsonify({"error": "Invalid filename"}), 400
+
     profile_pictures_dir = os.path.join(current_app.instance_path, "profile_pictures")
     return send_from_directory(profile_pictures_dir, filename)
