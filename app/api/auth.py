@@ -1,6 +1,7 @@
 """Authentication related routes and utilities."""
 
 import os
+import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple, Union
@@ -28,6 +29,41 @@ from .. import db
 from ..models.user import User
 
 auth_bp = Blueprint("auth", __name__)
+
+
+# Helper function to debug database connections and models
+def debug_database():
+    """Check database connection and model structure."""
+    try:
+        # Check if we can connect to the database
+        result = db.session.execute(text("SELECT 1")).fetchone()
+        if result and result[0] == 1:
+            current_app.logger.info("Database connection successful")
+        else:
+            current_app.logger.error("Database connection returned unexpected result")
+            return "Database connection issue"
+
+        # Check User model structure
+        inspector = inspect(db.engine)
+        if not inspector.has_table("users"):
+            current_app.logger.error("Table 'users' does not exist")
+            return "Table 'users' does not exist"
+
+        # Get columns in the users table
+        columns = [col["name"] for col in inspector.get_columns("users")]
+        current_app.logger.info(f"User table columns: {columns}")
+
+        # Check for required columns
+        required_columns = ["id", "email", "password_hash"]
+        missing_columns = [col for col in required_columns if col not in columns]
+        if missing_columns:
+            current_app.logger.error(f"Missing required columns: {missing_columns}")
+            return f"Missing required columns: {missing_columns}"
+
+        return None  # No issues found
+    except Exception as e:
+        current_app.logger.error(f"Database diagnostic error: {str(e)}")
+        return f"Database diagnostic error: {str(e)}"
 
 
 @auth_bp.route("/register", methods=["POST"])
@@ -108,6 +144,12 @@ def login():
                 400,
             )
 
+        # Perform database diagnostic check
+        db_issue = debug_database()
+        if db_issue:
+            current_app.logger.error(f"Database diagnostic failed before login: {db_issue}")
+            return jsonify({"error": "Server error", "message": f"Database issue: {db_issue}"}), 500
+
         # Find user with detailed error handling
         try:
             # Simplified query that doesn't rely on specific columns
@@ -145,8 +187,12 @@ def login():
                     return jsonify({"error": "Server error", "message": "Error processing login request"}), 500
 
         except Exception as db_error:
-            current_app.logger.error(f"Database error looking up user: {str(db_error)}")
-            return jsonify({"error": "Server error", "message": "Error processing login request"}), 500
+            stack_trace = traceback.format_exc()
+            current_app.logger.error(f"Database error looking up user: {str(db_error)}\n{stack_trace}")
+            return (
+                jsonify({"error": "Server error", "message": "Error processing login request: database lookup failed"}),
+                500,
+            )
 
         # Check password
         try:
@@ -154,8 +200,14 @@ def login():
                 current_app.logger.warning(f"Login failed: incorrect password for user {email}")
                 return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
         except Exception as pwd_error:
-            current_app.logger.error(f"Password check error for user {email}: {str(pwd_error)}")
-            return jsonify({"error": "Server error", "message": "Error processing login request"}), 500
+            stack_trace = traceback.format_exc()
+            current_app.logger.error(f"Password check error for user {email}: {str(pwd_error)}\n{stack_trace}")
+            return (
+                jsonify(
+                    {"error": "Server error", "message": "Error processing login request: password verification failed"}
+                ),
+                500,
+            )
 
         # Generate token
         try:
@@ -167,7 +219,10 @@ def login():
             try:
                 response_data["user"] = user.to_dict()
             except Exception as user_dict_error:
-                current_app.logger.error(f"Error generating user dict for {email}: {str(user_dict_error)}")
+                stack_trace = traceback.format_exc()
+                current_app.logger.error(
+                    f"Error generating user dict for {email}: {str(user_dict_error)}\n{stack_trace}"
+                )
                 # Fall back to minimal user data
                 response_data["user"] = {
                     "id": str(user.id),
@@ -176,12 +231,14 @@ def login():
 
             return jsonify(response_data), 200
         except Exception as token_error:
-            current_app.logger.error(f"Token generation error for user {email}: {str(token_error)}")
+            stack_trace = traceback.format_exc()
+            current_app.logger.error(f"Token generation error for user {email}: {str(token_error)}\n{stack_trace}")
             return jsonify({"error": "Server error", "message": "Error generating authentication token"}), 500
 
     except Exception as e:
-        current_app.logger.error(f"Unhandled exception in login endpoint: {str(e)}")
-        return jsonify({"error": "Server error", "message": "An unexpected error occurred"}), 500
+        stack_trace = traceback.format_exc()
+        current_app.logger.error(f"Unhandled exception in login endpoint: {str(e)}\n{stack_trace}")
+        return jsonify({"error": "Server error", "message": "An unexpected error occurred during login"}), 500
 
 
 @auth_bp.route("/me", methods=["GET"])

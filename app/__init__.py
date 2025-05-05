@@ -158,6 +158,11 @@ def create_app(config_name="development"):
     def index():
         return jsonify({"status": "ok", "message": "Find A Meeting Spot API is running"})
 
+    # Add a health endpoint at the API v1 path
+    @app.route("/api/v1/health", methods=["GET"])
+    def health():
+        return jsonify({"status": "healthy", "version": "1.0"})
+
     # Add a CORS test endpoint
     @app.route("/api/v1/cors", methods=["GET", "POST", "PUT", "DELETE"])
     def cors_test():
