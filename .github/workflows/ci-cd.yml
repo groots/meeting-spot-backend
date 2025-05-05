@@ -25,28 +25,39 @@ jobs:
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+          
       - id: check
         name: Check if DB migrations workflow triggered
         run: |
-          # Determine if the database migrations workflow should handle this commit
-          # Check if commit touched migration files
-          git_diff=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}" | \
-            jq -r '.files[].filename')
+          # Safer approach that doesn't rely on GitHub API for file diffs
+          echo "Checking if migration files were changed..."
           
-          MIGRATION_FILES=$(echo "$git_diff" | grep -E '^migrations/|github_migrations.py')
+          # Default to running the workflow if we can't determine changes
+          echo "should_run=true" >> $GITHUB_OUTPUT
+          
+          # Try to get the list of changed files, with fallbacks
+          if ! CHANGED_FILES=$(git diff --name-only HEAD^ HEAD 2>/dev/null); then
+            echo "Warning: Could not get file diff. Defaulting to run this workflow."
+            exit 0  # Exit successfully to let the workflow continue
+          fi
+          
+          # Check if any migration files were changed
+          MIGRATION_FILES=$(echo "$CHANGED_FILES" | grep -E '^migrations/|github_migrations.py' || echo "")
           
           if [[ -n "$MIGRATION_FILES" ]]; then
             echo "Migration files changed, leaving to DB migration workflow"
             echo "should_run=false" >> $GITHUB_OUTPUT
           else
             echo "No migration files changed, proceeding with CI/CD workflow"
-            echo "should_run=true" >> $GITHUB_OUTPUT
+            # should_run is already set to true by default
           fi
 
   quality-and-deploy:
     needs: check-duplicate
-    if: needs.check-duplicate.outputs.should_run == 'true'
+    if: always() && (needs.check-duplicate.result == 'success' && needs.check-duplicate.outputs.should_run == 'true' || needs.check-duplicate.result != 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
