@@ -468,13 +468,25 @@ def reset_password():
                 current_app.logger.info(f"[SECURITY] No email will be sent since user doesn't exist")
                 return jsonify({"message": success_message}), 200
 
-            # In a real implementation, we would generate a token and send an email
-            current_app.logger.info(f"Reset password requested for email: {email}")
-            current_app.logger.info(f"[IMPLEMENTATION] Would send reset email to: {email} in production")
+            # Generate a secure token
+            user_id = result[0]
+            from ..utils.security import generate_reset_token
 
-            # TODO: Send the actual email
-            # from ..utils.notifications import send_password_reset_email
-            # send_password_reset_email(email, token)
+            token = generate_reset_token(user_id)
+
+            # Log the token generation for debugging
+            current_app.logger.info(f"Reset password token generated for user ID: {user_id}")
+
+            # Send the password reset email
+            from ..utils.notifications import send_password_reset_email
+
+            email_sent = send_password_reset_email(email, token)
+
+            if email_sent:
+                current_app.logger.info(f"Password reset email sent to: {email}")
+            else:
+                current_app.logger.warning(f"Failed to send password reset email to: {email}")
+                # Still return success to user (don't reveal email sending issues)
 
             return jsonify({"message": success_message}), 200
 

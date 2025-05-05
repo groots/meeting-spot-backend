@@ -4,7 +4,7 @@ import logging
 import os
 
 import requests
-from flask import current_app
+from flask import current_app, url_for
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -73,6 +73,58 @@ def send_email(to_email: str, subject: str, body: str) -> bool:
         return True
     except Exception as e:
         logger.error(f"Error sending email: {e}")
+        return False
+
+
+def send_password_reset_email(email: str, token: str) -> bool:
+    """
+    Send a password reset email with a token.
+
+    Args:
+        email: The recipient's email address
+        token: The password reset token
+
+    Returns:
+        bool: True if email was sent successfully, False otherwise
+    """
+    try:
+        # Get frontend URL from config
+        frontend_url = current_app.config.get("FRONTEND_URL", "https://findameetingspot.com")
+
+        # Construct reset URL
+        reset_url = f"{frontend_url}/auth/reset-password/{token}"
+
+        # Create email subject and body
+        subject = "Reset Your Find A Meeting Spot Password"
+        body = f"""Hello,
+
+You've requested to reset your password for Find A Meeting Spot.
+
+Please click the link below to reset your password:
+{reset_url}
+
+This link will expire in 1 hour.
+
+If you didn't request this password reset, please ignore this email or contact support if you have concerns.
+
+Thanks,
+The Find A Meeting Spot Team
+"""
+
+        logger.info(f"Sending password reset email to {email} with token {token[:10]}...")
+
+        # Send the email using the send_email function
+        result = send_email(email, subject, body)
+
+        if result:
+            logger.info(f"Password reset email sent successfully to {email}")
+        else:
+            logger.error(f"Failed to send password reset email to {email}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error sending password reset email: {e}")
         return False
 
 
