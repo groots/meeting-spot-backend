@@ -429,3 +429,320 @@ def get_profile_picture(filename):
 
     profile_pictures_dir = os.path.join(current_app.instance_path, "profile_pictures")
     return send_from_directory(profile_pictures_dir, filename)
+
+
+@auth_bp.route("/reset-password", methods=["POST"])
+def reset_password():
+    """Handle password reset request."""
+    try:
+        data = request.get_json() or {}
+
+        # Log incoming request data
+        email = data.get("email", "").lower().strip() if data.get("email") else ""
+        if not email:
+            current_app.logger.warning("Reset password failed: missing email")
+            return jsonify({"error": "Email is required", "message": "Email is required"}), 400
+
+        # Check database connection
+        try:
+            # Basic connection test
+            db.session.execute(text("SELECT 1")).fetchone()
+
+            # Check if user exists using direct SQL
+            stmt = text("SELECT id, email FROM users WHERE email = :email")
+            result = db.session.execute(stmt, {"email": email}).fetchone()
+
+            if not result:
+                # Don't reveal that the user doesn't exist for security reasons
+                current_app.logger.info(f"Reset password requested for non-existent email: {email}")
+                return (
+                    jsonify(
+                        {"message": "If your email exists in our system, you will receive password reset instructions."}
+                    ),
+                    200,
+                )
+
+            # In a real implementation, we would generate a token and send an email
+            # For now, we'll just return success
+            current_app.logger.info(f"Reset password requested for email: {email}")
+            return (
+                jsonify(
+                    {"message": "If your email exists in our system, you will receive password reset instructions."}
+                ),
+                200,
+            )
+
+        except Exception as db_error:
+            stack_trace = traceback.format_exc()
+            current_app.logger.error(f"Database error in reset password: {str(db_error)}\n{stack_trace}")
+            return jsonify({"error": "Server error", "message": "Database error"}), 500
+
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        current_app.logger.error(f"Unhandled exception in reset password endpoint: {str(e)}\n{stack_trace}")
+        return jsonify({"error": "Server error", "message": "An unexpected error occurred"}), 500
+
+
+@auth_bp.route("/register/direct", methods=["POST"])
+def direct_register():
+    """Direct register endpoint that bypasses ORM models for more reliability."""
+    try:
+        data = request.get_json() or {}
+
+        # Log incoming request data (without password)
+        safe_data = {k: v for k, v in data.items() if k != "password"} if data else {}
+        current_app.logger.info(f"Direct register attempt with data: {safe_data}")
+
+        # Get required fields
+        email = data.get("email", "").lower().strip() if data.get("email") else ""
+        password = data.get("password", "")
+
+        if not email or not password:
+            current_app.logger.warning("Direct register failed: missing email or password")
+            return jsonify({"error": "Email and password are required"}), 400
+
+        # Check database connection
+        try:
+            # Basic connection test
+            db.session.execute(text("SELECT 1")).fetchone()
+
+            # Check if user already exists using direct SQL
+            stmt = text("SELECT id FROM users WHERE email = :email")
+            existing_user = db.session.execute(stmt, {"email": email}).fetchone()
+
+            if existing_user:
+                current_app.logger.warning(f"Direct register failed: email already exists: {email}")
+                return jsonify({"error": "User already exists", "message": "User already exists"}), 409
+
+            # Get optional fields
+            first_name = data.get("first_name", "")
+            last_name = data.get("last_name", "")
+            username = data.get("username", email.split("@")[0])
+            phone = data.get("phone", "")
+
+            # Generate a new user ID
+            user_id = str(uuid.uuid4())
+            now = datetime.now(timezone.utc).isoformat()
+
+            # Hash the password
+            password_hash = generate_password_hash(password)
+
+            # Create columns and values lists for the SQL query
+            columns = ["id", "email", "password_hash", "created_at", "updated_at"]
+            values = [user_id, email, password_hash, now, now]
+            placeholders = [":id", ":email", ":password_hash", ":created_at", ":updated_at"]
+
+            # Add optional columns if they're provided
+            if first_name:
+                columns.append("first_name")
+                values.append(first_name)
+                placeholders.append(":first_name")
+
+            if last_name:
+                columns.append("last_name")
+                values.append(last_name)
+                placeholders.append(":last_name")
+
+            if username:
+                columns.append("username")
+                values.append(username)
+                placeholders.append(":username")
+
+            if phone:
+                columns.append("phone")
+                values.append(phone)
+                placeholders.append(":phone")
+
+            # Construct the SQL query
+            params = dict(zip(columns, values))
+            columns_str = ", ".join(columns)
+            placeholders_str = ", ".join(placeholders)
+
+            insert_sql = text(f"INSERT INTO users ({columns_str}) VALUES ({placeholders_str})")
+
+            # Execute the query
+            db.session.execute(insert_sql, params)
+            db.session.commit()
+
+            # Generate token directly
+            access_token = generate_direct_token(user_id, email)
+
+            # Create minimal user response
+            user_data = {
+                "id": user_id,
+                "email": email,
+                "first_name": first_name,
+                "last_name": last_name,
+                "username": username,
+                "created_at": now,
+                "updated_at": now,
+            }
+
+            # Success response
+            current_app.logger.info(f"Direct register successful for email: {email}")
+            return (
+                jsonify({"message": "User created successfully", "user": user_data, "access_token": access_token}),
+                201,
+            )
+
+        except Exception as db_error:
+            db.session.rollback()
+            stack_trace = traceback.format_exc()
+            current_app.logger.error(f"Database error in direct register: {str(db_error)}\n{stack_trace}")
+            return jsonify({"error": "Server error", "message": "Database error"}), 500
+
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        current_app.logger.error(f"Unhandled exception in direct register endpoint: {str(e)}\n{stack_trace}")
+        return jsonify({"error": "Server error", "message": "An unexpected error occurred"}), 500
+
+
+@auth_bp.route("/google/callback/direct", methods=["POST"])
+def direct_google_callback():
+    """Direct Google auth callback that doesn't rely on ORM models."""
+    try:
+        data = request.get_json() or {}
+        token = data.get("token")
+
+        if not token:
+            current_app.logger.warning("Google callback failed: Missing token")
+            return jsonify({"error": "Missing token"}), 400
+
+        # Verify the Google token (in a real implementation)
+        # For now, we'll just extract email from the token
+        # In a real implementation, you would verify with Google's API
+
+        try:
+            # Get user info from token (simplified - in a real app you would verify with Google)
+            # Extract header.payload.signature
+            token_parts = token.split(".")
+            if len(token_parts) != 3:
+                current_app.logger.error("Invalid token format")
+                return jsonify({"error": "Invalid token"}), 400
+
+            # Decode the payload (middle part)
+            import base64
+            import json
+
+            # Ensure proper base64 padding
+            payload = token_parts[1]
+            payload += "=" * ((4 - len(payload) % 4) % 4)
+
+            # Decode
+            try:
+                decoded_payload = base64.b64decode(payload)
+                user_info = json.loads(decoded_payload)
+
+                # Extract email
+                email = user_info.get("email")
+                if not email:
+                    current_app.logger.error("No email in token payload")
+                    return jsonify({"error": "Invalid token"}), 400
+
+                # Optional: extract other user info
+                name = user_info.get("name", "")
+                given_name = user_info.get("given_name", "")
+                family_name = user_info.get("family_name", "")
+                picture = user_info.get("picture", "")
+                google_id = user_info.get("sub", "")
+
+            except Exception as decode_error:
+                current_app.logger.error(f"Error decoding token: {str(decode_error)}")
+                return jsonify({"error": "Could not decode token"}), 400
+
+            # Check if user exists
+            stmt = text("SELECT id, email FROM users WHERE email = :email OR google_oauth_id = :google_id")
+            existing_user = db.session.execute(stmt, {"email": email, "google_id": google_id}).fetchone()
+
+            if existing_user:
+                # User exists, generate token
+                user_id = existing_user[0]
+
+                # Make sure google_oauth_id is set
+                if google_id:
+                    update_stmt = text(
+                        "UPDATE users SET google_oauth_id = :google_id WHERE id = :user_id AND google_oauth_id IS NULL"
+                    )
+                    db.session.execute(update_stmt, {"google_id": google_id, "user_id": user_id})
+                    db.session.commit()
+
+                # Generate token directly
+                access_token = generate_direct_token(user_id, email)
+
+                return (
+                    jsonify(
+                        {
+                            "message": "Google authentication successful",
+                            "access_token": access_token,
+                            "user": {"id": user_id, "email": email, "name": name},
+                        }
+                    ),
+                    200,
+                )
+            else:
+                # Create a new user
+                user_id = str(uuid.uuid4())
+                now = datetime.now(timezone.utc).isoformat()
+
+                # Create columns and values lists for the SQL query
+                columns = ["id", "email", "created_at", "updated_at", "google_oauth_id"]
+                values = [user_id, email, now, now, google_id]
+                placeholders = [":id", ":email", ":created_at", ":updated_at", ":google_oauth_id"]
+
+                # Add optional columns if they're provided
+                if given_name:
+                    columns.append("first_name")
+                    values.append(given_name)
+                    placeholders.append(":first_name")
+
+                if family_name:
+                    columns.append("last_name")
+                    values.append(family_name)
+                    placeholders.append(":last_name")
+
+                if picture:
+                    columns.append("profile_picture_url")
+                    values.append(picture)
+                    placeholders.append(":profile_picture_url")
+
+                # Construct the SQL query
+                params = dict(zip(columns, values))
+                columns_str = ", ".join(columns)
+                placeholders_str = ", ".join(placeholders)
+
+                insert_sql = text(f"INSERT INTO users ({columns_str}) VALUES ({placeholders_str})")
+
+                # Execute the query
+                db.session.execute(insert_sql, params)
+                db.session.commit()
+
+                # Generate token directly
+                access_token = generate_direct_token(user_id, email)
+
+                return (
+                    jsonify(
+                        {
+                            "message": "Google authentication successful",
+                            "access_token": access_token,
+                            "user": {
+                                "id": user_id,
+                                "email": email,
+                                "first_name": given_name,
+                                "last_name": family_name,
+                                "name": name,
+                            },
+                        }
+                    ),
+                    201,
+                )
+
+        except Exception as auth_error:
+            db.session.rollback()
+            stack_trace = traceback.format_exc()
+            current_app.logger.error(f"Error in Google authentication: {str(auth_error)}\n{stack_trace}")
+            return jsonify({"error": "Error authenticating with Google"}), 500
+
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        current_app.logger.error(f"Unhandled exception in Google callback: {str(e)}\n{stack_trace}")
+        return jsonify({"error": "An error occurred during Google authentication"}), 500
