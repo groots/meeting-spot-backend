@@ -44,4 +44,22 @@ def init_models(app, db):
             except Exception as e:
                 app.logger.error(f"Error initializing User model: {str(e)}")
 
+        # Initialize Subscription model if it exists
+        if Subscription and hasattr(Subscription, "__declare_last__"):
+            try:
+                # Call __declare_last__ manually
+                Subscription.__declare_last__()
+                app.logger.info("Subscription model initialized successfully")
+            except Exception as e:
+                app.logger.error(f"Error initializing Subscription model: {str(e)}")
+
+        # Initialize Place model if it exists
+        if Place and hasattr(Place, "__declare_last__"):
+            try:
+                # Call __declare_last__ manually
+                Place.__declare_last__()
+                app.logger.info("Place model initialized successfully")
+            except Exception as e:
+                app.logger.error(f"Error initializing Place model: {str(e)}")
+
         # Initialize other models as needed

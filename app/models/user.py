@@ -46,6 +46,7 @@ class User(db.Model):
     requests_initiated = None
     contacts = None
     suggested_places = None
+    subscriptions = None
     
     # Class-level flag to track if columns are checked
     _columns_checked = False
@@ -102,6 +103,7 @@ class User(db.Model):
                     if current_app:
                         current_app.logger.warning(f"Place model not available for relationship: {str(e)}")
                 
+            # Check if contacts table exists before defining the relationship
             if inspector.has_table('contacts'):
                 cls.contacts = db.relationship(
                     "Contact", 
@@ -109,6 +111,24 @@ class User(db.Model):
                     lazy=True, 
                     cascade="all, delete-orphan"
                 )
+                
+            # Check if subscriptions table exists before defining the relationship
+            if inspector.has_table('subscriptions'):
+                try:
+                    # Try to import the Subscription model first to make sure it's loaded
+                    from .subscription import Subscription
+                    
+                    # Define the relationship
+                    cls.subscriptions = db.relationship(
+                        "Subscription",
+                        back_populates="user",
+                        lazy=True,
+                        cascade="all, delete-orphan"
+                    )
+                except (ImportError, AttributeError) as e:
+                    # If Subscription model isn't available, log the error but don't fail
+                    if current_app:
+                        current_app.logger.warning(f"Subscription model not available for relationship: {str(e)}")
                 
             cls._columns_checked = True
             
@@ -176,12 +196,18 @@ class User(db.Model):
     def is_premium(self):
         """Check if the user has a premium subscription."""
         # Check if subscription relationship exists
-        if not hasattr(self.__class__, "subscriptions") or not self.subscriptions:
+        if not hasattr(self.__class__, "subscriptions") or self.subscriptions is None:
             # Default to True for development/testing, False for production
             return current_app.config.get("FLASK_ENV") != "production"
         
-        active_sub = next((sub for sub in self.subscriptions if sub.is_active()), None)
-        return active_sub is not None
+        try:
+            active_sub = next((sub for sub in self.subscriptions if sub.is_active()), None)
+            return active_sub is not None
+        except Exception as e:
+            # Log error and default to True in development
+            if current_app:
+                current_app.logger.error(f"Error checking premium status: {str(e)}")
+            return current_app.config.get("FLASK_ENV") != "production"
 
     def to_dict(self):
         """Convert user object to dictionary with safe attributes."""

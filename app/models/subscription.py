@@ -1,6 +1,9 @@
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict
+
+from sqlalchemy import inspect
 
 from .. import db
 from .types import UUIDType
@@ -23,8 +26,52 @@ class Subscription(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), nullable=False)
 
-    # Relationships
-    user = db.relationship("User", back_populates="subscriptions")
+    # Relationship will be initialized at runtime to prevent circular imports
+    user = None
+    
+    # Class-level flag to ensure initialization happens only once
+    _initialized = False
+    
+    @classmethod
+    def __declare_last__(cls):
+        """Initialize relationships safely after model declaration."""
+        if cls._initialized:
+            return
+            
+        try:
+            from flask import current_app
+            
+            # Only initialize if the users table exists in database
+            inspector = inspect(db.engine)
+            if not inspector.has_table('users'):
+                return
+                
+            # Try to access User model and check if it has subscriptions relationship
+            try:
+                from .user import User
+                
+                # Initialize user relationship only if User model has subscriptions
+                if hasattr(User, 'subscriptions'):
+                    cls.user = db.relationship("User", back_populates="subscriptions")
+                else:
+                    # Create one-way relationship if User model doesn't have subscriptions yet
+                    cls.user = db.relationship("User")
+                    
+                    if current_app:
+                        current_app.logger.warning("Creating one-way Subscription->User relationship (User model doesn't have subscriptions)")
+            except (ImportError, AttributeError) as e:
+                if current_app:
+                    current_app.logger.warning(f"Could not initialize Subscription.user relationship: {str(e)}")
+            
+            cls._initialized = True
+            
+            if current_app:
+                current_app.logger.info("Subscription model relationships initialized")
+                
+        except Exception as e:
+            from flask import current_app
+            if current_app:
+                current_app.logger.error(f"Error initializing Subscription model: {str(e)}")
 
     def __init__(self, **kwargs):
         """Initialize a new subscription."""
