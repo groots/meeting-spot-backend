@@ -61,52 +61,38 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install black==23.1.0 isort flake8==5.0.4 flake8-docstrings==1.7.0 pytest pytest-cov
+          pip install isort flake8==5.0.4 flake8-docstrings==1.7.0 pytest pytest-cov
 
-      - name: Create marker file for problematic tests
+      # Black formatting - this will format the code and never fail the build
+      - name: Apply Black formatting
         run: |
-          mkdir -p tests
-          echo "# This file marks tests/test_notifications.py to be excluded from Black formatting" > tests/.noformat_test_notifications
-          echo "# Created because Black has an internal error when formatting this file" >> tests/.noformat_test_notifications
-
-      - name: Install Black formatter
-        run: |
+          # Install Black with a specific version
           python -m pip install black==23.1.0
-
-      - name: Create .noformat file
-        run: |
-          echo "tests/test_notifications.py" > .noformat
-          cat .noformat
-
-      - name: Apply Black formatting directly
-        run: |
-          echo "Applying Black formatting to codebase..."
-          # Apply Black formatting to all files except excluded ones
-          black --exclude tests/test_notifications.py .
           
-          # Check if any files were changed by the formatting
+          # Create .noformat file to exclude problematic files
+          echo "tests/test_notifications.py" > .noformat
+          
+          # Apply Black formatting to all files except excluded ones
+          echo "Applying Black formatting to all files..."
+          if [ -f .noformat ]; then
+            black --quiet --exclude $(cat .noformat | grep -v '^#' | tr '\n' ',') .
+          else
+            black --quiet --exclude tests/test_notifications.py .
+          fi
+          
+          # If there are changes, commit and push them directly to the main branch
           if [[ -n $(git status -s) ]]; then
-            echo "Files were formatted by Black. Pushing changes directly..."
+            echo "Files were formatted by Black. Committing changes..."
             git config --global user.name "GitHub Actions Bot"
             git config --global user.email "actions@github.com"
-            
-            # Set up credentials for push
             git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-            
-            # Add and commit changes
             git add .
             git commit -m "Apply automatic Black formatting [skip ci]"
             git push
-            echo "Formatting changes pushed to main branch."
+            echo "✅ Formatting changes pushed to main branch"
           else
-            echo "No formatting changes needed."
+            echo "✅ No formatting changes needed"
           fi
-          
-      - name: Skip traditional Black check
-        run: |
-          echo "Skipping standard Black --check since we've already applied formatting"
-          # Always exit with code 0 to prevent CI from failing on Black issues
-          exit 0
 
       - name: Run isort
         run: isort --check-only .
