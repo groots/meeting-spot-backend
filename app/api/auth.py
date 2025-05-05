@@ -431,10 +431,17 @@ def get_profile_picture(filename):
     return send_from_directory(profile_pictures_dir, filename)
 
 
-@auth_bp.route("/reset-password", methods=["POST"])
+@auth_bp.route("/reset-password", methods=["POST", "OPTIONS"])
 def reset_password():
     """Handle password reset request."""
     try:
+        # Handle OPTIONS request for CORS preflight
+        if request.method == "OPTIONS":
+            response = make_response()
+            response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+            response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            return response
+
         data = request.get_json() or {}
 
         # Log incoming request data
