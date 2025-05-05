@@ -66,6 +66,22 @@ def debug_database():
         return f"Database diagnostic error: {str(e)}"
 
 
+# Direct token generation without using User model
+def generate_direct_token(user_id, email):
+    """Generate a JWT token directly without using the User model."""
+    try:
+        # Create a simple claims dictionary with essential user info
+        claims = {"email": email}
+
+        # Generate the token directly using Flask-JWT-Extended
+        access_token = create_access_token(identity=str(user_id), additional_claims=claims)
+
+        return access_token
+    except Exception as e:
+        current_app.logger.error(f"Direct token generation error: {str(e)}")
+        raise
+
+
 @auth_bp.route("/register", methods=["POST"])
 def register():
     """Register a new user."""
@@ -239,6 +255,88 @@ def login():
         stack_trace = traceback.format_exc()
         current_app.logger.error(f"Unhandled exception in login endpoint: {str(e)}\n{stack_trace}")
         return jsonify({"error": "Server error", "message": "An unexpected error occurred during login"}), 500
+
+
+# Direct login endpoint that bypasses ORM models
+@auth_bp.route("/login/direct", methods=["POST"])
+def direct_login():
+    """Direct login that bypasses ORM models for more reliability."""
+    try:
+        data = request.get_json() or {}
+
+        # Log incoming request data (without password)
+        safe_data = {k: v for k, v in data.items() if k != "password"} if data else {}
+        current_app.logger.info(f"Direct login attempt with data: {safe_data}")
+
+        # Get credentials
+        email = data.get("email", "").lower().strip() if data.get("email") else ""
+        password = data.get("password", "")
+
+        if not email or not password:
+            current_app.logger.warning("Direct login failed: missing email or password")
+            return jsonify({"error": "Email and password are required"}), 400
+
+        # Check database connection
+        try:
+            # Basic connection test
+            db.session.execute(text("SELECT 1")).fetchone()
+
+            # Direct SQL query to find user
+            stmt = text("SELECT id, email, password_hash FROM users WHERE email = :email")
+            result = db.session.execute(stmt, {"email": email}).fetchone()
+
+            if not result:
+                current_app.logger.warning(f"Direct login failed: user not found for email {email}")
+                return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
+
+            # Extract user data
+            user_id, user_email, password_hash = result
+
+            # Verify password directly
+            if not check_password_hash(password_hash, password):
+                current_app.logger.warning(f"Direct login failed: incorrect password for user {email}")
+                return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
+
+            # Generate token directly
+            access_token = generate_direct_token(user_id, user_email)
+
+            # Create minimal user response
+            user_data = {
+                "id": str(user_id),
+                "email": user_email,
+            }
+
+            # Try to get additional fields if possible
+            try:
+                extended_query = text(
+                    """
+                    SELECT id, email, first_name, last_name, username
+                    FROM users WHERE id = :user_id
+                """
+                )
+                extended_result = db.session.execute(extended_query, {"user_id": user_id}).fetchone()
+
+                if extended_result:
+                    # Add fields that exist
+                    for i, col_name in enumerate(["id", "email", "first_name", "last_name", "username"]):
+                        if i < len(extended_result) and extended_result[i] is not None:
+                            user_data[col_name] = extended_result[i]
+            except Exception as e:
+                current_app.logger.warning(f"Could not get extended user data: {str(e)}")
+
+            # Success response
+            current_app.logger.info(f"Direct login successful for user {email}")
+            return jsonify({"message": "Login successful", "access_token": access_token, "user": user_data}), 200
+
+        except Exception as db_error:
+            stack_trace = traceback.format_exc()
+            current_app.logger.error(f"Database error in direct login: {str(db_error)}\n{stack_trace}")
+            return jsonify({"error": "Server error", "message": "Database error"}), 500
+
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        current_app.logger.error(f"Unhandled exception in direct login endpoint: {str(e)}\n{stack_trace}")
+        return jsonify({"error": "Server error", "message": "An unexpected error occurred"}), 500
 
 
 @auth_bp.route("/me", methods=["GET"])
