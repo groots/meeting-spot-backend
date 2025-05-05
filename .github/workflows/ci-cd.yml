@@ -96,16 +96,11 @@ jobs:
             black --quiet --exclude tests/test_notifications.py .
           fi
 
-          # If there are changes, commit and push them directly to the main branch
+          # Instead of pushing changes, just report on what would have been changed
           if [[ -n $(git status -s) ]]; then
-            echo "Files were formatted by Black. Committing changes..."
-            git config --global user.name "GitHub Actions Bot"
-            git config --global user.email "actions@github.com"
-            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-            git add .
-            git commit -m "Apply automatic Black formatting [skip ci]"
-            git push
-            echo "✅ Formatting changes pushed to main branch"
+            echo "Files were formatted by Black. Changes will be used for this build but not pushed."
+            echo "Modified files:"
+            git status -s
           else
             echo "✅ No formatting changes needed"
           fi
