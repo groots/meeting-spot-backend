@@ -36,6 +36,8 @@ def setup_cors(app):
             "https://find-a-meeting-spot.ue.r.appspot.com",
             "https://findameetingspot.com",
             "https://www.findameetingspot.com",
+            # Allow Google domains for authentication
+            "https://accounts.google.com",
         ]
 
     cors_logger.info(f"Initializing CORS with allowed origins: {app.config['CORS_ORIGINS']}")
@@ -48,13 +50,16 @@ def setup_cors(app):
         # Log the request for debugging
         cors_logger.info(f"Processing request: {request.method} {request.path} from origin: {origin}")
 
+        # For authentication endpoints, be more permissive
+        is_auth_endpoint = request.path.startswith("/api/v1/auth/")
+
         # Only add CORS headers if the origin is provided
         if origin:
             # Check if origin is in our allowed origins list
             allowed_origins = app.config.get("CORS_ORIGINS", [])
 
             # Only add Access-Control-Allow-Origin if the origin is allowed
-            if "*" in allowed_origins or origin in allowed_origins:
+            if "*" in allowed_origins or origin in allowed_origins or is_auth_endpoint:
                 response.headers["Access-Control-Allow-Origin"] = origin
                 response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
                 response.headers[
@@ -63,6 +68,12 @@ def setup_cors(app):
                 response.headers["Access-Control-Allow-Credentials"] = "true"
                 response.headers["Access-Control-Max-Age"] = "3600"
                 response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization, Content-Length"
+
+                # For Google OAuth, set the Cross-Origin-Opener-Policy to allow popups
+                if (is_auth_endpoint and "google" in request.path) or request.path.endswith("/google/callback"):
+                    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+                    cors_logger.info(f"Applied special headers for Google auth endpoint")
+
                 cors_logger.info(f"Applied CORS headers for origin: {origin}")
             else:
                 cors_logger.info(f"Origin not allowed: {origin}")
@@ -81,11 +92,14 @@ def setup_cors(app):
         # Create a response with 200 OK status
         response = current_app.make_default_options_response()
 
+        # Is this an auth endpoint?
+        is_auth_endpoint = path.startswith("api/v1/auth/")
+
         # Add CORS headers only if the origin is allowed
         if origin:
             allowed_origins = app.config.get("CORS_ORIGINS", [])
 
-            if "*" in allowed_origins or origin in allowed_origins:
+            if "*" in allowed_origins or origin in allowed_origins or is_auth_endpoint:
                 response.headers["Access-Control-Allow-Origin"] = origin
                 response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
                 response.headers[
@@ -94,6 +108,12 @@ def setup_cors(app):
                 response.headers["Access-Control-Allow-Credentials"] = "true"
                 response.headers["Access-Control-Max-Age"] = "3600"
                 response.headers["Access-Control-Expose-Headers"] = "Content-Type, Authorization, Content-Length"
+
+                # For Google OAuth, set the Cross-Origin-Opener-Policy to allow popups
+                if (is_auth_endpoint and "google" in path) or path.endswith("/google/callback"):
+                    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+                    cors_logger.info(f"Applied special headers for Google auth OPTIONS request")
+
                 cors_logger.info(f"Applied OPTIONS CORS headers for origin: {origin}")
             else:
                 cors_logger.info(f"Origin not allowed for OPTIONS: {origin}")

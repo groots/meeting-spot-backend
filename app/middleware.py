@@ -35,3 +35,24 @@ def register_middleware(app: Flask) -> None:
         app.logger.info("ENCRYPTION_KEY is configured")
     else:
         app.logger.error("ENCRYPTION_KEY could not be set; this may cause issues with encrypted data")
+
+    @app.after_request
+    def add_special_headers(response):
+        """Add additional headers for cross-origin popups and authentication flows."""
+        # Add Cross-Origin-Opener-Policy header to allow popups
+        response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
+
+        # Set more permissive headers for auth endpoints
+        if request.path.startswith("/api/v1/auth/"):
+            # Allow credentials
+            response.headers.setdefault("Access-Control-Allow-Credentials", "true")
+
+            # Handle preflight requests specifically
+            if request.method == "OPTIONS":
+                response.headers.setdefault("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+                response.headers.setdefault(
+                    "Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With, Origin"
+                )
+                response.headers.setdefault("Access-Control-Max-Age", "3600")
+
+        return response

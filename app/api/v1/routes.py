@@ -57,8 +57,10 @@ def reset_password():
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
+        response.headers.add("Access-Control-Allow-Origin", "*")
         response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Max-Age", "3600")
         return response
 
     # For POST requests, implement directly without external dependencies
@@ -223,8 +225,10 @@ def get_current_user():
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
+        response.headers.add("Access-Control-Allow-Origin", "*")
         response.headers.add("Access-Control-Allow-Methods", "GET, OPTIONS")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Max-Age", "3600")
         return response
 
     # For GET requests, implement direct user lookup
@@ -252,6 +256,7 @@ def get_current_user():
 
             # Manually decode the token
             try:
+                current_app.logger.info(f"Decoding token: {token[:10]}...")
                 payload = jwt.decode(token, secret_key, algorithms=["HS256"])
                 current_user_id = payload.get("sub") or payload.get("user_id")
 
@@ -279,7 +284,12 @@ def get_current_user():
                 # Convert row to dictionary
                 result = {}
                 for idx, col in enumerate(user_data.keys()):
-                    result[col] = str(user_data[idx]) if col in ["id", "created_at", "updated_at"] else user_data[idx]
+                    # Convert values to strings as needed
+                    value = user_data[idx]
+                    if col in ["id", "created_at", "updated_at"] and value is not None:
+                        result[col] = str(value)
+                    else:
+                        result[col] = value
 
                 # Check if user has premium subscription
                 try:
@@ -297,9 +307,11 @@ def get_current_user():
                     if subscription:
                         sub_dict = {}
                         for idx, col in enumerate(subscription.keys()):
-                            sub_dict[col] = (
-                                str(subscription[idx]) if col in ["id", "current_period_end"] else subscription[idx]
-                            )
+                            value = subscription[idx]
+                            if col in ["id", "current_period_end"] and value is not None:
+                                sub_dict[col] = str(value)
+                            else:
+                                sub_dict[col] = value
 
                         result["subscription"] = sub_dict
                         result["is_premium"] = True
@@ -492,8 +504,10 @@ def login_v1():
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
+        response.headers.add("Access-Control-Allow-Origin", "*")
         response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Max-Age", "3600")
         return response
 
     try:
@@ -557,17 +571,18 @@ def login_v1():
                 if extended_result:
                     for idx, col_name in enumerate(extended_result.keys()):
                         if extended_result[idx] is not None:
-                            user_data[col_name] = (
-                                str(extended_result[idx])
-                                if col_name in ["id", "created_at", "updated_at"]
-                                else extended_result[idx]
-                            )
+                            value = extended_result[idx]
+                            if col_name in ["id", "created_at", "updated_at"]:
+                                user_data[col_name] = str(value)
+                            else:
+                                user_data[col_name] = value
             except Exception as e:
                 current_app.logger.warning(f"V1 Could not get extended user data: {str(e)}")
 
             # Success response
             current_app.logger.info(f"V1 Login successful for user {email}")
-            return jsonify({"message": "Login successful", "access_token": access_token, "user": user_data}), 200
+            response = jsonify({"message": "Login successful", "access_token": access_token, "user": user_data})
+            return response, 200
 
         except Exception as db_error:
             stack_trace = traceback.format_exc()
@@ -575,8 +590,6 @@ def login_v1():
             return jsonify({"error": "Server error", "message": "Database error"}), 500
 
     except Exception as e:
-        import traceback
-
         stack_trace = traceback.format_exc()
         current_app.logger.error(f"V1 Unhandled exception in login endpoint: {str(e)}\n{stack_trace}")
         return jsonify({"error": "Server error", "message": "An unexpected error occurred"}), 500
@@ -588,28 +601,40 @@ def direct_login_v1():
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
+        response.headers.add("Access-Control-Allow-Origin", "*")
         response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Max-Age", "3600")
         return response
 
     # For POST requests, forward to the direct login in auth blueprint
-    from ..auth import direct_login
+    try:
+        from ..auth import direct_login
 
-    return direct_login()
+        return direct_login()
+    except Exception as e:
+        import traceback
+
+        stack_trace = traceback.format_exc()
+        current_app.logger.error(f"Error in direct login: {str(e)}\n{stack_trace}")
+        return jsonify({"error": "Error processing login", "message": str(e)}), 500
 
 
-@v1_bp.route("/auth/google/callback", methods=["POST", "OPTIONS"])
+@v1_bp.route("/auth/google/callback", methods=["GET", "POST", "OPTIONS"])
 def google_callback_v1():
     """Google authentication callback for v1 routes."""
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
-        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Max-Age", "3600")
         return response
 
-    # For POST requests, forward to the auth blueprint
+    # For POST or GET requests, forward to the auth blueprint
     try:
+        current_app.logger.info(f"Google callback received via {request.method}. Processing...")
         from ..auth import direct_google_callback
 
         return direct_google_callback()
@@ -619,3 +644,114 @@ def google_callback_v1():
         stack_trace = traceback.format_exc()
         current_app.logger.error(f"Error in Google callback: {str(e)}\n{stack_trace}")
         return jsonify({"error": "Error authenticating with Google", "message": str(e)}), 500
+
+
+@v1_bp.route("/auth/direct-login", methods=["POST", "OPTIONS"])
+def standalone_direct_login():
+    """Standalone direct login endpoint that doesn't depend on auth module."""
+    # Handle OPTIONS request for CORS preflight
+    if request.method == "OPTIONS":
+        response = make_response()
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Max-Age", "3600")
+        return response
+
+    try:
+        import traceback
+        import uuid
+        from datetime import datetime, timedelta, timezone
+
+        import jwt
+        from werkzeug.security import check_password_hash
+
+        data = request.get_json() or {}
+
+        # Log incoming request data (without password)
+        safe_data = {k: v for k, v in data.items() if k != "password"} if data else {}
+        current_app.logger.info(f"Standalone direct login attempt with data: {safe_data}")
+
+        # Get credentials
+        email = data.get("email", "").lower().strip() if data.get("email") else ""
+        password = data.get("password", "")
+
+        if not email or not password:
+            current_app.logger.warning("Standalone direct login failed: missing email or password")
+            return jsonify({"error": "Email and password are required"}), 400
+
+        # Check database connection
+        try:
+            # Basic connection test
+            db.session.execute(text("SELECT 1")).fetchone()
+
+            # Direct SQL query to find user
+            stmt = text("SELECT id, email, password_hash FROM users WHERE email = :email")
+            result = db.session.execute(stmt, {"email": email}).fetchone()
+
+            if not result:
+                current_app.logger.warning(f"Standalone direct login failed: user not found for email {email}")
+                return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
+
+            # Extract user data
+            user_id, user_email, password_hash = result
+
+            # Verify password directly
+            if not check_password_hash(password_hash, password):
+                current_app.logger.warning(f"Standalone direct login failed: incorrect password for user {email}")
+                return jsonify({"error": "Invalid credentials", "message": "Invalid email or password"}), 401
+
+            # Generate JWT token directly
+            secret_key = current_app.config.get("SECRET_KEY")
+            if not secret_key:
+                current_app.logger.error("SECRET_KEY not configured")
+                return jsonify({"error": "Server error", "message": "Server configuration error"}), 500
+
+            # Create expiration time (24 hours from now)
+            now = datetime.now(timezone.utc)
+            expiry = now + timedelta(hours=24)
+
+            # Create token payload
+            payload = {"sub": str(user_id), "email": user_email, "iat": now, "exp": expiry}
+
+            # Generate the JWT token
+            access_token = jwt.encode(payload, secret_key, algorithm="HS256")
+
+            # Get additional user fields if possible
+            user_data = {"id": str(user_id), "email": user_email}
+
+            try:
+                extended_query = text(
+                    """
+                    SELECT id, email, first_name, last_name, username, phone, profile_picture_url,
+                           created_at, updated_at
+                    FROM users WHERE id = :user_id
+                """
+                )
+                extended_result = db.session.execute(extended_query, {"user_id": user_id}).fetchone()
+
+                if extended_result:
+                    for idx, col_name in enumerate(extended_result.keys()):
+                        if extended_result[idx] is not None:
+                            value = extended_result[idx]
+                            if col_name in ["id", "created_at", "updated_at"]:
+                                user_data[col_name] = str(value)
+                            else:
+                                user_data[col_name] = value
+            except Exception as e:
+                current_app.logger.warning(f"Standalone direct login: Could not get extended user data: {str(e)}")
+
+            # Success response
+            current_app.logger.info(f"Standalone direct login successful for user {email}")
+            response = jsonify({"message": "Login successful", "access_token": access_token, "user": user_data})
+            return response, 200
+
+        except Exception as db_error:
+            stack_trace = traceback.format_exc()
+            current_app.logger.error(f"Database error in standalone direct login: {str(db_error)}\n{stack_trace}")
+            return jsonify({"error": "Server error", "message": "Database error"}), 500
+
+    except Exception as e:
+        stack_trace = traceback.format_exc()
+        current_app.logger.error(f"Unhandled exception in standalone direct login endpoint: {str(e)}\n{stack_trace}")
+        return jsonify({"error": "Server error", "message": "An unexpected error occurred"}), 500
