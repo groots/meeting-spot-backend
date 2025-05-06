@@ -1,3 +1,6 @@
+import os
+
+import requests
 from flask import Blueprint, current_app, jsonify, make_response, request
 from sqlalchemy import text
 
@@ -50,7 +53,7 @@ def health_check():
 # Add auth endpoints
 @v1_bp.route("/auth/reset-password", methods=["POST", "OPTIONS"])
 def reset_password():
-    """Handle password reset request with improved error handling."""
+    """Handle password reset request with direct implementation."""
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
@@ -58,86 +61,159 @@ def reset_password():
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         return response
 
-    # For POST requests, implement robust error handling
+    # For POST requests, implement directly without external dependencies
     try:
+        import secrets
+        import uuid
+        from datetime import datetime, timedelta, timezone
+
         data = request.get_json() or {}
 
         # Log incoming request data (without sensitive information)
         email = data.get("email", "").lower().strip() if data.get("email") else ""
-        current_app.logger.info(f"V1 Reset password request for email: {email}")
+        current_app.logger.info(f"Direct Reset password request for email: {email}")
 
         if not email:
-            current_app.logger.warning("V1 Reset password failed: missing email")
+            current_app.logger.warning("Direct Reset password failed: missing email")
             return jsonify({"error": "Email is required", "message": "Email is required"}), 400
+
+        # Success message (always return same message for security)
+        success_message = "If your email exists in our system, you will receive password reset instructions."
 
         # Basic database check
         try:
-            db.session.execute(text("SELECT 1")).fetchone()
-        except Exception as db_error:
-            current_app.logger.error(f"V1 Database connection error: {str(db_error)}")
-            return jsonify({"error": "Server error", "message": "Database connection error"}), 500
-
-        # Check if user exists
-        try:
+            # Check if user exists using direct SQL
             stmt = text("SELECT id, email FROM users WHERE email = :email")
             result = db.session.execute(stmt, {"email": email}).fetchone()
 
-            # Always return success for security (don't reveal if email exists)
-            success_message = "If your email exists in our system, you will receive password reset instructions."
-
             if not result:
-                current_app.logger.info(f"V1 Reset password: User not found for email: {email}")
+                current_app.logger.info(f"Reset password: User not found for email: {email}")
+                # Still return success for security reasons
                 return jsonify({"message": success_message}), 200
 
-            # Generate token for valid user
+            # Found user, generate a token directly
+            user_id = str(result[0])
+
+            # Generate a reset token
+            reset_token = secrets.token_urlsafe(32)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+
+            # Store token in database if password_resets table exists
             try:
-                user_id = result[0]
+                # Check if password_resets table exists
+                check_table = text(
+                    "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'password_resets')"
+                )
+                table_exists = db.session.execute(check_table).scalar()
 
-                # Import security module and generate token
+                if table_exists:
+                    # Store token in database
+                    token_id = str(uuid.uuid4())
+                    reset_stmt = text(
+                        """
+                        INSERT INTO password_resets (id, user_id, token, created_at, expires_at, used)
+                        VALUES (:id, :user_id, :token, :created_at, :expires_at, :used)
+                    """
+                    )
+                    db.session.execute(
+                        reset_stmt,
+                        {
+                            "id": token_id,
+                            "user_id": user_id,
+                            "token": reset_token,
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "expires_at": expires_at.isoformat(),
+                            "used": False,
+                        },
+                    )
+                    db.session.commit()
+                    current_app.logger.info(f"Reset token stored in database for user {user_id}")
+                else:
+                    current_app.logger.warning("password_resets table doesn't exist, token will not be persisted")
+
+            except Exception as token_db_error:
+                current_app.logger.error(f"Error storing reset token: {str(token_db_error)}")
+                # Continue anyway, the email can still be sent
+                db.session.rollback()
+
+            # Get frontend URL from config
+            frontend_url = current_app.config.get("FRONTEND_URL", "https://findameetingspot.com")
+            reset_url = f"{frontend_url}/auth/reset-password/{reset_token}"
+
+            # Create email content
+            subject = "Reset Your Find A Meeting Spot Password"
+            body = f"""Hello,
+
+You've requested to reset your password for Find A Meeting Spot.
+
+Please click the link below to reset your password:
+{reset_url}
+
+This link will expire in 1 hour.
+
+If you didn't request this password reset, please ignore this email or contact support if you have concerns.
+
+Thanks,
+The Find A Meeting Spot Team
+"""
+            # Get Mailgun configuration
+            api_key = current_app.config.get("MAILGUN_API_KEY")
+            domain = current_app.config.get("MAILGUN_DOMAIN")
+
+            # Also check environment variables directly
+            if not api_key:
+                api_key = os.environ.get("MAILGUN_API_KEY")
+            if not domain:
+                domain = os.environ.get("MAILGUN_DOMAIN")
+
+            # Log email preparation details
+            current_app.logger.info(f"Preparing reset email to: {email}")
+            current_app.logger.info(f"Mailgun Domain: {domain}")
+            current_app.logger.info(f"API Key present: {'Yes' if api_key else 'No'}")
+
+            # Send email if configuration is available
+            if api_key and domain:
                 try:
-                    from ..utils.security import generate_reset_token
+                    # Mailgun API endpoint
+                    url = f"https://api.mailgun.net/v3/{domain}/messages"
 
-                    token = generate_reset_token(str(user_id))  # Ensure user_id is a string
+                    # Prepare the email data
+                    email_data = {
+                        "from": f"Find A Meeting Spot <noreply@{domain}>",
+                        "to": email,
+                        "subject": subject,
+                        "text": body,
+                        "html": body.replace("\n", "<br>"),  # Basic HTML conversion
+                    }
 
-                    current_app.logger.info(f"V1 Reset token generated for user ID: {user_id}")
+                    # Send the email
+                    current_app.logger.info(f"Sending email request to Mailgun")
+                    response = requests.post(url, auth=("api", api_key), data=email_data)
 
-                    # Send reset email
-                    try:
-                        from ..utils.notifications import send_password_reset_email
+                    # Log response
+                    current_app.logger.info(f"Mailgun API response status code: {response.status_code}")
 
-                        email_sent = send_password_reset_email(email, token)
+                    if response.status_code != 200:
+                        current_app.logger.error(f"Mailgun API error: {response.text}")
+                    else:
+                        current_app.logger.info(f"Password reset email sent successfully to {email}")
 
-                        if email_sent:
-                            current_app.logger.info(f"V1 Reset password email sent to: {email}")
-                        else:
-                            current_app.logger.warning(f"V1 Failed to send reset email to: {email}")
-                    except ImportError as import_err:
-                        current_app.logger.error(f"V1 Import error with notifications: {str(import_err)}")
-                    except Exception as email_err:
-                        current_app.logger.error(f"V1 Error sending reset email: {str(email_err)}")
+                except Exception as email_error:
+                    current_app.logger.error(f"Error sending reset email: {str(email_error)}")
+            else:
+                current_app.logger.warning("Email not sent - missing Mailgun configuration")
 
-                    # Return success regardless of email status (for security)
-                    return jsonify({"message": success_message}), 200
+            # Return success for security reasons (don't reveal if email was sent)
+            return jsonify({"message": success_message}), 200
 
-                except ImportError as sec_import_err:
-                    current_app.logger.error(f"V1 Security module import error: {str(sec_import_err)}")
-                    return jsonify({"error": "Server configuration error"}), 500
-                except Exception as token_err:
-                    current_app.logger.error(f"V1 Token generation error: {str(token_err)}")
-                    return jsonify({"error": "Server error", "message": "Error generating reset token"}), 500
-
-            except Exception as user_err:
-                current_app.logger.error(f"V1 User processing error: {str(user_err)}")
-                return jsonify({"error": "Server error", "message": "Error processing user data"}), 500
-
-        except Exception as lookup_err:
-            current_app.logger.error(f"V1 User lookup error: {str(lookup_err)}")
-            return jsonify({"error": "Server error", "message": "Error looking up user data"}), 500
+        except Exception as db_error:
+            current_app.logger.error(f"Database error in reset password: {str(db_error)}")
+            return jsonify({"error": "Server error", "message": "Database error"}), 500
 
     except Exception as e:
         import traceback
 
-        current_app.logger.error(f"V1 Unhandled exception in reset password: {str(e)}\n{traceback.format_exc()}")
+        current_app.logger.error(f"Unhandled exception in reset password: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": "Server error", "message": "An unexpected error occurred"}), 500
 
 
