@@ -51,14 +51,16 @@ def health_check():
 
 
 # Add auth endpoints
-@v1_bp.route("/auth/reset-password", methods=["POST", "OPTIONS"])
+@v1_bp.route("/auth/reset-password", methods=["GET", "POST", "OPTIONS"])
 def reset_password():
     """Handle password reset request with direct implementation."""
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
         response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        response.headers.add("Access-Control-Max-Age", "3600")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         response.headers.add("Access-Control-Max-Age", "3600")
         return response
@@ -341,13 +343,15 @@ def get_current_user():
         return jsonify({"error": "Internal server error"}), 500
 
 
-@v1_bp.route("/auth/register/direct", methods=["POST", "OPTIONS"])
+@v1_bp.route("/auth/register/direct", methods=["GET", "POST", "OPTIONS"])
 def direct_register_v1():
     """Direct register endpoint for v1 routes."""
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
-        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        response.headers.add("Access-Control-Max-Age", "3600")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         return response
 
@@ -474,13 +478,15 @@ def direct_register_v1():
         return jsonify({"error": "Server error", "message": "An unexpected error occurred"}), 500
 
 
-@v1_bp.route("/auth/register", methods=["POST", "OPTIONS"])
+@v1_bp.route("/auth/register", methods=["GET", "POST", "OPTIONS"])
 def register_v1():
     """Register endpoint for v1 routes that forwards to the auth blueprint."""
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
-        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        response.headers.add("Access-Control-Max-Age", "3600")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         return response
 
@@ -498,14 +504,16 @@ def register_v1():
         return direct_register_v1()
 
 
-@v1_bp.route("/auth/login", methods=["POST", "OPTIONS"])
+@v1_bp.route("/auth/login", methods=["GET", "POST", "OPTIONS"])
 def login_v1():
     """Login endpoint for v1 routes that handles login directly."""
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
         response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        response.headers.add("Access-Control-Max-Age", "3600")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         response.headers.add("Access-Control-Max-Age", "3600")
         return response
@@ -595,14 +603,16 @@ def login_v1():
         return jsonify({"error": "Server error", "message": "An unexpected error occurred"}), 500
 
 
-@v1_bp.route("/auth/login/direct", methods=["POST", "OPTIONS"])
+@v1_bp.route("/auth/login/direct", methods=["GET", "POST", "OPTIONS"])
 def direct_login_v1():
     """Direct login endpoint for v1 routes."""
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
         response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        response.headers.add("Access-Control-Max-Age", "3600")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         response.headers.add("Access-Control-Max-Age", "3600")
         return response
@@ -646,14 +656,16 @@ def google_callback_v1():
         return jsonify({"error": "Error authenticating with Google", "message": str(e)}), 500
 
 
-@v1_bp.route("/auth/direct-login", methods=["POST", "OPTIONS"])
+@v1_bp.route("/auth/direct-login", methods=["GET", "POST", "OPTIONS"])
 def standalone_direct_login():
     """Standalone direct login endpoint that doesn't depend on auth module."""
     # Handle OPTIONS request for CORS preflight
     if request.method == "OPTIONS":
         response = make_response()
         response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        response.headers.add("Access-Control-Max-Age", "3600")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         response.headers.add("Access-Control-Max-Age", "3600")
         return response
