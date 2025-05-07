@@ -136,16 +136,24 @@ export class UserModel {
    * Generate JWT token
    */
   static generateToken(user: User): string {
-    const secret = process.env.JWT_SECRET || 'default_secret';
+    const secretEnv = process.env.JWT_SECRET;
+    if (!secretEnv) {
+      console.error('JWT_SECRET is not defined. Using a default, insecure secret.');
+    }
+    const secretString = secretEnv || 'default_very_insecure_secret_for_dev_only';
+    const secretBuffer = Buffer.from(secretString);
+
     const payload = {
       sub: user.id,
       email: user.email,
     };
 
-    // Cast the secret to string to satisfy TypeScript
-    return jwt.sign(payload, secret as jwt.Secret, {
-      expiresIn: process.env.JWT_EXPIRES_IN || '24h',
-    });
+    const options: jwt.SignOptions = {
+      expiresIn: '24h', // Temporarily hardcode to a simple string
+      algorithm: 'HS256'
+    };
+
+    return jwt.sign(payload, secretBuffer, options);
   }
 
   /**
