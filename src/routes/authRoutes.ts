@@ -1,5 +1,11 @@
 import express from 'express';
-import { register, login, getCurrentUser, googleCallback, refreshToken } from '../controllers/authController';
+import {
+  register,
+  login,
+  getCurrentUser,
+  googleCallback,
+  refreshToken,
+} from '../controllers/authController';
 import { authenticate } from '../middleware/authMiddleware';
 
 const router = express.Router();
@@ -20,4 +26,4 @@ router.post('/refresh', refreshToken);
 // Get current user - requires authentication
 router.get('/me', authenticate, getCurrentUser);
 
-export default router; 
+export default router;

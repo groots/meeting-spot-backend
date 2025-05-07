@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
  */
 export const parseToken = (token: string): any | null => {
   if (!token) return null;
-  
+
   try {
     // Decode the token
     return jwt.decode(token);
@@ -20,11 +20,11 @@ export const parseToken = (token: string): any | null => {
  */
 export const isTokenExpired = (token: string): boolean => {
   if (!token) return true;
-  
+
   try {
     const payload = parseToken(token);
     if (!payload || !payload.exp) return true;
-    
+
     // Check if token is expired
     const currentTime = Math.floor(Date.now() / 1000);
     return payload.exp < currentTime;
@@ -39,15 +39,15 @@ export const isTokenExpired = (token: string): boolean => {
  */
 export const isTokenExpiringSoon = (token: string): boolean => {
   if (!token) return true;
-  
+
   try {
     const payload = parseToken(token);
     if (!payload || !payload.exp) return true;
-    
+
     // Check if token expires within the next 5 minutes
     const currentTime = Math.floor(Date.now() / 1000);
     const fiveMinutes = 5 * 60; // 5 minutes in seconds
-    return payload.exp < (currentTime + fiveMinutes);
+    return payload.exp < currentTime + fiveMinutes;
   } catch (error) {
     console.error('Error checking token expiration:', error);
     return true;
@@ -64,4 +64,4 @@ export const getUserIdFromToken = (token: string): string | null => {
   } catch (error) {
     return null;
   }
-}; 
+};

@@ -14,10 +14,12 @@ const port = process.env.PORT || 5000;
 
 // Middleware
 app.use(helmet());
-app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || '*',
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -29,7 +31,7 @@ app.get('/api/v1/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
     version: '1.0',
-    api: 'Find A Meeting Spot API'
+    api: 'Find A Meeting Spot API',
   });
 });
 
@@ -38,7 +40,7 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
   console.error(err.stack);
   res.status(500).json({
     error: 'Server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'An unexpected error occurred'
+    message: process.env.NODE_ENV === 'development' ? err.message : 'An unexpected error occurred',
   });
 });
 
@@ -47,7 +49,7 @@ const startServer = async () => {
   try {
     // Connect to database
     await connectToDatabase();
-    
+
     // Start listening
     app.listen(port, () => {
       console.log(`Server running on port ${port}`);
@@ -60,4 +62,4 @@ const startServer = async () => {
 
 startServer();
 
-export default app; 
+export default app;

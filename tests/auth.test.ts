@@ -20,7 +20,7 @@ jest.mock('../src/config/database', () => ({
         ],
       };
     }
-    
+
     // Mock user lookup by email
     if (text.includes('SELECT * FROM users WHERE email')) {
       if (params[0] === 'existing@example.com') {
@@ -38,7 +38,7 @@ jest.mock('../src/config/database', () => ({
       }
       return { rows: [] };
     }
-    
+
     // Mock user lookup by ID
     if (text.includes('SELECT * FROM users WHERE id')) {
       return {
@@ -53,7 +53,7 @@ jest.mock('../src/config/database', () => ({
         ],
       };
     }
-    
+
     return { rows: [] };
   }),
 }));
@@ -90,113 +90,101 @@ jest.mock('jsonwebtoken', () => ({
 describe('Authentication API', () => {
   describe('POST /api/v1/auth/register', () => {
     it('should register a new user successfully', async () => {
-      const res = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          email: 'test@example.com',
-          password: 'password123',
-          first_name: 'Test',
-          last_name: 'User',
-        });
-      
+      const res = await request(app).post('/api/v1/auth/register').send({
+        email: 'test@example.com',
+        password: 'password123',
+        first_name: 'Test',
+        last_name: 'User',
+      });
+
       expect(res.statusCode).toEqual(201);
       expect(res.body).toHaveProperty('access_token');
       expect(res.body).toHaveProperty('user');
       expect(res.body.user.email).toEqual('test@example.com');
     });
-    
+
     it('should return 400 if email or password is missing', async () => {
-      const res = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          email: 'test@example.com',
-        });
-      
+      const res = await request(app).post('/api/v1/auth/register').send({
+        email: 'test@example.com',
+      });
+
       expect(res.statusCode).toEqual(400);
       expect(res.body).toHaveProperty('error');
     });
-    
+
     it('should return 409 if user already exists', async () => {
-      const res = await request(app)
-        .post('/api/v1/auth/register')
-        .send({
-          email: 'existing@example.com',
-          password: 'password123',
-        });
-      
+      const res = await request(app).post('/api/v1/auth/register').send({
+        email: 'existing@example.com',
+        password: 'password123',
+      });
+
       expect(res.statusCode).toEqual(409);
       expect(res.body).toHaveProperty('error');
     });
   });
-  
+
   describe('POST /api/v1/auth/login', () => {
     it('should login successfully with correct credentials', async () => {
-      const res = await request(app)
-        .post('/api/v1/auth/login')
-        .send({
-          email: 'existing@example.com',
-          password: 'correctpassword',
-        });
-      
+      const res = await request(app).post('/api/v1/auth/login').send({
+        email: 'existing@example.com',
+        password: 'correctpassword',
+      });
+
       expect(res.statusCode).toEqual(200);
       expect(res.body).toHaveProperty('access_token');
       expect(res.body).toHaveProperty('user');
     });
-    
+
     it('should return 401 with incorrect password', async () => {
-      const res = await request(app)
-        .post('/api/v1/auth/login')
-        .send({
-          email: 'existing@example.com',
-          password: 'wrongpassword',
-        });
-      
+      const res = await request(app).post('/api/v1/auth/login').send({
+        email: 'existing@example.com',
+        password: 'wrongpassword',
+      });
+
       expect(res.statusCode).toEqual(401);
       expect(res.body).toHaveProperty('error');
     });
-    
+
     it('should return 401 if user does not exist', async () => {
-      const res = await request(app)
-        .post('/api/v1/auth/login')
-        .send({
-          email: 'nonexistent@example.com',
-          password: 'password123',
-        });
-      
+      const res = await request(app).post('/api/v1/auth/login').send({
+        email: 'nonexistent@example.com',
+        password: 'password123',
+      });
+
       expect(res.statusCode).toEqual(401);
       expect(res.body).toHaveProperty('error');
     });
   });
-  
+
   describe('POST /api/v1/auth/refresh', () => {
     it('should refresh a valid token', async () => {
       const res = await request(app)
         .post('/api/v1/auth/refresh')
         .set('Authorization', 'Bearer valid.token.here')
         .send();
-      
+
       expect(res.statusCode).toEqual(200);
       expect(res.body).toHaveProperty('access_token');
     });
-    
+
     it('should refresh an expired token if user still exists', async () => {
       const res = await request(app)
         .post('/api/v1/auth/refresh')
         .set('Authorization', 'Bearer expired.token.here')
         .send();
-      
+
       expect(res.statusCode).toEqual(200);
       expect(res.body).toHaveProperty('access_token');
     });
-    
+
     it('should return 401 for an invalid token', async () => {
       const res = await request(app)
         .post('/api/v1/auth/refresh')
         .set('Authorization', 'Bearer invalid.token.here')
         .send();
-      
+
       expect(res.statusCode).toEqual(401);
       expect(res.body).toHaveProperty('error');
     });
   });
-}); 
+});

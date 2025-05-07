@@ -73,16 +73,19 @@ new-backend/
 This backend implements:
 
 1. **User Registration**
+
    - Secure password hashing with bcrypt
    - Email validation
    - Duplicate account checking
 
 2. **User Login**
+
    - Secure password verification
    - JWT token generation with proper expiry
    - Protection against common attacks
 
 3. **Google Authentication**
+
    - Secure OAuth 2.0 flow
    - Automatic account creation or linking
 
@@ -94,13 +97,13 @@ This backend implements:
 
 ### Authentication
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/auth/register` | Register a new user |
-| POST | `/api/v1/auth/login` | Login user |
-| POST | `/api/v1/auth/google/callback` | Google OAuth callback |
-| POST | `/api/v1/auth/refresh` | Refresh authentication token |
-| GET | `/api/v1/auth/me` | Get current user profile |
+| Method | Endpoint                       | Description                  |
+| ------ | ------------------------------ | ---------------------------- |
+| POST   | `/api/v1/auth/register`        | Register a new user          |
+| POST   | `/api/v1/auth/login`           | Login user                   |
+| POST   | `/api/v1/auth/google/callback` | Google OAuth callback        |
+| POST   | `/api/v1/auth/refresh`         | Refresh authentication token |
+| GET    | `/api/v1/auth/me`              | Get current user profile     |
 
 ## Testing
 
@@ -133,4 +136,4 @@ gcloud run deploy find-a-meeting-spot-backend \
 
 ## License
 
-MIT 
+MIT

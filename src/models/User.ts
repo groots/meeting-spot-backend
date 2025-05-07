@@ -35,29 +35,34 @@ export class UserModel {
   static async create(userData: UserCreateInput): Promise<User> {
     const id = userData.id || uuidv4();
     const now = new Date();
-    
+
     // Ensure email is lowercase
     const email = userData.email ? userData.email.toLowerCase() : '';
-    
+
     // Hash password if provided
     let password_hash = userData.password_hash;
     if (!password_hash && 'password' in userData && userData.password) {
       const salt = await bcrypt.genSalt(10);
       password_hash = await bcrypt.hash(userData.password, salt);
     }
-    
+
     // Create user columns and values
     const columns = ['id', 'email', 'created_at', 'updated_at'];
     const values = [id, email, now, now];
     const placeholders = ['$1', '$2', '$3', '$4'];
     let paramIndex = 5;
-    
+
     // Add optional fields if provided
     const optionalFields: Array<keyof User> = [
-      'password_hash', 'username', 'first_name', 'last_name', 
-      'phone', 'profile_picture_url', 'google_oauth_id'
+      'password_hash',
+      'username',
+      'first_name',
+      'last_name',
+      'phone',
+      'profile_picture_url',
+      'google_oauth_id',
     ];
-    
+
     for (const field of optionalFields) {
       if (field === 'password_hash' && password_hash) {
         columns.push(field);
@@ -69,7 +74,7 @@ export class UserModel {
         placeholders.push(`$${paramIndex++}`);
       }
     }
-    
+
     // Insert user
     const result = await query(
       `INSERT INTO users (${columns.join(', ')}) 
@@ -77,46 +82,37 @@ export class UserModel {
        RETURNING *`,
       values
     );
-    
+
     return result.rows[0];
   }
-  
+
   /**
    * Find user by email
    */
   static async findByEmail(email: string): Promise<User | null> {
-    const result = await query(
-      'SELECT * FROM users WHERE email = $1',
-      [email.toLowerCase()]
-    );
-    
+    const result = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+
     return result.rows[0] || null;
   }
-  
+
   /**
    * Find user by ID
    */
   static async findById(id: string): Promise<User | null> {
-    const result = await query(
-      'SELECT * FROM users WHERE id = $1',
-      [id]
-    );
-    
+    const result = await query('SELECT * FROM users WHERE id = $1', [id]);
+
     return result.rows[0] || null;
   }
-  
+
   /**
    * Find user by Google OAuth ID
    */
   static async findByGoogleId(googleId: string): Promise<User | null> {
-    const result = await query(
-      'SELECT * FROM users WHERE google_oauth_id = $1',
-      [googleId]
-    );
-    
+    const result = await query('SELECT * FROM users WHERE google_oauth_id = $1', [googleId]);
+
     return result.rows[0] || null;
   }
-  
+
   /**
    * Update a user's Google OAuth ID
    */
@@ -128,30 +124,30 @@ export class UserModel {
       [googleId, new Date(), userId]
     );
   }
-  
+
   /**
    * Verify password
    */
   static async verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
     return await bcrypt.compare(password, hashedPassword);
   }
-  
+
   /**
    * Generate JWT token
    */
   static generateToken(user: User): string {
     const secret = process.env.JWT_SECRET || 'default_secret';
-    const payload = { 
+    const payload = {
       sub: user.id,
-      email: user.email 
+      email: user.email,
     };
-    
+
     // Cast the secret to string to satisfy TypeScript
-    return jwt.sign(payload, secret as jwt.Secret, { 
-      expiresIn: process.env.JWT_EXPIRES_IN || '24h' 
+    return jwt.sign(payload, secret as jwt.Secret, {
+      expiresIn: process.env.JWT_EXPIRES_IN || '24h',
     });
   }
-  
+
   /**
    * Convert user to safe object (remove password)
    */
@@ -159,4 +155,4 @@ export class UserModel {
     const { password_hash, ...safeUser } = user;
     return safeUser;
   }
-} 
+}
