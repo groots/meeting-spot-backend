@@ -1,0 +1,15 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+echo "Running pre-commit hooks..."
+
+# Run ESLint
+npm run lint
+
+# Format code with Prettier
+npm run format
+
+# Run TypeScript type checking
+npm run build --noEmit
+
+echo "Pre-commit hooks completed successfully!" 

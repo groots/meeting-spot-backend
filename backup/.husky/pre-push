@@ -1,0 +1,9 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+echo "Running pre-push hooks..."
+
+# Run tests
+npm test
+
+echo "Pre-push hooks completed successfully!" 
