@@ -11,7 +11,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "This is a new Node.js backend implementation designed to address authentication issues present in the original Python backend for the Find A Meeting Spot application.",
   "dependencies": {
     "axios": "^1.9.0",
     "bcryptjs": "^3.0.2",
