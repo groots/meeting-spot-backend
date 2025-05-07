@@ -1,0 +1,52 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  deploy:
+    permissions:
+      contents: 'read'
+      id-token: 'write' # Required for Workload Identity Federation
+
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }} # e.g., projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }} # e.g., my-service-account@my-project.iam.gserviceaccount.com
+
+      - name: Set up Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Authorize Docker push
+        run: gcloud auth configure-docker ${{ secrets.GCP_ARTIFACT_REGISTRY_REGION }}-docker.pkg.dev # e.g., us-central1-docker.pkg.dev
+
+      - name: Build and push container
+        env:
+          IMAGE_NAME: ${{ secrets.GCP_ARTIFACT_REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/meeting-spot-backend/${{ github.sha }}
+        run: |
+          docker build -t $IMAGE_NAME ./backend # Ensure your Dockerfile is in the ./backend directory relative to root
+          docker push $IMAGE_NAME
+
+      - name: Deploy to Cloud Run
+        env:
+          IMAGE_NAME: ${{ secrets.GCP_ARTIFACT_REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/meeting-spot-backend/${{ github.sha }}
+        run: |
+          gcloud run deploy meeting-spot-backend \
+            --image $IMAGE_NAME \
+            --platform managed \
+            --region ${{ secrets.GCP_REGION }} \
+            --allow-unauthenticated \
+            --set-env-vars="NODE_ENV=production,PORT=8080" # Add other necessary env vars here
