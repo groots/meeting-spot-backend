@@ -21,7 +21,6 @@ services:
     autoDeploy: true
     repo: https://github.com/groots/meeting-spot-backend.git
     branch: main
-    rootDir: ./backend
     
 databases:
   - name: meeting-spot-database
