@@ -5,8 +5,8 @@ import {
   getCurrentUser,
   googleCallback,
   refreshToken,
-} from '../controllers/authController';
-import { authenticate } from '../middleware/authMiddleware';
+} from '../controllers/authController.js';
+import { authenticate } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 

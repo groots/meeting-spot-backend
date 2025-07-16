@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { UserModel } from '../models/User';
+import { UserModel } from '../models/User.js';
 
 // Extended Express Request with user property
 declare global {

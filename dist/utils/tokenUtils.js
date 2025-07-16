@@ -1,34 +1,27 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.getUserIdFromToken = exports.isTokenExpiringSoon = exports.isTokenExpired = exports.parseToken = void 0;
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+import jwt from 'jsonwebtoken';
 /**
  * Parse a JWT token to get payload data
  */
-const parseToken = (token) => {
+export const parseToken = (token) => {
     if (!token)
         return null;
     try {
         // Decode the token
-        return jsonwebtoken_1.default.decode(token);
+        return jwt.decode(token);
     }
     catch (error) {
         console.error('Error parsing token:', error);
         return null;
     }
 };
-exports.parseToken = parseToken;
 /**
  * Check if a token is expired
  */
-const isTokenExpired = (token) => {
+export const isTokenExpired = (token) => {
     if (!token)
         return true;
     try {
-        const payload = (0, exports.parseToken)(token);
+        const payload = parseToken(token);
         if (!payload || !payload.exp)
             return true;
         // Check if token is expired
@@ -40,15 +33,14 @@ const isTokenExpired = (token) => {
         return true;
     }
 };
-exports.isTokenExpired = isTokenExpired;
 /**
  * Check if a token is about to expire (within 5 minutes)
  */
-const isTokenExpiringSoon = (token) => {
+export const isTokenExpiringSoon = (token) => {
     if (!token)
         return true;
     try {
-        const payload = (0, exports.parseToken)(token);
+        const payload = parseToken(token);
         if (!payload || !payload.exp)
             return true;
         // Check if token expires within the next 5 minutes
@@ -61,17 +53,15 @@ const isTokenExpiringSoon = (token) => {
         return true;
     }
 };
-exports.isTokenExpiringSoon = isTokenExpiringSoon;
 /**
  * Verify a token and extract user ID
  */
-const getUserIdFromToken = (token) => {
+export const getUserIdFromToken = (token) => {
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET || 'default_secret');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret');
         return decoded.sub;
     }
     catch (error) {
         return null;
     }
 };
-exports.getUserIdFromToken = getUserIdFromToken;

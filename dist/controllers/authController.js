@@ -1,25 +1,10 @@
-"use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.refreshToken = exports.googleCallback = exports.getCurrentUser = exports.login = exports.register = void 0;
-const uuid_1 = require("uuid");
-const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const User_1 = require("../models/User");
+import { v4 as uuidv4 } from 'uuid';
+import jwt from 'jsonwebtoken';
+import { UserModel } from '../models/User.js';
 /**
  * Register a new user
  */
-const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+export const register = async (req, res) => {
     try {
         const { email, password, first_name, last_name, username, phone } = req.body;
         // Validate required fields
@@ -31,7 +16,7 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             return;
         }
         // Check if user already exists
-        const existingUser = yield User_1.UserModel.findByEmail(email);
+        const existingUser = await UserModel.findByEmail(email);
         if (existingUser) {
             res.status(409).json({
                 error: 'User already exists',
@@ -40,7 +25,7 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             return;
         }
         // Create new user
-        const user = yield User_1.UserModel.create({
+        const user = await UserModel.create({
             email,
             password, // Will be hashed in the model
             first_name,
@@ -49,11 +34,11 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             phone,
         });
         // Generate token
-        const access_token = User_1.UserModel.generateToken(user);
+        const access_token = UserModel.generateToken(user);
         // Return successful response
         res.status(201).json({
             message: 'User created successfully',
-            user: User_1.UserModel.toSafeObject(user),
+            user: UserModel.toSafeObject(user),
             access_token,
         });
     }
@@ -64,12 +49,11 @@ const register = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             message: 'Error creating user',
         });
     }
-});
-exports.register = register;
+};
 /**
  * Login a user
  */
-const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
         // Validate required fields
@@ -81,7 +65,7 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             return;
         }
         // Find user by email
-        const user = yield User_1.UserModel.findByEmail(email);
+        const user = await UserModel.findByEmail(email);
         if (!user) {
             res.status(401).json({
                 error: 'Invalid credentials',
@@ -91,7 +75,7 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         }
         // Verify password
         const isPasswordValid = user.password_hash
-            ? yield User_1.UserModel.verifyPassword(password, user.password_hash)
+            ? await UserModel.verifyPassword(password, user.password_hash)
             : false;
         if (!isPasswordValid) {
             res.status(401).json({
@@ -101,12 +85,12 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             return;
         }
         // Generate token
-        const access_token = User_1.UserModel.generateToken(user);
+        const access_token = UserModel.generateToken(user);
         // Return successful response
         res.status(200).json({
             message: 'Login successful',
             access_token,
-            user: User_1.UserModel.toSafeObject(user),
+            user: UserModel.toSafeObject(user),
         });
     }
     catch (error) {
@@ -116,16 +100,14 @@ const login = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
             message: 'Error during login',
         });
     }
-});
-exports.login = login;
+};
 /**
  * Get current user
  */
-const getCurrentUser = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+export const getCurrentUser = async (req, res) => {
     try {
         // Extract user ID from request (will be set by auth middleware)
-        const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.id;
+        const userId = req.user?.id;
         if (!userId) {
             res.status(401).json({
                 error: 'Unauthorized',
@@ -134,7 +116,7 @@ const getCurrentUser = (req, res) => __awaiter(void 0, void 0, void 0, function*
             return;
         }
         // Find user by ID
-        const user = yield User_1.UserModel.findById(userId);
+        const user = await UserModel.findById(userId);
         if (!user) {
             res.status(404).json({
                 error: 'User not found',
@@ -143,7 +125,7 @@ const getCurrentUser = (req, res) => __awaiter(void 0, void 0, void 0, function*
             return;
         }
         // Return user data
-        res.status(200).json(User_1.UserModel.toSafeObject(user));
+        res.status(200).json(UserModel.toSafeObject(user));
     }
     catch (error) {
         console.error('Error in getCurrentUser controller:', error);
@@ -152,12 +134,11 @@ const getCurrentUser = (req, res) => __awaiter(void 0, void 0, void 0, function*
             message: 'Error getting user data',
         });
     }
-});
-exports.getCurrentUser = getCurrentUser;
+};
 /**
  * Google OAuth callback
  */
-const googleCallback = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+export const googleCallback = async (req, res) => {
     try {
         // Handle Google authentication
         const { credential } = req.body;
@@ -170,7 +151,7 @@ const googleCallback = (req, res) => __awaiter(void 0, void 0, void 0, function*
         }
         // Decode the token (which is a JWT) without verification
         // to extract information like the Google ID
-        const decodedToken = jsonwebtoken_1.default.decode(credential);
+        const decodedToken = jwt.decode(credential);
         if (!decodedToken || !decodedToken.sub || !decodedToken.email) {
             res.status(400).json({
                 error: 'Invalid Google token',
@@ -185,18 +166,18 @@ const googleCallback = (req, res) => __awaiter(void 0, void 0, void 0, function*
         const lastName = decodedToken.family_name || '';
         const picture = decodedToken.picture || '';
         // Check if user already exists by Google ID
-        let user = yield User_1.UserModel.findByGoogleId(googleId);
+        let user = await UserModel.findByGoogleId(googleId);
         // If not found by Google ID, try to find by email
         if (!user) {
-            user = yield User_1.UserModel.findByEmail(email);
+            user = await UserModel.findByEmail(email);
             // If user exists but doesn't have Google ID, update it
             if (user) {
-                yield User_1.UserModel.updateGoogleId(user.id, googleId);
+                await UserModel.updateGoogleId(user.id, googleId);
                 user.google_oauth_id = googleId;
             }
             else {
                 // Create new user if not found
-                user = yield User_1.UserModel.create({
+                user = await UserModel.create({
                     email,
                     google_oauth_id: googleId,
                     first_name: firstName,
@@ -204,18 +185,18 @@ const googleCallback = (req, res) => __awaiter(void 0, void 0, void 0, function*
                     username: email.split('@')[0],
                     profile_picture_url: picture,
                     // Generate a random password for Google users
-                    password: (0, uuid_1.v4)(),
+                    password: uuidv4(),
                 });
             }
         }
         // Generate token
-        const access_token = User_1.UserModel.generateToken(user);
+        const access_token = UserModel.generateToken(user);
         // Return successful response
         res.status(200).json({
             success: true,
             message: 'Google authentication successful',
             access_token,
-            user: User_1.UserModel.toSafeObject(user),
+            user: UserModel.toSafeObject(user),
         });
     }
     catch (error) {
@@ -225,12 +206,11 @@ const googleCallback = (req, res) => __awaiter(void 0, void 0, void 0, function*
             message: 'Error authenticating with Google',
         });
     }
-});
-exports.googleCallback = googleCallback;
+};
 /**
  * Refresh an authentication token
  */
-const refreshToken = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+export const refreshToken = async (req, res) => {
     try {
         const authHeader = req.headers.authorization;
         const token = req.body.token || (authHeader ? authHeader.replace('Bearer ', '') : null);
@@ -244,12 +224,12 @@ const refreshToken = (req, res) => __awaiter(void 0, void 0, void 0, function* (
         let decodedToken;
         try {
             // Try to verify the token
-            decodedToken = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET || 'default_secret');
+            decodedToken = jwt.verify(token, process.env.JWT_SECRET || 'default_secret');
         }
         catch (error) {
             // If token is expired, try to extract info anyway
             if (error.name === 'TokenExpiredError') {
-                decodedToken = jsonwebtoken_1.default.decode(token);
+                decodedToken = jwt.decode(token);
             }
             else {
                 throw error;
@@ -263,7 +243,7 @@ const refreshToken = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             return;
         }
         // Find user by ID
-        const user = yield User_1.UserModel.findById(decodedToken.sub);
+        const user = await UserModel.findById(decodedToken.sub);
         if (!user) {
             res.status(401).json({
                 error: 'Invalid token',
@@ -272,7 +252,7 @@ const refreshToken = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             return;
         }
         // Generate a new token
-        const access_token = User_1.UserModel.generateToken(user);
+        const access_token = UserModel.generateToken(user);
         // Return the new token
         res.status(200).json({
             message: 'Token refreshed',
@@ -286,5 +266,4 @@ const refreshToken = (req, res) => __awaiter(void 0, void 0, void 0, function* (
             message: 'Cannot refresh token',
         });
     }
-});
-exports.refreshToken = refreshToken;
+};
