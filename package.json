@@ -2,7 +2,11 @@
   "name": "meeting-spot-backend",
   "version": "1.0.0",
   "type": "module",
-  "main": "index.js",
+  "main": "dist/server.js",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "directories": {
     "test": "tests"
   },
@@ -12,7 +16,8 @@
     "dev": "nodemon src/server.ts",
     "build": "tsc",
     "lint": "eslint . --ext .ts --max-warnings=100 || true",
-    "format": "prettier --write \"**/*.{ts,js,json,md}\""
+    "format": "prettier --write \"**/*.{ts,js,json,md}\"",
+    "postinstall": "npm run build"
   },
   "keywords": [],
   "author": "",

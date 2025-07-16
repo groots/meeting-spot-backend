@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: meeting-spot-backend
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        fromService:
+          type: web
+          name: meeting-spot-backend
+          property: port
+      - key: DATABASE_URL
+        fromDatabase:
+          name: meeting-spot-database
+          property: connectionString
+    autoDeploy: true
+    repo: https://github.com/groots/meeting-spot-backend.git
+    branch: main
+    rootDir: ./backend
+    
+databases:
+  - name: meeting-spot-database
+    databaseName: meeting_spot
+    user: meeting_spot_user
+    plan: free 

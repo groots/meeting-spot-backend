@@ -29,36 +29,58 @@ app.use('/api/v1/auth', authRoutes);
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {
   res.status(200).json({
-    status: 'ok',
-    version: '1.0',
-    api: 'Find A Meeting Spot API',
+    status: 'OK',
+    message: 'Meeting Spot Backend API is running',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Default route
+app.get('/', (req, res) => {
+  res.status(200).json({
+    message: 'Welcome to Meeting Spot Backend API',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/v1/health',
+      auth: '/api/v1/auth'
+    }
   });
 });
 
 // Error handling middleware
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error(err.stack);
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Error:', err);
   res.status(500).json({
-    error: 'Server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'An unexpected error occurred',
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
   });
 });
 
-// Start server
-const startServer = async () => {
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    error: 'Route not found',
+    message: `Cannot ${req.method} ${req.originalUrl}`
+  });
+});
+
+async function startServer() {
   try {
     // Connect to database
     await connectToDatabase();
-
-    // Start listening
+    
+    // Start server
     app.listen(port, () => {
-      console.log(`Server running on port ${port}`);
+      console.log(`🚀 Meeting Spot Backend running on port ${port}`);
+      console.log(`📊 Health check: http://localhost:${port}/api/v1/health`);
+      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
   }
-};
+}
 
 startServer();
 
