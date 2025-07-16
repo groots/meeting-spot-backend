@@ -150,7 +150,7 @@ export class UserModel {
 
     const options: jwt.SignOptions = {
       expiresIn: '24h', // Temporarily hardcode to a simple string
-      algorithm: 'HS256'
+      algorithm: 'HS256',
     };
 
     return jwt.sign(payload, secretBuffer, options);

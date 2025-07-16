@@ -1,67 +1,71 @@
-name: Node.js CI
+# DISABLED: Migrated to Render.com deployment
+# This workflow contained GCP deployment steps
+# To re-enable GCP deployment, uncomment this file
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+# name: Node.js CI
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
+# on:
+#   push:
+#     branches: [ main ]
+#   pull_request:
+#     branches: [ main ]
 
-    strategy:
-      matrix:
-        node-version: [16.x, 18.x]
+# jobs:
+#   test:
+#     runs-on: ubuntu-latest
 
-    steps:
-    - uses: actions/checkout@v3
+#     strategy:
+#       matrix:
+#         node-version: [16.x, 18.x]
+
+#     steps:
+#     - uses: actions/checkout@v3
     
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
+#     - name: Use Node.js ${{ matrix.node-version }}
+#       uses: actions/setup-node@v3
+#       with:
+#         node-version: ${{ matrix.node-version }}
+#         cache: 'npm'
     
-    - name: Install dependencies
-      run: npm ci
+#     - name: Install dependencies
+#       run: npm ci
     
-    - name: Run linting
-      run: npm run lint
+#     - name: Run linting
+#       run: npm run lint
     
-    - name: Run tests
-      run: npm test
+#     - name: Run tests
+#       run: npm test
     
-    - name: Build
-      run: npm run build
+#     - name: Build
+#       run: npm run build
       
-  deploy:
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+#   deploy:
+#     needs: test
+#     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+#     runs-on: ubuntu-latest
     
-    steps:
-    - uses: actions/checkout@v3
+#     steps:
+#     - uses: actions/checkout@v3
     
-    - name: Setup Google Cloud SDK
-      uses: google-github-actions/setup-gcloud@v0
-      with:
-        service_account_key: ${{ secrets.GCP_SA_KEY }}
-        project_id: ${{ secrets.GCP_PROJECT_ID }}
+#     - name: Setup Google Cloud SDK
+#       uses: google-github-actions/setup-gcloud@v0
+#       with:
+#         service_account_key: ${{ secrets.GCP_SA_KEY }}
+#         project_id: ${{ secrets.GCP_PROJECT_ID }}
         
-    - name: Configure Docker
-      run: gcloud auth configure-docker
+#     - name: Configure Docker
+#       run: gcloud auth configure-docker
       
-    - name: Build and push Docker image
-      run: |
-        docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/find-a-meeting-spot-backend .
-        docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/find-a-meeting-spot-backend
+#     - name: Build and push Docker image
+#       run: |
+#         docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/find-a-meeting-spot-backend .
+#         docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/find-a-meeting-spot-backend
         
-    - name: Deploy to Cloud Run
-      run: |
-        gcloud run deploy find-a-meeting-spot-backend \
-          --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/find-a-meeting-spot-backend \
-          --platform managed \
-          --region us-central1 \
-          --allow-unauthenticated \
-          --set-env-vars "NODE_ENV=production" 
+#     - name: Deploy to Cloud Run
+#       run: |
+#         gcloud run deploy find-a-meeting-spot-backend \
+#           --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/find-a-meeting-spot-backend \
+#           --platform managed \
+#           --region us-central1 \
+#           --allow-unauthenticated \
+#           --set-env-vars "NODE_ENV=production" 

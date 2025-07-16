@@ -22,15 +22,18 @@ This guide explains how to deploy the Meeting Spot Backend to Render.com instead
 ### Method 1: Manual Deployment via Render Dashboard (Recommended)
 
 1. **Sign up for Render.com**
+
    - Go to [render.com](https://render.com)
    - Sign up using your GitHub account
 
 2. **Create a New Web Service**
+
    - Click "New +" in the dashboard
    - Select "Web Service"
    - Connect your GitHub repository
 
 3. **Configure the Service**
+
    ```
    Name: meeting-spot-backend
    Language: Node
@@ -40,6 +43,7 @@ This guide explains how to deploy the Meeting Spot Backend to Render.com instead
    ```
 
 4. **Set Environment Variables**
+
    - Add your environment variables in the Render dashboard
    - Required variables:
      - `NODE_ENV=production`
@@ -57,6 +61,7 @@ This guide explains how to deploy the Meeting Spot Backend to Render.com instead
 We've included a `render.yaml` file in your repository. This allows you to:
 
 1. **Deploy using Render Blueprint**
+
    - Go to Render Dashboard
    - Click "New +" → "Blueprint"
    - Connect your repository
@@ -77,11 +82,14 @@ We've created a GitHub Actions workflow that will:
 4. **Deploy to Render**
 
 **Setup Required:**
+
 1. Get your Render API key:
+
    - Go to Render Dashboard → Account Settings → API Keys
    - Create a new API key
 
 2. Get your service ID:
+
    - After creating your service, find the service ID in the URL or settings
 
 3. Add GitHub Secrets:
@@ -95,18 +103,20 @@ We've created a GitHub Actions workflow that will:
 ### Option 1: Render PostgreSQL (Recommended)
 
 1. **Create a PostgreSQL database**
+
    - In Render dashboard, click "New +" → "PostgreSQL"
    - Choose a name (e.g., `meeting-spot-db`)
    - Select the free tier for development
 
 2. **Get connection details**
    - Once created, go to the database details
-   - Copy the "Internal Database URL" 
+   - Copy the "Internal Database URL"
    - Add this as `DATABASE_URL` environment variable in your web service
 
 ### Option 2: External Database
 
 You can continue using any external database service:
+
 - ElephantSQL
 - Heroku Postgres
 - AWS RDS
@@ -129,6 +139,7 @@ FRONTEND_URL=https://your-frontend-domain.com
 ## Custom Domain (Optional)
 
 1. **Add custom domain in Render**
+
    - Go to your service settings
    - Click "Custom Domains"
    - Add your domain
@@ -155,16 +166,19 @@ FRONTEND_URL=https://your-frontend-domain.com
 ### Common Issues:
 
 1. **Build fails**
+
    - Check `package.json` has all required dependencies
    - Ensure `build` script exists and works locally
    - Check Node.js version compatibility
 
 2. **App won't start**
+
    - Verify `start` script points to correct file
    - Check environment variables are set
    - Review application logs in dashboard
 
 3. **Database connection fails**
+
    - Verify `DATABASE_URL` is correct
    - Check database is running and accessible
    - Ensure database allows connections from Render IPs
@@ -207,4 +221,4 @@ For most small to medium applications, Render is more predictable and often chea
 6. ✅ Monitor application performance
 7. ✅ Set up GitHub Actions for CI/CD (optional)
 
-Your application should now be running on Render.com! 🚀 
+Your application should now be running on Render.com! 🚀

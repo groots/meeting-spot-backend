@@ -32,7 +32,7 @@ app.get('/api/v1/health', (req, res) => {
     status: 'OK',
     message: 'Meeting Spot Backend API is running',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
   });
 });
 
@@ -43,8 +43,8 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     endpoints: {
       health: '/api/v1/health',
-      auth: '/api/v1/auth'
-    }
+      auth: '/api/v1/auth',
+    },
   });
 });
 
@@ -53,7 +53,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   console.error('Error:', err);
   res.status(500).json({
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong',
   });
 });
 
@@ -61,7 +61,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 app.use('*', (req, res) => {
   res.status(404).json({
     error: 'Route not found',
-    message: `Cannot ${req.method} ${req.originalUrl}`
+    message: `Cannot ${req.method} ${req.originalUrl}`,
   });
 });
 
@@ -69,7 +69,7 @@ async function startServer() {
   try {
     // Connect to database
     await connectToDatabase();
-    
+
     // Start server
     app.listen(port, () => {
       console.log(`🚀 Meeting Spot Backend running on port ${port}`);
