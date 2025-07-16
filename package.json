@@ -16,8 +16,7 @@
     "dev": "nodemon src/server.ts",
     "build": "tsc",
     "lint": "eslint . --ext .ts --max-warnings=100 || true",
-    "format": "prettier --write \"**/*.{ts,js,json,md}\"",
-    "postinstall": "npm run build"
+    "format": "prettier --write \"**/*.{ts,js,json,md}\""
   },
   "keywords": [],
   "author": "",
