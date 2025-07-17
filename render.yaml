@@ -18,6 +18,8 @@ services:
         fromDatabase:
           name: meeting-spot-database
           property: connectionString
+      - key: FRONTEND_URL
+        value: https://findameetingspot.com
     autoDeploy: true
     repo: https://github.com/groots/meeting-spot-backend.git
     branch: main
