@@ -23,9 +23,6 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
-app.use('/api/v1/auth', authRoutes);
-
 // Health check endpoint
 app.get('/api/v1/health', (req, res) => {
   res.status(200).json({
@@ -35,6 +32,87 @@ app.get('/api/v1/health', (req, res) => {
     environment: process.env.NODE_ENV || 'development',
   });
 });
+
+// Debug endpoint to check database and create table if needed
+app.get('/api/v1/debug/db-setup', async (req, res) => {
+  try {
+    // Check if DATABASE_URL exists
+    if (!process.env.DATABASE_URL) {
+      return res.status(500).json({
+        error: 'DATABASE_URL not configured',
+        hasDatabase: false,
+      });
+    }
+
+    // Test basic connection
+    const { query } = await import('./config/database.js');
+    
+    // Check if users table exists
+    const tableCheck = await query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' AND table_name = 'users'
+    `);
+    
+    const tableExists = tableCheck.rows.length > 0;
+    
+    // If table doesn't exist, create it
+    if (!tableExists) {
+      await query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id UUID PRIMARY KEY,
+          email VARCHAR(255) NOT NULL UNIQUE,
+          password_hash VARCHAR(255),
+          username VARCHAR(100),
+          first_name VARCHAR(100),
+          last_name VARCHAR(100),
+          phone VARCHAR(20),
+          profile_picture_url TEXT,
+          google_oauth_id VARCHAR(255),
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+          updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+        )
+      `);
+      
+      // Create indexes
+      await query('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+      await query('CREATE INDEX IF NOT EXISTS idx_users_google_oauth_id ON users(google_oauth_id)');
+    }
+    
+    // Check again after creation
+    const finalCheck = await query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' AND table_name = 'users'
+    `);
+    
+    // Test a simple query
+    const userCount = await query('SELECT COUNT(*) as count FROM users');
+    
+    res.json({
+      status: 'OK',
+      hasDatabase: true,
+      hasDatabaseUrl: !!process.env.DATABASE_URL,
+      tableExisted: tableExists,
+      tableExistsNow: finalCheck.rows.length > 0,
+      userCount: userCount.rows[0].count,
+      jwtSecret: !!process.env.JWT_SECRET,
+      encryptionKey: !!process.env.ENCRYPTION_KEY,
+    });
+  } catch (error) {
+    console.error('Database setup error:', error);
+    res.status(500).json({
+      error: 'Database setup failed',
+      message: error instanceof Error ? error.message : 'Unknown error',
+      hasDatabase: !!process.env.DATABASE_URL,
+      jwtSecret: !!process.env.JWT_SECRET,
+      encryptionKey: !!process.env.ENCRYPTION_KEY,
+    });
+  }
+});
+
+// Routes
+app.use('/api/v1/auth', authRoutes);
 
 // Default route
 app.get('/', (req, res) => {
