@@ -30,9 +30,42 @@ export interface UserLoginResponse {
 
 export class UserModel {
   /**
+   * Ensure users table exists
+   */
+  static async ensureTableExists(): Promise<void> {
+    try {
+      await query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id UUID PRIMARY KEY,
+          email VARCHAR(255) NOT NULL UNIQUE,
+          password_hash VARCHAR(255),
+          username VARCHAR(100),
+          first_name VARCHAR(100),
+          last_name VARCHAR(100),
+          phone VARCHAR(20),
+          profile_picture_url TEXT,
+          google_oauth_id VARCHAR(255),
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+          updated_at TIMESTAMP WITH TIME ZONE NOT NULL
+        )
+      `);
+      
+      // Create indexes
+      await query('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+      await query('CREATE INDEX IF NOT EXISTS idx_users_google_oauth_id ON users(google_oauth_id)');
+    } catch (error) {
+      console.error('Error ensuring users table exists:', error);
+      // Don't throw here - let the calling method handle the error
+    }
+  }
+
+  /**
    * Create a new user
    */
   static async create(userData: UserCreateInput): Promise<User> {
+    // Ensure table exists before attempting to create user
+    await UserModel.ensureTableExists();
+    
     const id = userData.id || uuidv4();
     const now = new Date();
 
@@ -90,6 +123,9 @@ export class UserModel {
    * Find user by email
    */
   static async findByEmail(email: string): Promise<User | null> {
+    // Ensure table exists before querying
+    await UserModel.ensureTableExists();
+    
     const result = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
 
     return result.rows[0] || null;
@@ -99,6 +135,9 @@ export class UserModel {
    * Find user by ID
    */
   static async findById(id: string): Promise<User | null> {
+    // Ensure table exists before querying
+    await UserModel.ensureTableExists();
+    
     const result = await query('SELECT * FROM users WHERE id = $1', [id]);
 
     return result.rows[0] || null;
@@ -108,19 +147,23 @@ export class UserModel {
    * Find user by Google OAuth ID
    */
   static async findByGoogleId(googleId: string): Promise<User | null> {
+    // Ensure table exists before querying
+    await UserModel.ensureTableExists();
+    
     const result = await query('SELECT * FROM users WHERE google_oauth_id = $1', [googleId]);
 
     return result.rows[0] || null;
   }
 
   /**
-   * Update a user's Google OAuth ID
+   * Update user's Google OAuth ID
    */
   static async updateGoogleId(userId: string, googleId: string): Promise<void> {
+    // Ensure table exists before updating
+    await UserModel.ensureTableExists();
+    
     await query(
-      `UPDATE users 
-       SET google_oauth_id = $1, updated_at = $2
-       WHERE id = $3`,
+      'UPDATE users SET google_oauth_id = $1, updated_at = $2 WHERE id = $3',
       [googleId, new Date(), userId]
     );
   }
