@@ -20,6 +20,10 @@ services:
           property: connectionString
       - key: FRONTEND_URL
         value: https://findameetingspot.com
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
     autoDeploy: true
     repo: https://github.com/groots/meeting-spot-backend.git
     branch: main
