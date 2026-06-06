@@ -5,25 +5,36 @@ import {
   getCurrentUser,
   googleCallback,
   refreshToken,
+  resetPassword,
+  uploadPicture,
+  getProfilePicture,
 } from '../controllers/authController.js';
 import { authenticate } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Authentication routes - using the same paths as the Python backend
+// Registration / login (legacy aliases share handlers)
 router.post('/register', register);
-router.post('/register/direct', register); // Legacy endpoint, uses same handler
+router.post('/register/direct', register);
 router.post('/login', login);
-router.post('/login/direct', login); // Legacy endpoint, uses same handler
-router.post('/direct-login', login); // Another legacy endpoint
+router.post('/login/direct', login);
+router.post('/direct-login', login);
 
-// Google authentication
+// Google authentication (direct alias verifies the same way)
 router.post('/google/callback', googleCallback);
+router.post('/google/callback/direct', googleCallback);
 
 // Token refresh
 router.post('/refresh', refreshToken);
 
-// Get current user - requires authentication
+// Password reset (always generic 200)
+router.post('/reset-password', resetPassword);
+
+// Current user
 router.get('/me', authenticate, getCurrentUser);
+
+// Profile picture upload / serve
+router.post('/me/picture', authenticate, uploadPicture);
+router.get('/profile/picture/:filename', getProfilePicture);
 
 export default router;

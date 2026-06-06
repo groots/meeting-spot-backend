@@ -3,3 +3,17 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+
+# Test coverage
+coverage/
+
+# Uploads (profile pictures on ephemeral disk)
+uploads/

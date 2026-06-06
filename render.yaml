@@ -4,6 +4,9 @@ services:
     runtime: node
     plan: free
     buildCommand: npm ci --include=dev && npm run build
+    # Apply pending Prisma migrations before the new version goes live. Prisma
+    # owns the schema from migration 0 (fresh DB; no GCP import).
+    preDeployCommand: npm run prisma:migrate:deploy
     startCommand: npm start
     healthCheckPath: /api/v1/health
     nodeVersion: "20"
@@ -21,10 +24,43 @@ services:
           property: connectionString
       - key: FRONTEND_URL
         value: https://findameetingspot.com
+      - key: CORS_ORIGINS
+        value: https://findameetingspot.com,https://www.findameetingspot.com
       - key: JWT_SECRET
         generateValue: true
       - key: ENCRYPTION_KEY
         generateValue: true
+      # Premium gating must never be bypassed in production.
+      - key: PREMIUM_BYPASS
+        value: "false"
+      - key: PROFILE_PICTURES_DIR
+        value: uploads/profile-pictures
+      # --- Secrets: set these values in the Render dashboard (sync: false). ---
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: MAILGUN_API_KEY
+        sync: false
+      - key: MAILGUN_DOMAIN
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_PREMIUM_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_PREMIUM_YEARLY
+        sync: false
+      # Twilio is optional (SMS is a stub today); leave unset if unused.
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
     autoDeploy: true
     repo: https://github.com/groots/meeting-spot-backend.git
     branch: main

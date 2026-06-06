@@ -1,297 +1,251 @@
-import { Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
+// Auth controllers on Prisma. Response shapes match the Python backend:
+// { message, access_token, user } for register/login, raw user dict for /me.
+import { Request, Response, NextFunction } from 'express';
+import path from 'path';
+import { OAuth2Client, TokenPayload } from 'google-auth-library';
 import jwt from 'jsonwebtoken';
-import { UserModel } from '../models/User.js';
+import * as userService from '../services/userService.js';
+import { createResetToken } from '../services/passwordResetService.js';
+import { sendPasswordResetEmail } from '../services/emailService.js';
+import { uploadProfilePicture, profilePicturesDir } from '../middleware/upload.js';
+import { env } from '../config/env.js';
+import { BadRequest, Conflict, NotFound, Unauthorized } from '../utils/errors.js';
 
-/**
- * Register a new user
- */
-export const register = async (req: Request, res: Response): Promise<void> => {
+const googleClient = new OAuth2Client(env.googleClientId);
+
+/** POST /register */
+export async function register(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { email, password, first_name, last_name, username, phone } = req.body;
+    const { email, password, first_name, last_name, username, phone } = req.body ?? {};
 
-    // Validate required fields
     if (!email || !password) {
-      res.status(400).json({
-        error: 'Email and password are required',
-        message: 'Email and password are required',
-      });
-      return;
+      throw BadRequest('Email and password are required');
     }
 
-    // Check if user already exists
-    const existingUser = await UserModel.findByEmail(email);
-    if (existingUser) {
-      res.status(409).json({
-        error: 'User already exists',
-        message: 'User already exists',
-      });
-      return;
+    const existing = await userService.findByEmail(email);
+    if (existing) {
+      throw Conflict('User already exists');
     }
 
-    // Create new user
-    const user = await UserModel.create({
+    const user = await userService.createUser({
       email,
-      password, // Will be hashed in the model
-      first_name,
-      last_name,
-      username: username || email.split('@')[0],
+      password,
+      firstName: first_name,
+      lastName: last_name,
+      username,
       phone,
     });
 
-    // Generate token
-    const access_token = UserModel.generateToken(user);
-
-    // Return successful response
+    const access_token = userService.generateToken(user);
     res.status(201).json({
       message: 'User created successfully',
-      user: UserModel.toSafeObject(user),
+      user: await userService.serializeUser(user),
       access_token,
     });
-  } catch (error) {
-    console.error('Error in register controller:', error);
-    res.status(500).json({
-      error: 'Server error',
-      message: 'Error creating user',
-    });
+  } catch (e) {
+    next(e);
   }
-};
+}
 
-/**
- * Login a user
- */
-export const login = async (req: Request, res: Response): Promise<void> => {
+/** POST /login */
+export async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body ?? {};
 
-    // Validate required fields
     if (!email || !password) {
-      res.status(400).json({
-        error: 'Email and password are required',
-        message: 'Email and password are required',
-      });
-      return;
+      throw BadRequest('Email and password are required');
     }
 
-    // Find user by email
-    const user = await UserModel.findByEmail(email);
-    if (!user) {
-      res.status(401).json({
-        error: 'Invalid credentials',
-        message: 'Invalid email or password',
-      });
-      return;
+    const user = await userService.findByEmail(email);
+    if (!user || !user.passwordHash) {
+      throw Unauthorized('Invalid email or password');
     }
 
-    // Verify password
-    const isPasswordValid = user.password_hash
-      ? await UserModel.verifyPassword(password, user.password_hash)
-      : false;
-
-    if (!isPasswordValid) {
-      res.status(401).json({
-        error: 'Invalid credentials',
-        message: 'Invalid email or password',
-      });
-      return;
+    const valid = await userService.verifyPassword(password, user.passwordHash);
+    if (!valid) {
+      throw Unauthorized('Invalid email or password');
     }
 
-    // Generate token
-    const access_token = UserModel.generateToken(user);
-
-    // Return successful response
+    const access_token = userService.generateToken(user);
     res.status(200).json({
       message: 'Login successful',
       access_token,
-      user: UserModel.toSafeObject(user),
+      user: await userService.serializeUser(user),
     });
-  } catch (error) {
-    console.error('Error in login controller:', error);
-    res.status(500).json({
-      error: 'Server error',
-      message: 'Error during login',
-    });
+  } catch (e) {
+    next(e);
   }
-};
+}
 
-/**
- * Get current user
- */
-export const getCurrentUser = async (req: Request, res: Response): Promise<void> => {
+/** GET /me */
+export async function getCurrentUser(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    // Extract user ID from request (will be set by auth middleware)
     const userId = req.user?.id;
+    if (!userId) throw Unauthorized('Not authenticated');
 
-    if (!userId) {
-      res.status(401).json({
-        error: 'Unauthorized',
-        message: 'Not authenticated',
-      });
-      return;
-    }
+    const user = await userService.findById(userId);
+    if (!user) throw NotFound('User not found');
 
-    // Find user by ID
-    const user = await UserModel.findById(userId);
-    if (!user) {
-      res.status(404).json({
-        error: 'User not found',
-        message: 'User not found',
-      });
-      return;
-    }
-
-    // Return user data
-    res.status(200).json(UserModel.toSafeObject(user));
-  } catch (error) {
-    console.error('Error in getCurrentUser controller:', error);
-    res.status(500).json({
-      error: 'Server error',
-      message: 'Error getting user data',
-    });
+    res.status(200).json(await userService.serializeUser(user));
+  } catch (e) {
+    next(e);
   }
-};
+}
 
-/**
- * Google OAuth callback
- */
-export const googleCallback = async (req: Request, res: Response): Promise<void> => {
+/** POST /google/callback (and /google/callback/direct) */
+export async function googleCallback(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    // Handle Google authentication
-    const { credential } = req.body;
-
+    const credential = req.body?.credential ?? req.body?.token;
     if (!credential) {
-      res.status(400).json({
-        error: 'No Google credential found',
-        message: 'No Google credential found',
-      });
-      return;
+      throw BadRequest('No Google credential found');
     }
 
-    // Decode the token (which is a JWT) without verification
-    // to extract information like the Google ID
-    const decodedToken: any = jwt.decode(credential);
-
-    if (!decodedToken || !decodedToken.sub || !decodedToken.email) {
-      res.status(400).json({
-        error: 'Invalid Google token',
-        message: 'Invalid Google token format',
+    // Verify the Google ID token (improvement over the Python non-verifying decode).
+    let payload: TokenPayload | undefined;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: credential,
+        audience: env.googleClientId || undefined,
       });
-      return;
+      payload = ticket.getPayload();
+    } catch {
+      throw BadRequest('Invalid Google token');
     }
 
-    const googleId = decodedToken.sub;
-    const email = decodedToken.email.toLowerCase();
-    const name = decodedToken.name || '';
-    const firstName = decodedToken.given_name || '';
-    const lastName = decodedToken.family_name || '';
-    const picture = decodedToken.picture || '';
+    if (!payload || !payload.sub || !payload.email) {
+      throw BadRequest('Invalid Google token');
+    }
 
-    // Check if user already exists by Google ID
-    let user = await UserModel.findByGoogleId(googleId);
+    const googleId = payload.sub;
+    const email = payload.email.toLowerCase();
 
-    // If not found by Google ID, try to find by email
+    let user = await userService.findByGoogleId(googleId);
+    let created = false;
+
     if (!user) {
-      user = await UserModel.findByEmail(email);
-
-      // If user exists but doesn't have Google ID, update it
+      user = await userService.findByEmail(email);
       if (user) {
-        await UserModel.updateGoogleId(user.id, googleId);
-        user.google_oauth_id = googleId;
+        user = await userService.updateGoogleId(user.id, googleId);
       } else {
-        // Create new user if not found
-        user = await UserModel.create({
+        user = await userService.createUser({
           email,
-          google_oauth_id: googleId,
-          first_name: firstName,
-          last_name: lastName,
-          username: email.split('@')[0],
-          profile_picture_url: picture,
-          // Generate a random password for Google users
-          password: uuidv4(),
+          googleOauthId: googleId,
+          firstName: payload.given_name,
+          lastName: payload.family_name,
+          profilePictureUrl: payload.picture,
         });
+        created = true;
       }
     }
 
-    // Generate token
-    const access_token = UserModel.generateToken(user);
-
-    // Return successful response
-    res.status(200).json({
-      success: true,
+    const access_token = userService.generateToken(user);
+    res.status(created ? 201 : 200).json({
       message: 'Google authentication successful',
       access_token,
-      user: UserModel.toSafeObject(user),
+      user: await userService.serializeUser(user),
     });
-  } catch (error) {
-    console.error('Error in Google callback controller:', error);
-    res.status(500).json({
-      error: 'Server error',
-      message: 'Error authenticating with Google',
-    });
+  } catch (e) {
+    next(e);
   }
-};
+}
 
-/**
- * Refresh an authentication token
- */
-export const refreshToken = async (req: Request, res: Response): Promise<void> => {
+/** POST /refresh — re-issue a token from a valid/expired-but-decodable token. */
+export async function refreshToken(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
-    const token = req.body.token || (authHeader ? authHeader.replace('Bearer ', '') : null);
-
+    const token = req.body?.token || (authHeader ? authHeader.replace('Bearer ', '') : null);
     if (!token) {
-      res.status(400).json({
-        error: 'Missing token',
-        message: 'Token is required',
-      });
-      return;
+      throw BadRequest('Token is required');
     }
 
-    let decodedToken: any;
-
+    let decoded: jwt.JwtPayload | null = null;
     try {
-      // Try to verify the token
-      decodedToken = jwt.verify(token, process.env.JWT_SECRET || 'default_secret');
-    } catch (error) {
-      // If token is expired, try to extract info anyway
-      if ((error as Error).name === 'TokenExpiredError') {
-        decodedToken = jwt.decode(token);
+      decoded = jwt.verify(token, env.jwtSecret) as jwt.JwtPayload;
+    } catch (err) {
+      if ((err as Error).name === 'TokenExpiredError') {
+        decoded = jwt.decode(token) as jwt.JwtPayload | null;
       } else {
-        throw error;
+        throw Unauthorized('Invalid token');
       }
     }
 
-    if (!decodedToken || !decodedToken.sub) {
-      res.status(401).json({
-        error: 'Invalid token',
-        message: 'Invalid token',
-      });
-      return;
+    if (!decoded?.sub) {
+      throw Unauthorized('Invalid token');
     }
 
-    // Find user by ID
-    const user = await UserModel.findById(decodedToken.sub);
+    const user = await userService.findById(decoded.sub as string);
     if (!user) {
-      res.status(401).json({
-        error: 'Invalid token',
-        message: 'User not found',
-      });
-      return;
+      throw Unauthorized('User not found');
     }
 
-    // Generate a new token
-    const access_token = UserModel.generateToken(user);
-
-    // Return the new token
-    res.status(200).json({
-      message: 'Token refreshed',
-      access_token,
-    });
-  } catch (error) {
-    console.error('Error in refreshToken controller:', error);
-    res.status(401).json({
-      error: 'Invalid token',
-      message: 'Cannot refresh token',
-    });
+    const access_token = userService.generateToken(user);
+    res.status(200).json({ message: 'Token refreshed', access_token });
+  } catch (e) {
+    next(e);
   }
-};
+}
+
+/** POST /reset-password — always generic 200 (no user enumeration). */
+export async function resetPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const email = (req.body?.email ?? '').toLowerCase().trim();
+    if (!email) {
+      throw BadRequest('Email is required');
+    }
+
+    const successMessage =
+      'If your email exists in our system, you will receive password reset instructions.';
+
+    const user = await userService.findByEmail(email);
+    if (user) {
+      const token = await createResetToken(user.id);
+      await sendPasswordResetEmail(email, token);
+    }
+
+    res.status(200).json({ message: successMessage });
+  } catch (e) {
+    next(e);
+  }
+}
+
+/** POST /me/picture — multer single 'file', persists profile_picture_url. */
+export function uploadPicture(req: Request, res: Response, next: NextFunction): void {
+  uploadProfilePicture(req, res, async (err: unknown) => {
+    try {
+      if (err) {
+        throw BadRequest((err as Error).message || 'File upload failed');
+      }
+      const userId = req.user?.id;
+      if (!userId) throw Unauthorized('Not authenticated');
+
+      const file = req.file;
+      if (!file) {
+        throw BadRequest('No file part');
+      }
+
+      const url = `${req.protocol}://${req.get('host')}/api/v1/auth/profile/picture/${file.filename}`;
+      await userService.updateProfilePicture(userId, url);
+
+      res.status(201).json({
+        message: 'Profile picture uploaded successfully',
+        filename: file.filename,
+        profile_picture_url: url,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+}
+
+/** GET /profile/picture/:filename — reject traversal, send file. */
+export function getProfilePicture(req: Request, res: Response, next: NextFunction): void {
+  try {
+    const { filename } = req.params;
+    if (!filename || filename.includes('..') || filename.includes('/')) {
+      throw BadRequest('Invalid filename');
+    }
+    res.sendFile(path.join(profilePicturesDir, filename));
+  } catch (e) {
+    next(e);
+  }
+}

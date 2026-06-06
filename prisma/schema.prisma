@@ -1,0 +1,169 @@
+// Prisma schema for Meeting Spot backend (Node/TypeScript migration).
+// Owns the full data model from migration 0 (fresh start; no GCP data import).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// DB values are mapped to the lowercase strings the API exposes (matching the
+// Python Enum `.value`). The Prisma client returns the member name (e.g.
+// PENDING_B_ADDRESS); serialization helpers convert to the mapped string.
+// ---------------------------------------------------------------------------
+
+enum MeetingRequestStatus {
+  PENDING_B_ADDRESS @map("pending_b_address")
+  CALCULATING       @map("calculating")
+  COMPLETED         @map("completed")
+  EXPIRED           @map("expired")
+  FAILED            @map("failed")
+
+  @@map("meeting_request_status")
+}
+
+enum ContactType {
+  EMAIL @map("email")
+  PHONE @map("phone")
+  SMS   @map("sms")
+
+  @@map("contact_type")
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+model User {
+  id                String   @id @default(uuid()) @db.Uuid
+  email             String   @unique @db.VarChar(120)
+  passwordHash      String?  @map("password_hash") @db.VarChar(256)
+  googleOauthId     String?  @unique @map("google_oauth_id") @db.VarChar(255)
+  facebookOauthId   String?  @map("facebook_oauth_id") @db.VarChar(255)
+  username          String?  @db.VarChar(50)
+  firstName         String?  @map("first_name") @db.VarChar(50)
+  lastName          String?  @map("last_name") @db.VarChar(50)
+  phone             String?  @db.VarChar(50)
+  profilePictureUrl String?  @map("profile_picture_url") @db.VarChar(255)
+  stripeCustomerId  String?  @map("stripe_customer_id") @db.VarChar(255)
+  createdAt         DateTime @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  meetingRequests MeetingRequest[] @relation("UserAMeetingRequests")
+  contacts        Contact[]
+  suggestedPlaces Place[]
+  subscriptions   Subscription[]
+  passwordResets  PasswordReset[]
+
+  @@index([email])
+  @@index([googleOauthId])
+  @@map("users")
+}
+
+model MeetingRequest {
+  requestId              String               @id @default(uuid()) @map("request_id") @db.Uuid
+  userAId                String?              @map("user_a_id") @db.Uuid
+  userA                  User?                @relation("UserAMeetingRequests", fields: [userAId], references: [id], onDelete: Cascade)
+  userBContactType       ContactType          @map("user_b_contact_type")
+  userBContactEncrypted  String               @map("user_b_contact_encrypted") @db.VarChar(255)
+  locationType           String               @map("location_type") @db.VarChar(50)
+  locationA              Json?                @map("location_a") @db.JsonB
+  locationB              Json?                @map("location_b") @db.JsonB
+  addressALat            Float                @map("address_a_lat") @db.DoublePrecision
+  addressALon            Float                @map("address_a_lon") @db.DoublePrecision
+  addressBLat            Float?               @map("address_b_lat") @db.DoublePrecision
+  addressBLon            Float?               @map("address_b_lon") @db.DoublePrecision
+  status                 MeetingRequestStatus @default(PENDING_B_ADDRESS)
+  tokenB                 String               @unique @map("token_b") @db.VarChar(64)
+  selectedPlaceGoogleId  String?              @map("selected_place_google_id") @db.VarChar(255)
+  selectedPlaceDetails   Json?                @map("selected_place_details") @db.JsonB
+  suggestedOptions       Json?                @map("suggested_options") @db.JsonB
+  sessionIdentifierA     String?              @map("session_identifier_a") @db.VarChar(255)
+  selectedPlaceId        String?              @map("selected_place_id") @db.Uuid
+  selectedPlace          Place?               @relation("SelectedPlace", fields: [selectedPlaceId], references: [id])
+  createdAt              DateTime             @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  expiresAt              DateTime             @map("expires_at") @db.Timestamptz(6)
+
+  suggestedPlaces Place[]   @relation("SuggestedPlaces")
+  contacts        Contact[] @relation("MeetingContacts")
+
+  @@index([status])
+  @@index([userAId])
+  @@index([tokenB])
+  @@index([sessionIdentifierA])
+  @@map("meeting_requests")
+}
+
+model Place {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  address       String
+  latitude      Float    @db.DoublePrecision
+  longitude     Float    @db.DoublePrecision
+  googlePlaceId String?  @unique @map("google_place_id")
+  suggestedById String   @map("suggested_by_id") @db.Uuid
+  suggestedBy   User     @relation(fields: [suggestedById], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  selectedByMeetings  MeetingRequest[] @relation("SelectedPlace")
+  suggestedForMeetings MeetingRequest[] @relation("SuggestedPlaces")
+
+  @@map("places")
+}
+
+model Contact {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String   @db.VarChar(255)
+  email     String?  @db.VarChar(255)
+  phone     String?  @db.VarChar(50)
+  company   String?  @db.VarChar(255)
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  meetingRequests MeetingRequest[] @relation("MeetingContacts")
+
+  @@index([userId])
+  @@index([email])
+  @@map("contacts")
+}
+
+model Subscription {
+  id                   String    @id @default(uuid()) @db.Uuid
+  userId               String    @map("user_id") @db.Uuid
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeSubscriptionId String?   @unique @map("stripe_subscription_id") @db.VarChar(255)
+  stripeCustomerId     String?   @map("stripe_customer_id") @db.VarChar(255)
+  planId               String    @map("plan_id") @db.VarChar(50)
+  status               String    @db.VarChar(50)
+  currentPeriodStart   DateTime? @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd     DateTime? @map("current_period_end") @db.Timestamptz(6)
+  cancelAtPeriodEnd    Boolean   @default(false) @map("cancel_at_period_end")
+  createdAt            DateTime  @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@map("subscriptions")
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  used      Boolean  @default(false)
+
+  @@index([userId])
+  @@map("password_resets")
+}
