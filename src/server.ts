@@ -29,11 +29,21 @@ app.use('/api/v1/payments/webhook', express.raw({ type: '*/*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health check
-app.get('/api/v1/health', (_req, res) => {
-  res.status(200).json({
-    status: 'OK',
+// Health check — verifies DB connectivity so a misconfigured DATABASE_URL
+// surfaces as a 503 (failing Render's health check) instead of silently
+// returning OK while every real request fails.
+app.get('/api/v1/health', async (_req, res) => {
+  let database = 'up';
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+  } catch {
+    database = 'down';
+  }
+  const healthy = database === 'up';
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'OK' : 'DEGRADED',
     message: 'Meeting Spot Backend API is running',
+    database,
     timestamp: new Date().toISOString(),
     environment: env.nodeEnv,
   });
@@ -67,16 +77,22 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 async function startServer(): Promise<void> {
+  // Bind the port regardless of DB state so the health check can report a 503
+  // (database: "down") instead of the process crash-looping on boot with
+  // "no open ports detected" when DATABASE_URL is wrong/unreachable.
+  app.listen(env.port, () => {
+    console.log(`Meeting Spot Backend running on port ${env.port}`);
+    console.log(`Health check: http://localhost:${env.port}/api/v1/health`);
+    console.log(`Environment: ${env.nodeEnv}`);
+  });
   try {
     await prisma.$connect();
-    app.listen(env.port, () => {
-      console.log(`Meeting Spot Backend running on port ${env.port}`);
-      console.log(`Health check: http://localhost:${env.port}/api/v1/health`);
-      console.log(`Environment: ${env.nodeEnv}`);
-    });
+    console.log('Database connected');
   } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
+    console.error(
+      'Database connection failed at startup; /api/v1/health will report 503 until it recovers:',
+      error
+    );
   }
 }
 
