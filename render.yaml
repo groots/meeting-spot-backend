@@ -66,7 +66,10 @@ services:
     branch: main
     
 databases:
+  # Must match the LIVE database resource. Render derives these defaults from a
+  # resource named "meeting-spot-prod-db"; do NOT override them or the blueprint
+  # will diverge from (or recreate) the real database.
   - name: meeting-spot-prod-db
-    databaseName: meeting_spot
-    user: meeting_spot_user
+    databaseName: meeting_spot_prod_db
+    user: meeting_spot_prod_db_user
     plan: free 
