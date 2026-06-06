@@ -18,10 +18,12 @@ services:
           type: web
           name: meeting-spot-backend
           property: port
+      # Set manually in the Render dashboard to the LIVE database's Internal URL.
+      # NOT derived via fromDatabase: the blueprint-managed "meeting-spot-prod-db"
+      # resource points at a deleted instance, so fromDatabase resolved to a dead
+      # host. Managing the DB outside the blueprint avoids that linkage.
       - key: DATABASE_URL
-        fromDatabase:
-          name: meeting-spot-prod-db
-          property: connectionString
+        sync: false
       - key: FRONTEND_URL
         value: https://findameetingspot.com
       - key: CORS_ORIGINS
@@ -64,12 +66,9 @@ services:
     autoDeploy: true
     repo: https://github.com/groots/meeting-spot-backend.git
     branch: main
-    
-databases:
-  # Must match the LIVE database resource. Render derives these defaults from a
-  # resource named "meeting-spot-prod-db"; do NOT override them or the blueprint
-  # will diverge from (or recreate) the real database.
-  - name: meeting-spot-prod-db
-    databaseName: meeting_spot_prod_db
-    user: meeting_spot_prod_db_user
-    plan: free 
+
+# The database is managed OUTSIDE this blueprint. The live instance
+# (meeting_spot_prod_db) was provisioned manually; set DATABASE_URL on the web
+# service in the dashboard to its Internal URL. A blueprint-managed `databases`
+# block previously pointed at a free instance that expired and was deleted,
+# which is why the service kept dialing a dead host. 
