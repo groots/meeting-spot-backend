@@ -60,6 +60,26 @@ The Find A Meeting Spot Team
   return sendEmail(email, subject, body);
 }
 
+export async function sendVerificationEmail(email: string, token: string): Promise<boolean> {
+  const verifyUrl = `${env.frontendUrl}/auth/verify-email/${token}`;
+  const subject = 'Verify your Find A Meeting Spot email';
+  const body = `Hello,
+
+Thanks for signing up for Find A Meeting Spot.
+
+Please confirm your email address by clicking the link below:
+${verifyUrl}
+
+This link will expire in 24 hours.
+
+If you didn't create this account, you can safely ignore this email.
+
+Thanks,
+The Find A Meeting Spot Team
+`;
+  return sendEmail(email, subject, body);
+}
+
 export async function sendMeetingInviteEmail(email: string, requestId: string, token: string): Promise<boolean> {
   const inviteUrl = `${env.frontendUrl}/request/${requestId}?token=${token}`;
   const subject = "You've been invited to find a meeting spot";

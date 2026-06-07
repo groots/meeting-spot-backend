@@ -8,6 +8,7 @@ import {
   getMeetingRequestStatus,
   respondToMeetingRequest,
   getMeetingRequestResults,
+  resendInvitation,
 } from '../controllers/meetingRequestController.js';
 import { authenticate } from '../middleware/authMiddleware.js';
 
@@ -25,5 +26,6 @@ router.put('/:id', authenticate, updateMeetingRequest);
 router.delete('/:id', authenticate, deleteMeetingRequest);
 router.get('/:id/status', authenticate, getMeetingRequestStatus);
 router.get('/:id/results', authenticate, getMeetingRequestResults);
+router.post('/:id/resend-invitation', authenticate, resendInvitation);
 
 export default router;

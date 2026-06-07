@@ -17,7 +17,9 @@ export interface CreateUserInput {
   lastName?: string;
   phone?: string;
   googleOauthId?: string;
+  facebookOauthId?: string;
   profilePictureUrl?: string;
+  emailVerified?: boolean;
 }
 
 export interface SafeUser {
@@ -26,6 +28,8 @@ export interface SafeUser {
   created_at: string;
   updated_at: string;
   is_premium: boolean;
+  email_verified: boolean;
+  is_oauth_user: boolean;
   username?: string;
   first_name?: string;
   last_name?: string;
@@ -57,7 +61,9 @@ export async function createUser(input: CreateUserInput): Promise<User> {
       lastName: input.lastName ?? null,
       phone: input.phone ?? null,
       googleOauthId: input.googleOauthId ?? null,
+      facebookOauthId: input.facebookOauthId ?? null,
       profilePictureUrl: input.profilePictureUrl ?? null,
+      emailVerified: input.emailVerified ?? false,
       createdAt: now,
       updatedAt: now,
     },
@@ -80,8 +86,25 @@ export function updateGoogleId(userId: string, googleId: string): Promise<User> 
   return prisma.user.update({ where: { id: userId }, data: { googleOauthId: googleId } });
 }
 
+export function findByFacebookId(facebookId: string): Promise<User | null> {
+  return prisma.user.findFirst({ where: { facebookOauthId: facebookId } });
+}
+
+export function updateFacebookId(userId: string, facebookId: string): Promise<User> {
+  return prisma.user.update({ where: { id: userId }, data: { facebookOauthId: facebookId } });
+}
+
 export function updateProfilePicture(userId: string, url: string): Promise<User> {
   return prisma.user.update({ where: { id: userId }, data: { profilePictureUrl: url } });
+}
+
+export async function updatePassword(userId: string, newPassword: string): Promise<User> {
+  const passwordHash = await hashPassword(newPassword);
+  return prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+}
+
+export function markEmailVerified(userId: string): Promise<User> {
+  return prisma.user.update({ where: { id: userId }, data: { emailVerified: true } });
 }
 
 export function verifyPassword(password: string, hash: string): Promise<boolean> {
@@ -104,6 +127,8 @@ export function toSafeObject(user: User, premium = false): SafeUser {
     created_at: user.createdAt.toISOString(),
     updated_at: user.updatedAt.toISOString(),
     is_premium: premium,
+    email_verified: user.emailVerified,
+    is_oauth_user: Boolean(user.googleOauthId || user.facebookOauthId),
   };
   if (user.username) safe.username = user.username;
   if (user.firstName) safe.first_name = user.firstName;

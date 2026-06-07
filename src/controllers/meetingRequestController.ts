@@ -12,6 +12,9 @@ import * as meetingRequestService from '../services/meetingRequestService.js';
 import { geocodeAddress } from '../services/geocodingService.js';
 import { processMeetingRequest } from '../services/locationService.js';
 import { sendMeetingInviteEmail } from '../services/emailService.js';
+import { sendSms } from '../services/smsService.js';
+import { decryptContact } from '../utils/encryption.js';
+import { env } from '../config/env.js';
 import { ContactType } from '@prisma/client';
 import { BadRequest, Forbidden, NotFound, Unauthorized } from '../utils/errors.js';
 
@@ -289,6 +292,46 @@ export async function getMeetingRequestResults(
     if (request.userAId !== userId) throw Forbidden('Unauthorized');
 
     res.status(200).json(meetingRequestService.toResultsDto(request));
+  } catch (e) {
+    next(e);
+  }
+}
+
+/**
+ * POST /:id/resend-invitation — owner only (auth). Re-sends the invite to User B
+ * using the stored (encrypted) contact and the existing tokenB. Returns a
+ * generic success; never leaks the contact value or token.
+ */
+export async function resendInvitation(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw Unauthorized('Not authenticated');
+
+    const request = await meetingRequestService.findById(req.params.id);
+    if (!request) throw NotFound('Meeting request not found');
+    if (request.userAId !== userId) throw Forbidden('Unauthorized');
+
+    if (meetingRequestService.isExpired(request)) {
+      throw BadRequest('Meeting request has expired');
+    }
+
+    const contact = decryptContact(request.userBContactEncrypted);
+
+    if (request.userBContactType === ContactType.EMAIL) {
+      await sendMeetingInviteEmail(contact, request.requestId, request.tokenB);
+    } else {
+      const inviteUrl = `${env.frontendUrl}/request/${request.requestId}?token=${request.tokenB}`;
+      await sendSms(
+        contact,
+        `You've been invited to find a meeting spot. Share your location: ${inviteUrl}`
+      );
+    }
+
+    res.status(200).json({ message: 'Invitation resent successfully' });
   } catch (e) {
     next(e);
   }

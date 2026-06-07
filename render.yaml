@@ -44,6 +44,12 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      # Facebook OAuth (optional). Set both in the dashboard to enable the FB
+      # login button; leave unset to keep Facebook login disabled.
+      - key: FACEBOOK_APP_ID
+        sync: false
+      - key: FACEBOOK_APP_SECRET
+        sync: false
       - key: MAILGUN_API_KEY
         sync: false
       - key: MAILGUN_DOMAIN

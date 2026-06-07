@@ -4,8 +4,12 @@ import {
   login,
   getCurrentUser,
   googleCallback,
+  facebookCallback,
   refreshToken,
   resetPassword,
+  resetPasswordConfirm,
+  verifyEmail,
+  resendVerification,
   uploadPicture,
   getProfilePicture,
 } from '../controllers/authController.js';
@@ -24,11 +28,20 @@ router.post('/direct-login', login);
 router.post('/google/callback', googleCallback);
 router.post('/google/callback/direct', googleCallback);
 
+// Facebook authentication (direct alias verifies the same way)
+router.post('/facebook/callback', facebookCallback);
+router.post('/facebook/callback/direct', facebookCallback);
+
 // Token refresh
 router.post('/refresh', refreshToken);
 
 // Password reset (always generic 200)
 router.post('/reset-password', resetPassword);
+router.post('/reset-password/confirm', resetPasswordConfirm);
+
+// Email verification
+router.post('/verify-email', verifyEmail);
+router.post('/resend-verification', resendVerification);
 
 // Current user
 router.get('/me', authenticate, getCurrentUser);
