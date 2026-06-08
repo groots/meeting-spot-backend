@@ -8,6 +8,7 @@ import meetingRequestRoutes from './routes/meetingRequestRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import geocodingRoutes from './routes/geocodingRoutes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -55,6 +56,7 @@ app.use('/api/v1/meeting-requests', meetingRequestRoutes);
 app.use('/api/v1/contacts', contactRoutes);
 app.use('/api/v1/payments', paymentRoutes);
 app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/geocoding', geocodingRoutes);
 
 // Root
 app.get('/', (_req, res) => {
@@ -68,6 +70,7 @@ app.get('/', (_req, res) => {
       contacts: '/api/v1/contacts',
       payments: '/api/v1/payments',
       users: '/api/v1/users',
+      geocoding: '/api/v1/geocoding',
     },
   });
 });
