@@ -174,19 +174,25 @@ export async function deleteMeetingRequest(
   }
 }
 
-/** GET /:id/status — owner status (auth). */
+/**
+ * GET /:id/status — accessible to the authenticated owner OR to User B via the
+ * invite `?token=` (matches tokenB). The status DTO carries no sensitive data
+ * (only request_id/status/timestamps), so token-gated read is safe.
+ */
 export async function getMeetingRequestStatus(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    const userId = req.user?.id;
-    if (!userId) throw Unauthorized('Not authenticated');
-
     const request = await meetingRequestService.findById(req.params.id);
     if (!request) throw NotFound('Meeting request not found');
-    if (request.userAId !== userId) throw Forbidden('Unauthorized');
+
+    const userId = req.user?.id;
+    const token = typeof req.query.token === 'string' ? req.query.token : undefined;
+    const isOwner = Boolean(userId) && request.userAId === userId;
+    const isInvitee = Boolean(token) && request.tokenB === token;
+    if (!isOwner && !isInvitee) throw Forbidden('Unauthorized');
 
     res.status(200).json(meetingRequestService.toStatusDto(request));
   } catch (e) {
@@ -277,19 +283,26 @@ export async function respondToMeetingRequest(
   }
 }
 
-/** GET /:id/results — owner only (auth). Returns status + suggestions only. */
+/**
+ * GET /:id/results — accessible to the authenticated owner OR to User B via the
+ * invite `?token=` (matches tokenB). The results DTO exposes only status +
+ * suggestions + selected place (no address_a, tokenB, or contact), which both
+ * participants are meant to see.
+ */
 export async function getMeetingRequestResults(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    const userId = req.user?.id;
-    if (!userId) throw Unauthorized('Not authenticated');
-
     const request = await meetingRequestService.findById(req.params.id);
     if (!request) throw NotFound('Meeting request not found');
-    if (request.userAId !== userId) throw Forbidden('Unauthorized');
+
+    const userId = req.user?.id;
+    const token = typeof req.query.token === 'string' ? req.query.token : undefined;
+    const isOwner = Boolean(userId) && request.userAId === userId;
+    const isInvitee = Boolean(token) && request.tokenB === token;
+    if (!isOwner && !isInvitee) throw Forbidden('Unauthorized');
 
     res.status(200).json(meetingRequestService.toResultsDto(request));
   } catch (e) {

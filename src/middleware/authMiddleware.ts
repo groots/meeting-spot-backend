@@ -58,3 +58,44 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     res.status(500).json({ error: 'Server error', message: 'Authentication error' });
   }
 };
+
+/**
+ * Optional authentication. Populates req.user when a valid Bearer token is
+ * present, but never rejects the request when it is missing or invalid. Lets a
+ * handler authorize EITHER the authenticated owner OR an unauthenticated,
+ * token-gated caller (e.g. User B reading status/results from the invite link).
+ */
+export const authenticateOptional = async (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      next();
+      return;
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    let decoded: jwt.JwtPayload;
+    try {
+      decoded = jwt.verify(token, env.jwtSecret) as jwt.JwtPayload;
+    } catch {
+      next();
+      return;
+    }
+
+    const userId = decoded.sub as string | undefined;
+    if (userId) {
+      const user = await userService.findById(userId);
+      if (user) {
+        req.user = { id: user.id, email: user.email };
+      }
+    }
+    next();
+  } catch (error) {
+    console.error('Optional auth middleware error:', error);
+    next();
+  }
+};
