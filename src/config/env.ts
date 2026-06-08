@@ -38,6 +38,11 @@ export const env = {
 
   mailgunApiKey: process.env.MAILGUN_API_KEY || '',
   mailgunDomain: process.env.MAILGUN_DOMAIN || '',
+  // Optional sender overrides. MAIL_FROM may be a bare address or
+  // "Name <addr@domain>"; defaults to a noreply on the Mailgun domain.
+  // MAIL_REPLY_TO should be a monitored mailbox so replies go somewhere real.
+  mailFrom: process.env.MAIL_FROM || '',
+  mailReplyTo: process.env.MAIL_REPLY_TO || '',
 
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
