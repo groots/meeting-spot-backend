@@ -166,7 +166,11 @@ export async function googleCallback(req: Request, res: Response, next: NextFunc
   }
 }
 
-/** POST /refresh — re-issue a token from a valid/expired-but-decodable token. */
+// Idle-refresh grace window: a token expired no more than this long ago can
+// still be exchanged for a fresh one. Beyond this, the user must re-login.
+const REFRESH_GRACE_SECONDS = 7 * 24 * 60 * 60; // 7 days
+
+/** POST /refresh — re-issue a token from a valid OR recently-expired token. */
 export async function refreshToken(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
@@ -175,19 +179,29 @@ export async function refreshToken(req: Request, res: Response, next: NextFuncti
       throw BadRequest('Token is required');
     }
 
-    let decoded: jwt.JwtPayload | null = null;
+    // Always verify the HS256 signature. `ignoreExpiration` lets an expired (but
+    // otherwise authentic) token through so we can apply our own grace window;
+    // a forged/tampered token fails signature verification and is rejected.
+    let decoded: jwt.JwtPayload;
     try {
-      decoded = jwt.verify(token, env.jwtSecret) as jwt.JwtPayload;
-    } catch (err) {
-      if ((err as Error).name === 'TokenExpiredError') {
-        decoded = jwt.decode(token) as jwt.JwtPayload | null;
-      } else {
-        throw Unauthorized('Invalid token');
-      }
+      decoded = jwt.verify(token, env.jwtSecret, {
+        ignoreExpiration: true,
+      }) as jwt.JwtPayload;
+    } catch {
+      throw Unauthorized('Invalid token');
     }
 
     if (!decoded?.sub) {
       throw Unauthorized('Invalid token');
+    }
+
+    // Bound how long after expiry a token can still refresh. Tokens carry `exp`
+    // (seconds since epoch); reject anything expired beyond the grace window.
+    if (typeof decoded.exp === 'number') {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      if (nowSeconds - decoded.exp > REFRESH_GRACE_SECONDS) {
+        throw Unauthorized('Invalid token');
+      }
     }
 
     const user = await userService.findById(decoded.sub as string);

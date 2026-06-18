@@ -82,6 +82,7 @@ model MeetingRequest {
   addressBLon            Float?               @map("address_b_lon") @db.DoublePrecision
   status                 MeetingRequestStatus @default(PENDING_B_ADDRESS)
   tokenB                 String               @unique @map("token_b") @db.VarChar(64)
+  tokenBUsedAt           DateTime?            @map("token_b_used_at") @db.Timestamptz(6)
   selectedPlaceGoogleId  String?              @map("selected_place_google_id") @db.VarChar(255)
   selectedPlaceDetails   Json?                @map("selected_place_details") @db.JsonB
   suggestedOptions       Json?                @map("suggested_options") @db.JsonB

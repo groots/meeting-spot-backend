@@ -31,6 +31,8 @@ function defaultLabel(status: number): string {
       return 'Not found';
     case 409:
       return 'Conflict';
+    case 429:
+      return 'Too many requests';
     default:
       return 'Server error';
   }
@@ -48,3 +50,5 @@ export const NotFound = (message = 'Resource not found', details?: Record<string
   new HttpError(404, message, 'Not found', details);
 export const Conflict = (message: string, details?: Record<string, unknown>) =>
   new HttpError(409, message, 'Conflict', details);
+export const TooManyRequests = (message = 'Too many requests', details?: Record<string, unknown>) =>
+  new HttpError(429, message, 'Too many requests', details);

@@ -39,7 +39,9 @@ export interface SafeUser {
 }
 
 async function hashPassword(password: string): Promise<string> {
-  const salt = await bcrypt.genSalt(10);
+  // Cost 12 (was 10). Existing cost-10 hashes still validate via bcrypt.compare,
+  // so no password reset is needed. authLimiter bounds the slower-hash DoS risk.
+  const salt = await bcrypt.genSalt(12);
   return bcrypt.hash(password, salt);
 }
 

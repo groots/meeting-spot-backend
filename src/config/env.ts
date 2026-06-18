@@ -57,4 +57,33 @@ export const env = {
   profilePicturesDir: process.env.PROFILE_PICTURES_DIR || 'uploads/profile-pictures',
 };
 
+// Known insecure dev-only defaults. In production these must be overridden by
+// real env vars, or we fail closed (crash-loop loudly) rather than run insecure.
+const INSECURE_JWT_DEFAULT = 'default_very_insecure_secret_for_dev_only';
+const INSECURE_ENCRYPTION_DEFAULT = 'dev_encryption_key_change_me_32b!';
+
+// Fail-closed production guard. Throwing here happens at import time, before the
+// server binds a port, so a misconfigured prod deploy crash-loops instead of
+// serving traffic with insecure secrets.
+if (env.isProduction) {
+  const problems: string[] = [];
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === INSECURE_JWT_DEFAULT) {
+    problems.push('JWT_SECRET is unset or using the insecure dev default');
+  }
+  if (
+    !process.env.ENCRYPTION_KEY ||
+    process.env.ENCRYPTION_KEY === INSECURE_ENCRYPTION_DEFAULT
+  ) {
+    problems.push('ENCRYPTION_KEY is unset or using the insecure dev default');
+  }
+  if (!process.env.DATABASE_URL) {
+    problems.push('DATABASE_URL is unset');
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `Refusing to start in production with insecure configuration:\n- ${problems.join('\n- ')}`
+    );
+  }
+}
+
 export default env;

@@ -123,20 +123,61 @@ export function isExpired(request: MeetingRequest): boolean {
   return new Date() > request.expiresAt;
 }
 
+/**
+ * Timing-safe comparison of the stored tokenB against a provided token. Guards
+ * length first (timingSafeEqual throws on length mismatch) so a length probe
+ * can't leak via an exception, and returns false for any non-string/empty
+ * input without short-circuiting on content.
+ */
+export function tokenMatches(stored: string, provided: unknown): boolean {
+  if (typeof provided !== 'string' || provided.length === 0) return false;
+  const a = Buffer.from(stored, 'utf8');
+  const b = Buffer.from(provided, 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * Atomically "claim" a request for User B's response: flips tokenBUsedAt from
+ * NULL → now and persists B's coordinates + CALCULATING in a single updateMany
+ * guarded on `tokenBUsedAt: null`. Returns the number of rows affected — 0 means
+ * the token was already used (double-submit / replay), 1 means this caller won
+ * the claim. Prevents the double-respond race.
+ */
+export async function claimTokenForResponse(
+  requestId: string,
+  addressBLat: number,
+  addressBLon: number
+): Promise<number> {
+  const result = await prisma.meetingRequest.updateMany({
+    where: { requestId, tokenBUsedAt: null },
+    data: {
+      addressBLat,
+      addressBLon,
+      status: MeetingRequestStatus.CALCULATING,
+      tokenBUsedAt: new Date(),
+      updatedAt: new Date(),
+    },
+  });
+  return result.count;
+}
+
 // --- Security-correct serializers ---
 
 /**
  * Owner-facing DTO. Exposes the fields the owner legitimately needs WITHOUT any
  * sensitive material: no tokenB, no user_b_contact_encrypted, no address_a
  * coordinates, no location_a, no session_identifier_a, no user_a_id.
+ *
+ * PRIVACY: User B's coordinates (address_b_lat/lon) are intentionally NOT
+ * exposed. The owner only ever sees suggested venues near the midpoint, never
+ * User B's exact location.
  */
 export function toOwnerDto(request: MeetingRequest): Record<string, unknown> {
   return {
     request_id: request.requestId,
     user_b_contact_type: contactTypeValue(request.userBContactType),
     location_type: request.locationType,
-    address_b_lat: request.addressBLat,
-    address_b_lon: request.addressBLon,
     status: statusValue(request.status),
     selected_place_google_id: request.selectedPlaceGoogleId,
     selected_place_details: request.selectedPlaceDetails,

@@ -13,11 +13,18 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 const app = express();
 
-// Security + CORS
+// Behind Render's proxy: trust exactly one hop so req.ip / X-Forwarded-For is
+// the real client IP (needed for per-IP rate limiting). Use 1, not `true`,
+// which would trust any spoofed XFF header.
+app.set('trust proxy', 1);
+
+// Security + CORS. Fail closed: never fall back to '*'. In prod we use the
+// explicit CORS_ORIGINS list (or FRONTEND_URL); in dev FRONTEND_URL defaults
+// to http://localhost:3000.
 app.use(helmet());
 app.use(
   cors({
-    origin: env.corsOrigins.length > 0 ? env.corsOrigins : env.frontendUrl || '*',
+    origin: env.corsOrigins.length > 0 ? env.corsOrigins : env.frontendUrl,
     credentials: true,
   })
 );

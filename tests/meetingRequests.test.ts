@@ -135,6 +135,8 @@ describe('Meeting Requests API', () => {
       prismaMock.meetingRequest.findUnique
         .mockResolvedValueOnce(pending)
         .mockResolvedValueOnce(completed);
+      // Single-use claim succeeds (1 row flipped NULL → now).
+      prismaMock.meetingRequest.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.meetingRequest.update.mockResolvedValue(completed);
       mockProcess.mockResolvedValue({
         success: true,
@@ -186,6 +188,21 @@ describe('Meeting Requests API', () => {
       expect(res.status).toBe(403);
     });
 
+    it('returns 403 when the token was already used (single-use)', async () => {
+      // Token matches and request is unexpired, but the atomic claim affects 0
+      // rows because tokenBUsedAt is already set → generic 403.
+      prismaMock.meetingRequest.findUnique.mockResolvedValue(
+        makeMeetingRequest({ tokenBUsedAt: new Date() })
+      );
+      prismaMock.meetingRequest.updateMany.mockResolvedValue({ count: 0 });
+
+      const res = await request(app)
+        .post('/api/v1/meeting-requests/req-1/respond')
+        .send({ token: 'valid-token-b', address_b_lat: 40, address_b_lon: -120 });
+
+      expect(res.status).toBe(403);
+    });
+
     it('still returns only {request_id,status} when processing fails', async () => {
       const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       const pending = makeMeetingRequest();
@@ -195,6 +212,7 @@ describe('Meeting Requests API', () => {
       prismaMock.meetingRequest.findUnique
         .mockResolvedValueOnce(pending)
         .mockResolvedValueOnce(failed);
+      prismaMock.meetingRequest.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.meetingRequest.update.mockResolvedValue(failed);
       mockProcess.mockRejectedValue(new Error('places down'));
 
@@ -211,9 +229,14 @@ describe('Meeting Requests API', () => {
   });
 
   describe('GET /api/v1/meeting-requests/:id/results (owner-only)', () => {
-    it('returns 401 without authentication', async () => {
+    it('rejects an unauthenticated, token-less caller with 403', async () => {
+      // /results is token-readable (authenticateOptional): no Bearer and no
+      // ?token= means neither owner nor invitee → 403 (not 401).
+      prismaMock.meetingRequest.findUnique.mockResolvedValue(
+        makeMeetingRequest({ userAId: 'user-a-id' })
+      );
       const res = await request(app).get('/api/v1/meeting-requests/req-1/results');
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(403);
     });
 
     it('returns 403 for a non-owner', async () => {

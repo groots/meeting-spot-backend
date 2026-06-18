@@ -191,7 +191,7 @@ export async function getMeetingRequestStatus(
     const userId = req.user?.id;
     const token = typeof req.query.token === 'string' ? req.query.token : undefined;
     const isOwner = Boolean(userId) && request.userAId === userId;
-    const isInvitee = Boolean(token) && request.tokenB === token;
+    const isInvitee = meetingRequestService.tokenMatches(request.tokenB, token);
     if (!isOwner && !isInvitee) throw Forbidden('Unauthorized');
 
     res.status(200).json(meetingRequestService.toStatusDto(request));
@@ -226,21 +226,25 @@ export async function respondToMeetingRequest(
     const request = await meetingRequestService.findById(req.params.id);
     if (!request) throw NotFound('Meeting request not found');
 
-    // Constant-ish token check (mismatch and expiry both → 403).
-    if (request.tokenB !== token) {
+    // Timing-safe token check (mismatch and expiry both → 403, generic message).
+    if (!meetingRequestService.tokenMatches(request.tokenB, token)) {
       throw Forbidden('Invalid token');
     }
     if (meetingRequestService.isExpired(request)) {
       throw Forbidden('Meeting request has expired');
     }
 
-    // Persist B coordinates + CALCULATING.
-    await meetingRequestService.updateRequest(request.requestId, {
-      addressBLat: address_b_lat,
-      addressBLon: address_b_lon,
-      status: 'CALCULATING',
-      updatedAt: new Date(),
-    });
+    // Single-use claim: atomically flip tokenBUsedAt NULL → now while persisting
+    // B's coordinates + CALCULATING. If 0 rows affected the token was already
+    // used (double-submit / replay) → generic 403 (no enumeration).
+    const claimed = await meetingRequestService.claimTokenForResponse(
+      request.requestId,
+      address_b_lat,
+      address_b_lon
+    );
+    if (claimed === 0) {
+      throw Forbidden('Invalid token');
+    }
 
     // Run the matching pipeline synchronously, then persist its outcome.
     try {
@@ -301,7 +305,7 @@ export async function getMeetingRequestResults(
     const userId = req.user?.id;
     const token = typeof req.query.token === 'string' ? req.query.token : undefined;
     const isOwner = Boolean(userId) && request.userAId === userId;
-    const isInvitee = Boolean(token) && request.tokenB === token;
+    const isInvitee = meetingRequestService.tokenMatches(request.tokenB, token);
     if (!isOwner && !isInvitee) throw Forbidden('Unauthorized');
 
     res.status(200).json(meetingRequestService.toResultsDto(request));
