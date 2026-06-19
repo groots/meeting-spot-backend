@@ -67,6 +67,28 @@ export const FOOD_SUBCATEGORIES: Record<string, FoodSubcategoryFilter> = {
   },
 };
 
+// Cuisine choices offered by the frontend (CreateRequestForm FOOD_SUBCATEGORIES)
+// when the category is "Restaurant / Food". Each maps to a Google Places
+// `keyword` applied on top of a restaurant search. "Any Food"/"Other" are
+// intentionally omitted so they fall through to a plain restaurant query.
+export const FOOD_CUISINE_KEYWORDS: Record<string, string> = {
+  american: 'American',
+  italian: 'Italian',
+  chinese: 'Chinese',
+  mexican: 'Mexican',
+  japanese: 'Japanese',
+  thai: 'Thai',
+  indian: 'Indian',
+  mediterranean: 'Mediterranean',
+  'vegetarian/vegan': 'vegetarian',
+  'fast food': 'fast food',
+  bakery: 'bakery',
+  seafood: 'seafood',
+  'bbq/steakhouse': 'BBQ steakhouse',
+  pizza: 'pizza',
+  'brunch/breakfast': 'breakfast brunch',
+};
+
 // File upload limits (profile pictures)
 export const MAX_FILE_SIZE_MB = 5;
 export const ALLOWED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif'];

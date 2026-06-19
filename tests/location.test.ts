@@ -81,6 +81,14 @@ describe('locationService category parsing', () => {
     expect(getCategoryKeywords('fine dining')).toContain('fine dining');
     expect(getCategoryKeywords('unknown')).toEqual([]);
   });
+
+  it('returns keywords for frontend cuisine choices', () => {
+    expect(getCategoryKeywords('Italian')).toEqual(['Italian']);
+    expect(getCategoryKeywords('Vegetarian/Vegan')).toEqual(['vegetarian']);
+    expect(getCategoryKeywords('Pizza')).toEqual(['pizza']);
+    // "Any Food" / "Other" carry no keyword (plain restaurant search).
+    expect(getCategoryKeywords('Any Food')).toEqual([]);
+  });
 });
 
 describe('findMeetingSpots', () => {
@@ -119,6 +127,14 @@ describe('findMeetingSpots', () => {
     const spots = await findMeetingSpots(37, -122, 1000, 'Food & Drink');
     expect(spots[0].place_id).toBe('high');
     expect(spots[1].place_id).toBe('low');
+  });
+
+  it('passes a cuisine keyword (restaurant type) to Nearby Search', async () => {
+    mockNearby.mockResolvedValue([place()]);
+    await findMeetingSpots(37, -122, 1000, 'Restaurant / Food', 'Italian');
+    expect(mockNearby).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'restaurant', keyword: 'Italian' })
+    );
   });
 
   it('applies subcategory price/rating filters', async () => {

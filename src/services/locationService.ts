@@ -1,7 +1,11 @@
 // Exact port of the Python reference app/utils/location.py.
 // Geographic midpoint/distance math, category parsing, Google Places lookup,
 // and the meeting-request processing pipeline (radius ladder 1500→3000→5000).
-import { PLACE_CATEGORIES, FOOD_SUBCATEGORIES } from '../utils/constants.js';
+import {
+  PLACE_CATEGORIES,
+  FOOD_SUBCATEGORIES,
+  FOOD_CUISINE_KEYWORDS,
+} from '../utils/constants.js';
 import { nearbySearch, buildPhotoUrl } from './placesClient.js';
 
 const toRadians = (deg: number): number => (deg * Math.PI) / 180;
@@ -104,6 +108,9 @@ export function getCategoryKeywords(category: string): string[] {
   const lower = category.toLowerCase();
   if (lower in FOOD_SUBCATEGORIES && FOOD_SUBCATEGORIES[lower].keywords) {
     return FOOD_SUBCATEGORIES[lower].keywords;
+  }
+  if (lower in FOOD_CUISINE_KEYWORDS) {
+    return [FOOD_CUISINE_KEYWORDS[lower]];
   }
   return [];
 }
