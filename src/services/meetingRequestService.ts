@@ -7,7 +7,7 @@
 import crypto from 'crypto';
 import { ContactType, MeetingRequest, MeetingRequestStatus, Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
-import { encryptContact } from '../utils/encryption.js';
+import { encryptContact, decryptContact } from '../utils/encryption.js';
 import { TOKEN_EXPIRY_HOURS } from '../utils/constants.js';
 
 // --- Enum <-> API string mapping (Prisma returns member names; the API and
@@ -174,8 +174,19 @@ export async function claimTokenForResponse(
  * User B's exact location.
  */
 export function toOwnerDto(request: MeetingRequest): Record<string, unknown> {
+  // OWNER ONLY: decrypt User B's contact so the owner can see who they're
+  // meeting. Every caller of this DTO authenticates the owner (userAId === user),
+  // so this value is never exposed to User B or the public.
+  let userBContact: string | null = null;
+  try {
+    userBContact = decryptContact(request.userBContactEncrypted);
+  } catch {
+    userBContact = null;
+  }
+
   return {
     request_id: request.requestId,
+    user_b_contact: userBContact,
     user_b_contact_type: contactTypeValue(request.userBContactType),
     location_type: request.locationType,
     status: statusValue(request.status),
