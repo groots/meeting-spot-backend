@@ -123,8 +123,10 @@ describe('Meeting Requests API', () => {
   describe('POST /api/v1/meeting-requests/:id/respond (token-gated)', () => {
     it('CRITICAL: returns EXACTLY {request_id,status} with no leaked fields', async () => {
       const pending = makeMeetingRequest();
-      const completed = makeMeetingRequest({
-        status: 'COMPLETED' as ReturnType<typeof makeMeetingRequest>['status'],
+      // Generating suggestions moves the request to READY (awaiting place
+      // selection), not COMPLETED.
+      const ready = makeMeetingRequest({
+        status: 'READY' as ReturnType<typeof makeMeetingRequest>['status'],
         addressBLat: 40.0,
         addressBLon: -120.0,
         suggestedOptions: [
@@ -134,13 +136,13 @@ describe('Meeting Requests API', () => {
       // findById is called twice: initial lookup, then the "fresh" re-read.
       prismaMock.meetingRequest.findUnique
         .mockResolvedValueOnce(pending)
-        .mockResolvedValueOnce(completed);
+        .mockResolvedValueOnce(ready);
       // Single-use claim succeeds (1 row flipped NULL → now).
       prismaMock.meetingRequest.updateMany.mockResolvedValue({ count: 1 });
-      prismaMock.meetingRequest.update.mockResolvedValue(completed);
+      prismaMock.meetingRequest.update.mockResolvedValue(ready);
       mockProcess.mockResolvedValue({
         success: true,
-        suggestedOptions: completed.suggestedOptions,
+        suggestedOptions: ready.suggestedOptions,
         status: 'completed',
       });
 
@@ -151,7 +153,7 @@ describe('Meeting Requests API', () => {
       expect(res.status).toBe(200);
       // Exactly two keys, nothing else.
       expect(Object.keys(res.body).sort()).toEqual(['request_id', 'status']);
-      expect(res.body).toEqual({ request_id: 'req-1', status: 'completed' });
+      expect(res.body).toEqual({ request_id: 'req-1', status: 'ready' });
       assertNoSensitive(res.body);
     });
 

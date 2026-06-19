@@ -143,7 +143,9 @@ export async function updateMeetingRequest(
     }
 
     if (data.meeting_location !== undefined) {
+      // Agreeing on a place finalizes the request.
       update.selectedPlaceDetails = data.meeting_location;
+      update.status = 'COMPLETED';
     }
 
     const updated = await meetingRequestService.updateRequest(request.requestId, update);
@@ -258,7 +260,9 @@ export async function respondToMeetingRequest(
       });
 
       await meetingRequestService.updateRequest(request.requestId, {
-        status: result.status === 'completed' ? 'COMPLETED' : 'FAILED',
+        // Suggestions generated → READY (awaiting the owner to agree on a place).
+        // COMPLETED is reserved for when a place has actually been selected.
+        status: result.status === 'completed' ? 'READY' : 'FAILED',
         suggestedOptions:
           result.suggestedOptions !== null
             ? (result.suggestedOptions as unknown as Prisma.InputJsonValue)

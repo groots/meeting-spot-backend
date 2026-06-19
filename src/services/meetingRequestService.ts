@@ -16,6 +16,7 @@ import { TOKEN_EXPIRY_HOURS } from '../utils/constants.js';
 const STATUS_TO_VALUE: Record<MeetingRequestStatus, string> = {
   PENDING_B_ADDRESS: 'pending_b_address',
   CALCULATING: 'calculating',
+  READY: 'ready',
   COMPLETED: 'completed',
   EXPIRED: 'expired',
   FAILED: 'failed',
@@ -36,6 +37,7 @@ const VALUE_TO_CONTACT_TYPE: Record<string, ContactType> = {
 const VALUE_TO_STATUS: Record<string, MeetingRequestStatus> = {
   pending_b_address: MeetingRequestStatus.PENDING_B_ADDRESS,
   calculating: MeetingRequestStatus.CALCULATING,
+  ready: MeetingRequestStatus.READY,
   completed: MeetingRequestStatus.COMPLETED,
   expired: MeetingRequestStatus.EXPIRED,
   failed: MeetingRequestStatus.FAILED,

@@ -20,6 +20,7 @@ datasource db {
 enum MeetingRequestStatus {
   PENDING_B_ADDRESS @map("pending_b_address")
   CALCULATING       @map("calculating")
+  READY             @map("ready")
   COMPLETED         @map("completed")
   EXPIRED           @map("expired")
   FAILED            @map("failed")
