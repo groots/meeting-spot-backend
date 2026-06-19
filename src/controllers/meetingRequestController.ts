@@ -308,7 +308,20 @@ export async function getMeetingRequestResults(
     const isInvitee = meetingRequestService.tokenMatches(request.tokenB, token);
     if (!isOwner && !isInvitee) throw Forbidden('Unauthorized');
 
-    res.status(200).json(meetingRequestService.toResultsDto(request));
+    const dto = meetingRequestService.toResultsDto(request);
+
+    // OWNER ONLY: expose User B's email so the owner can save them as a contact.
+    // This is not a new leak — the owner supplied this email when creating the
+    // request. It is NEVER attached on the invitee/token path.
+    if (isOwner && request.userBContactType === ContactType.EMAIL) {
+      try {
+        dto.meeting_contact_info = { email: decryptContact(request.userBContactEncrypted) };
+      } catch {
+        // If decryption fails, omit the field rather than failing the request.
+      }
+    }
+
+    res.status(200).json(dto);
   } catch (e) {
     next(e);
   }
