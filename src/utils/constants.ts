@@ -10,6 +10,17 @@ export const PLACE_CATEGORIES: Record<string, string[]> = {
   Cultural: ['museum', 'art_gallery', 'library', 'tourist_attraction', 'place_of_worship'],
   Shopping: ['shopping_mall', 'department_store', 'supermarket', 'clothing_store', 'electronics_store'],
   Transport: ['transit_station', 'train_station', 'subway_station', 'bus_station', 'airport'],
+
+  // Labels emitted by the frontend LocationTypeSelector. Only the first type is
+  // used for the Nearby Search query, so the leading entry is the primary match.
+  'Restaurant / Food': ['restaurant'],
+  Cafe: ['cafe'],
+  Bar: ['bar'],
+  'Meeting Space': ['cafe'],
+  Hotel: ['lodging'],
+  Park: ['park'],
+  Library: ['library'],
+  Other: ['point_of_interest'],
 };
 
 export interface FoodSubcategoryFilter {

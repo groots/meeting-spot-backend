@@ -66,6 +66,17 @@ describe('locationService category parsing', () => {
     expect(getPlaceTypesForCategory('Nonsense')).toEqual(['restaurant']);
   });
 
+  it('maps frontend LocationTypeSelector labels to the right place type', () => {
+    expect(getPlaceTypesForCategory('Cafe')[0]).toBe('cafe');
+    expect(getPlaceTypesForCategory('Bar')[0]).toBe('bar');
+    expect(getPlaceTypesForCategory('Hotel')[0]).toBe('lodging');
+    expect(getPlaceTypesForCategory('Park')[0]).toBe('park');
+    expect(getPlaceTypesForCategory('Library')[0]).toBe('library');
+    expect(getPlaceTypesForCategory('Meeting Space')[0]).toBe('cafe');
+    expect(getPlaceTypesForCategory('Restaurant / Food')[0]).toBe('restaurant');
+    expect(getPlaceTypesForCategory('Other')[0]).toBe('point_of_interest');
+  });
+
   it('returns keywords for food subcategories', () => {
     expect(getCategoryKeywords('fine dining')).toContain('fine dining');
     expect(getCategoryKeywords('unknown')).toEqual([]);
