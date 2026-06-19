@@ -5,6 +5,7 @@ import {
   PLACE_CATEGORIES,
   FOOD_SUBCATEGORIES,
   FOOD_CUISINE_KEYWORDS,
+  CUISINE_MIN_RATING,
 } from '../utils/constants.js';
 import { nearbySearch, buildPhotoUrl } from './placesClient.js';
 
@@ -155,6 +156,10 @@ export async function findMeetingSpots(
       ? FOOD_SUBCATEGORIES[subcategory.toLowerCase()]
       : null;
 
+  // Cuisine keyword searches get a rating floor (see CUISINE_MIN_RATING).
+  const isCuisine =
+    !!subcategory && subcategory.toLowerCase() in FOOD_CUISINE_KEYWORDS;
+
   const meetingSpots: MeetingSpot[] = [];
 
   for (const place of places) {
@@ -206,6 +211,11 @@ export async function findMeetingSpots(
       ) {
         continue;
       }
+    }
+
+    // Drop low-rated cuisine matches (unrated places pass through).
+    if (isCuisine && place.rating !== undefined && place.rating < CUISINE_MIN_RATING) {
+      continue;
     }
 
     meetingSpots.push({

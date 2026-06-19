@@ -137,6 +137,19 @@ describe('findMeetingSpots', () => {
     );
   });
 
+  it('drops low-rated cuisine matches but keeps unrated ones', async () => {
+    mockNearby.mockResolvedValue([
+      place({ place_id: 'good', rating: 4.2 }),
+      place({ place_id: 'low', rating: 2.9 }),
+      place({ place_id: 'unrated', rating: undefined }),
+    ]);
+    const spots = await findMeetingSpots(37, -122, 1000, 'Restaurant / Food', 'Italian');
+    const ids = spots.map((s) => s.place_id);
+    expect(ids).toContain('good');
+    expect(ids).toContain('unrated');
+    expect(ids).not.toContain('low');
+  });
+
   it('applies subcategory price/rating filters', async () => {
     // "fine dining" requires price_level >= 3 and rating >= 4.0.
     mockNearby.mockResolvedValue([

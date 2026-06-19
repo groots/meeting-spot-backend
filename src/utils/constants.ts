@@ -89,6 +89,11 @@ export const FOOD_CUISINE_KEYWORDS: Record<string, string> = {
   'brunch/breakfast': 'breakfast brunch',
 };
 
+// Minimum Google rating for cuisine keyword searches. Keyword matches are
+// loose, so rated places below this are dropped; unrated places are kept and
+// the search falls back to a broader query if nothing clears the bar.
+export const CUISINE_MIN_RATING = 3.5;
+
 // File upload limits (profile pictures)
 export const MAX_FILE_SIZE_MB = 5;
 export const ALLOWED_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif'];
