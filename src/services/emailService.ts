@@ -174,7 +174,7 @@ export async function sendMeetingInviteEmail(email: string, requestId: string, t
 
 Someone would like to find a convenient place to meet with you.
 
-Share your location using this link, and we'll suggest meeting spots halfway between you:
+Enter your address using this link and we'll suggest meeting spots halfway between you. Your address stays private — it's only used to calculate the midpoint and is never shared with the other person:
 ${inviteUrl}
 
 This invitation will expire in 24 hours.
@@ -184,8 +184,8 @@ The Find A Meeting Spot Team
 `;
   const html = renderHtml({
     heading: 'Find a place to meet',
-    intro: "Someone would like to find a convenient place to meet with you. Share your location and we'll suggest spots halfway between you.",
-    ctaLabel: 'Share my location',
+    intro: "Someone would like to find a convenient place to meet with you. Enter your address and we'll suggest spots halfway between you. Your address stays private — it's only used to calculate the midpoint and is never shared with the other person.",
+    ctaLabel: 'Enter my address',
     ctaUrl: inviteUrl,
     note: 'This invitation will expire in 24 hours.',
   });
