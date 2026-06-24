@@ -36,6 +36,16 @@ enum ContactType {
   @@map("contact_type")
 }
 
+// Selection mode for how a meeting place is agreed on:
+//   OWNER  — the owner (User A) picks the place unilaterally (legacy flow).
+//   MUTUAL — both A and B pick; the request finalizes when they agree.
+enum SelectionMode {
+  OWNER  @map("owner")
+  MUTUAL @map("mutual")
+
+  @@map("selection_mode")
+}
+
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
@@ -82,6 +92,13 @@ model MeetingRequest {
   addressBLat            Float?               @map("address_b_lat") @db.DoublePrecision
   addressBLon            Float?               @map("address_b_lon") @db.DoublePrecision
   status                 MeetingRequestStatus @default(PENDING_B_ADDRESS)
+  selectionMode          SelectionMode        @default(OWNER) @map("selection_mode")
+  userAChoice            Json?                @map("user_a_choice") @db.JsonB
+  userBChoice            Json?                @map("user_b_choice") @db.JsonB
+  meetingTime            DateTime?            @map("meeting_time") @db.Timestamptz(6)
+  userATimeChoice        DateTime?            @map("user_a_time_choice") @db.Timestamptz(6)
+  userBTimeChoice        DateTime?            @map("user_b_time_choice") @db.Timestamptz(6)
+  meetingDurationMin     Int?                 @map("meeting_duration_min")
   tokenB                 String               @unique @map("token_b") @db.VarChar(64)
   tokenBUsedAt           DateTime?            @map("token_b_used_at") @db.Timestamptz(6)
   selectedPlaceGoogleId  String?              @map("selected_place_google_id") @db.VarChar(255)

@@ -266,7 +266,7 @@ describe('Meeting Requests API', () => {
       expect(res.status).toBe(404);
     });
 
-    it('owner gets only {request_id,status,suggested_options,selected_place}', async () => {
+    it('owner gets only the safe results fields (incl. selection mode + choices)', async () => {
       prismaMock.user.findUnique.mockResolvedValue(makeUser());
       prismaMock.meetingRequest.findUnique.mockResolvedValue(
         makeMeetingRequest({
@@ -282,10 +282,17 @@ describe('Meeting Requests API', () => {
 
       expect(res.status).toBe(200);
       expect(Object.keys(res.body).sort()).toEqual([
+        'meeting_duration_min',
+        'meeting_time',
         'request_id',
         'selected_place',
+        'selection_mode',
         'status',
         'suggested_options',
+        'user_a_choice',
+        'user_a_time_choice',
+        'user_b_choice',
+        'user_b_time_choice',
       ]);
       assertNoSensitive(res.body);
     });

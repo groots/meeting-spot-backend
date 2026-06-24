@@ -1,7 +1,7 @@
 // Thin client over the Google Places Nearby Search API. The result
 // filtering/sorting lives in locationService (ported from location.py).
 import axios from 'axios';
-import { PLACES_NEARBY_URL, PLACE_PHOTO_URL } from '../utils/constants.js';
+import { PLACES_NEARBY_URL, PLACE_PHOTO_URL, DISTANCE_MATRIX_URL } from '../utils/constants.js';
 import { env } from '../config/env.js';
 
 export interface GooglePlacePhoto {
@@ -25,6 +25,7 @@ export interface NearbySearchParams {
   radius: number;
   type: string;
   keyword?: string;
+  openNow?: boolean;
   apiKey?: string;
 }
 
@@ -49,6 +50,9 @@ export async function nearbySearch(params: NearbySearchParams): Promise<GooglePl
   if (params.keyword) {
     query.keyword = params.keyword;
   }
+  if (params.openNow) {
+    query.opennow = 'true';
+  }
 
   const response = await axios.get(PLACES_NEARBY_URL, { params: query });
   const data = response.data;
@@ -56,6 +60,63 @@ export async function nearbySearch(params: NearbySearchParams): Promise<GooglePl
     return [];
   }
   return (data.results ?? []) as GooglePlace[];
+}
+
+export interface LatLon {
+  lat: number;
+  lon: number;
+}
+
+export interface DistanceMatrixParams {
+  origins: LatLon[];
+  destinations: LatLon[];
+  mode?: string;
+  apiKey?: string;
+}
+
+/**
+ * Calls Google Distance Matrix. Returns a 2-D grid of travel durations in
+ * seconds: rows index `origins`, columns index `destinations`. A cell is null
+ * when that origin→destination pair has no route (element status !== 'OK').
+ *
+ * Degrades to [] when the API key is absent or origins/destinations are empty,
+ * mirroring nearbySearch so callers can treat "no data" uniformly.
+ */
+export async function distanceMatrix(
+  params: DistanceMatrixParams
+): Promise<(number | null)[][]> {
+  const key = params.apiKey ?? env.googleMapsApiKey;
+  if (!key || params.origins.length === 0 || params.destinations.length === 0) {
+    return [];
+  }
+
+  const encode = (points: LatLon[]): string =>
+    points.map((p) => `${p.lat},${p.lon}`).join('|');
+
+  const query: Record<string, string> = {
+    origins: encode(params.origins),
+    destinations: encode(params.destinations),
+    mode: params.mode ?? 'driving',
+    key,
+  };
+
+  const response = await axios.get(DISTANCE_MATRIX_URL, { params: query });
+  const data = response.data;
+  if (data.status !== 'OK') {
+    return [];
+  }
+
+  const rows = (data.rows ?? []) as Array<{
+    elements?: Array<{ status?: string; duration?: { value?: number } }>;
+  }>;
+
+  return rows.map((row) =>
+    (row.elements ?? []).map((el) =>
+      el.status === 'OK' && typeof el.duration?.value === 'number'
+        ? el.duration.value
+        : null
+    )
+  );
 }
 
 export function buildPhotoUrl(photoReference: string, apiKey?: string): string {

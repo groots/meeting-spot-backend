@@ -191,3 +191,40 @@ The Find A Meeting Spot Team
   });
   return sendEmail(email, subject, text, html);
 }
+
+/**
+ * Email a finalized meeting (venue + time) with an "add to calendar" link.
+ *
+ * PRIVACY: `venueName`/`location` are the public venue only; `whenText` is a
+ * human-readable time. No home address or coordinates are ever included.
+ */
+export async function sendMeetingScheduledEmail(
+  email: string,
+  venueName: string,
+  location: string,
+  whenText: string,
+  calendarUrl: string
+): Promise<boolean> {
+  const subject = `Your meeting at ${venueName} is scheduled`;
+  const text = `Hello,
+
+Your meeting is set.
+
+Where: ${venueName}${location ? ` (${location})` : ''}
+When: ${whenText}
+
+Add it to your calendar:
+${calendarUrl}
+
+Thanks,
+The Find A Meeting Spot Team
+`;
+  const html = renderHtml({
+    heading: 'Your meeting is scheduled',
+    intro: `Your meeting is set for ${whenText} at ${venueName}${location ? ` (${location})` : ''}. Add it to your calendar with one click.`,
+    ctaLabel: 'Add to calendar',
+    ctaUrl: calendarUrl,
+    note: 'See you there!',
+  });
+  return sendEmail(email, subject, text, html);
+}

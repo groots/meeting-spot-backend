@@ -105,3 +105,4 @@ export const TOKEN_EXPIRY_HOURS = 24;
 export const GEOCODING_API_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
 export const PLACES_NEARBY_URL = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
 export const PLACE_PHOTO_URL = 'https://maps.googleapis.com/maps/api/place/photo';
+export const DISTANCE_MATRIX_URL = 'https://maps.googleapis.com/maps/api/distancematrix/json';
