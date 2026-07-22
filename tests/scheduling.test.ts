@@ -36,6 +36,8 @@ import {
   isValidFutureTime,
   recordTimeChoice,
 } from '../src/services/meetingRequestService';
+import { sendMeetingScheduledEmail } from '../src/services/emailService';
+import { encryptContact } from '../src/utils/encryption';
 import app from '../src/server';
 
 function tokenFor(userId: string, email = 'a@example.com'): string {
@@ -167,6 +169,39 @@ describe('POST /api/v1/meeting-requests/:id/schedule', () => {
     expect(res.status).toBe(200);
     expect(res.body.user_b_time_choice).toBe(FUTURE.toISOString());
     expect(res.body.meeting_time).toBeNull();
+    expect(sendMeetingScheduledEmail).not.toHaveBeenCalled();
+  });
+
+  it('MUTUAL mode: agreeing on a time locks it and emails both parties', async () => {
+    const inviteeEmail = 'bob@example.com';
+    const req = completedRequest({
+      selectionMode: 'MUTUAL',
+      userATimeChoice: FUTURE,
+      userBContactEncrypted: encryptContact(inviteeEmail),
+    });
+    prismaMock.user.findUnique.mockResolvedValue(makeUser());
+    prismaMock.meetingRequest.findUnique.mockResolvedValue(req);
+    const locked = completedRequest({
+      selectionMode: 'MUTUAL',
+      userATimeChoice: FUTURE,
+      userBTimeChoice: FUTURE,
+      meetingTime: FUTURE,
+      userBContactEncrypted: req.userBContactEncrypted,
+    });
+    prismaMock.meetingRequest.update.mockResolvedValue(locked);
+
+    const res = await request(app)
+      .post('/api/v1/meeting-requests/req-1/schedule')
+      .send({ token: 'valid-token-b', meeting_time: FUTURE_ISO });
+
+    expect(res.status).toBe(200);
+    expect(res.body.meeting_time).toBe(FUTURE.toISOString());
+    expect(sendMeetingScheduledEmail).toHaveBeenCalledTimes(2);
+    const recipients = (sendMeetingScheduledEmail as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(recipients).toEqual(expect.arrayContaining(['a@example.com', inviteeEmail]));
+    for (const call of (sendMeetingScheduledEmail as jest.Mock).mock.calls) {
+      expect(call[4]).toContain('calendar.google.com');
+    }
   });
 
   it('blocks scheduling before the place is finalized (400)', async () => {

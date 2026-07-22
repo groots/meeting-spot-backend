@@ -618,6 +618,87 @@ function buildEventForRequest(request: {
   };
 }
 
+function formatMeetingWhen(when: Date): string {
+  return when.toLocaleString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
+/**
+ * Notify both parties that the meeting time is locked, with an add-to-calendar
+ * link. Best-effort: failures are logged and never block the schedule response.
+ *
+ * PRIVACY: destinations come only from stored owner profile / invitee contact;
+ * the message carries the public venue + time only.
+ */
+async function notifyMeetingScheduled(request: {
+  userAId: string | null;
+  userBContactType: ContactType;
+  userBContactEncrypted: string;
+  selectedPlaceDetails: unknown;
+  meetingTime: Date | null;
+  meetingDurationMin: number | null;
+  requestId: string;
+}): Promise<void> {
+  const event = buildEventForRequest(request);
+  if (!event || !request.meetingTime) return;
+
+  const calendarUrl = buildCalendarUrl(event);
+  const whenText = formatMeetingWhen(request.meetingTime);
+  const place = request.selectedPlaceDetails as { name?: unknown; address?: unknown } | null;
+  const venueName = typeof place?.name === 'string' ? place.name : 'your meeting spot';
+  const location = typeof place?.address === 'string' ? place.address : '';
+  const smsBody = `Meeting confirmed for ${whenText} at ${venueName}. Add to calendar: ${calendarUrl}`;
+
+  if (request.userAId) {
+    try {
+      const owner = await userService.findById(request.userAId);
+      if (owner?.email) {
+        await sendMeetingScheduledEmail(owner.email, venueName, location, whenText, calendarUrl);
+      } else if (owner?.phone) {
+        await sendSms(owner.phone, smsBody);
+      }
+    } catch (e) {
+      console.error('Failed to notify organizer of scheduled meeting:', e);
+    }
+  }
+
+  try {
+    if (request.userBContactType === ContactType.EMAIL) {
+      let toEmail: string | null = null;
+      try {
+        toEmail = decryptContact(request.userBContactEncrypted);
+      } catch {
+        toEmail = null;
+      }
+      if (toEmail) {
+        await sendMeetingScheduledEmail(toEmail, venueName, location, whenText, calendarUrl);
+      }
+    } else if (
+      request.userBContactType === ContactType.PHONE ||
+      request.userBContactType === ContactType.SMS
+    ) {
+      let toNumber: string | null = null;
+      try {
+        toNumber = decryptContact(request.userBContactEncrypted);
+      } catch {
+        toNumber = null;
+      }
+      if (toNumber) {
+        await sendSms(toNumber, smsBody);
+      }
+    }
+  } catch (e) {
+    console.error('Failed to notify invitee of scheduled meeting:', e);
+  }
+}
+
 /**
  * POST /:id/schedule — propose the meeting time (optional auth).
  *
@@ -674,6 +755,16 @@ export async function proposeMeetingTime(
 
     const role: 'A' | 'B' = isOwner ? 'A' : 'B';
     const updated = await meetingRequestService.recordTimeChoice(request, role, when);
+
+    // When the time first locks in, confirm the completed plan for both parties.
+    // Never fail the schedule response if delivery has trouble.
+    if (!request.meetingTime && updated.meetingTime) {
+      try {
+        await notifyMeetingScheduled(updated);
+      } catch (e) {
+        console.error('Failed to send meeting confirmation notifications:', e);
+      }
+    }
 
     res.status(200).json(meetingRequestService.toScheduleDto(updated));
   } catch (e) {
@@ -750,7 +841,10 @@ export async function sendCalendar(
     if (!event) throw BadRequest('No meeting is available');
 
     const calendarUrl = buildCalendarUrl(event);
-    const whenText = request.meetingTime.toISOString();
+    const whenText = formatMeetingWhen(request.meetingTime);
+    const place = request.selectedPlaceDetails as { name?: unknown; address?: unknown } | null;
+    const venueName = typeof place?.name === 'string' ? place.name : 'your meeting spot';
+    const location = typeof place?.address === 'string' ? place.address : '';
 
     // Resolve the destination strictly from stored data.
     if (isOwner) {
@@ -758,8 +852,8 @@ export async function sendCalendar(
       if (owner?.email) {
         await sendMeetingScheduledEmail(
           owner.email,
-          event.title,
-          event.location,
+          venueName,
+          location,
           whenText,
           calendarUrl
         );
@@ -778,8 +872,8 @@ export async function sendCalendar(
       if (!toEmail) throw BadRequest('No contact is available for delivery');
       await sendMeetingScheduledEmail(
         toEmail,
-        event.title,
-        event.location,
+        venueName,
+        location,
         whenText,
         calendarUrl
       );
