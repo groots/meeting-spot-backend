@@ -12,6 +12,10 @@ import {
   resendVerification,
   uploadPicture,
   getProfilePicture,
+  googleCalendarConnect,
+  googleCalendarCallback,
+  googleCalendarStatus,
+  googleCalendarDisconnect,
 } from '../controllers/authController.js';
 import { authenticate } from '../middleware/authMiddleware.js';
 import { authLimiter } from '../middleware/rateLimit.js';
@@ -36,6 +40,12 @@ router.post('/direct-login', authLimiter, validateBody(loginSchema), login);
 // Google authentication (direct alias verifies the same way)
 router.post('/google/callback', googleCallback);
 router.post('/google/callback/direct', googleCallback);
+
+// Google Calendar free/busy OAuth (separate from Sign-In; needs refresh token)
+router.get('/google/calendar/connect', authenticate, googleCalendarConnect);
+router.get('/google/calendar/callback', googleCalendarCallback);
+router.get('/google/calendar', authenticate, googleCalendarStatus);
+router.delete('/google/calendar', authenticate, googleCalendarDisconnect);
 
 // Facebook authentication (direct alias verifies the same way)
 router.post('/facebook/callback', facebookCallback);

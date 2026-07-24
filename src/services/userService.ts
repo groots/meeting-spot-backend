@@ -7,6 +7,7 @@ import { User } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { env } from '../config/env.js';
 import { isPremium } from './subscriptionService.js';
+import * as calendarConnectionService from './calendarConnectionService.js';
 
 export interface CreateUserInput {
   email: string;
@@ -30,6 +31,7 @@ export interface SafeUser {
   is_premium: boolean;
   email_verified: boolean;
   is_oauth_user: boolean;
+  google_calendar_connected: boolean;
   username?: string;
   first_name?: string;
   last_name?: string;
@@ -121,8 +123,12 @@ export function generateToken(user: Pick<User, 'id' | 'email'>): string {
   });
 }
 
-/** Synchronous serializer given a precomputed premium flag. */
-export function toSafeObject(user: User, premium = false): SafeUser {
+/** Synchronous serializer given precomputed flags. */
+export function toSafeObject(
+  user: User,
+  premium = false,
+  googleCalendarConnected = false
+): SafeUser {
   const safe: SafeUser = {
     id: user.id,
     email: user.email,
@@ -131,6 +137,7 @@ export function toSafeObject(user: User, premium = false): SafeUser {
     is_premium: premium,
     email_verified: user.emailVerified,
     is_oauth_user: Boolean(user.googleOauthId || user.facebookOauthId),
+    google_calendar_connected: googleCalendarConnected,
   };
   if (user.username) safe.username = user.username;
   if (user.firstName) safe.first_name = user.firstName;
@@ -148,8 +155,11 @@ export function toSafeObject(user: User, premium = false): SafeUser {
   return safe;
 }
 
-/** Async serializer that computes is_premium from subscriptions. */
+/** Async serializer that computes is_premium + calendar connection status. */
 export async function serializeUser(user: User): Promise<SafeUser> {
-  const premium = await isPremium(user.id);
-  return toSafeObject(user, premium);
+  const [premium, googleCalendarConnected] = await Promise.all([
+    isPremium(user.id),
+    calendarConnectionService.isConnected(user.id),
+  ]);
+  return toSafeObject(user, premium, googleCalendarConnected);
 }

@@ -13,6 +13,7 @@ import {
   refineSuggestions,
   sendDirections,
   proposeMeetingTime,
+  getAvailability,
   getCalendarLinks,
   sendCalendar,
 } from '../controllers/meetingRequestController.js';
@@ -57,6 +58,7 @@ router.post(
 // selection happens after the place is locked (status='completed'). schedule &
 // calendar reads are owner-or-tokenB; send-calendar reuses respondLimiter.
 router.post('/:id/schedule', authenticateOptional, validateBody(scheduleSchema), proposeMeetingTime);
+router.get('/:id/availability', authenticateOptional, getAvailability);
 router.get('/:id/calendar', authenticateOptional, getCalendarLinks);
 router.post(
   '/:id/send-calendar',

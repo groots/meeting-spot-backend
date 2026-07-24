@@ -18,6 +18,8 @@ import {
 import { uploadProfilePicture, profilePicturesDir } from '../middleware/upload.js';
 import { env } from '../config/env.js';
 import { BadRequest, Conflict, NotFound, Unauthorized } from '../utils/errors.js';
+import * as googleCalendarOAuthService from '../services/googleCalendarOAuthService.js';
+import * as calendarConnectionService from '../services/calendarConnectionService.js';
 
 const googleClient = new OAuth2Client(env.googleClientId);
 
@@ -439,6 +441,93 @@ export function getProfilePicture(req: Request, res: Response, next: NextFunctio
       throw BadRequest('Invalid filename');
     }
     res.sendFile(path.join(profilePicturesDir, filename));
+  } catch (e) {
+    next(e);
+  }
+}
+
+/**
+ * GET /google/calendar/connect — return the Google OAuth URL for free/busy.
+ * Frontend navigates the browser to authorize_url.
+ */
+export async function googleCalendarConnect(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw Unauthorized('Not authenticated');
+    if (!env.googleClientId || !env.googleClientSecret) {
+      throw BadRequest('Google Calendar connect is not configured');
+    }
+
+    res.status(200).json({
+      authorize_url: googleCalendarOAuthService.buildAuthorizeUrl(userId),
+    });
+  } catch (e) {
+    next(e);
+  }
+}
+
+/**
+ * GET /google/calendar/callback — Google redirects here with ?code=&state=.
+ * Exchanges the code, stores the refresh token, then redirects to the profile.
+ */
+export async function googleCalendarCallback(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const code = typeof req.query.code === 'string' ? req.query.code : '';
+    const state = typeof req.query.state === 'string' ? req.query.state : '';
+    const oauthError = typeof req.query.error === 'string' ? req.query.error : '';
+
+    if (oauthError) {
+      res.redirect(`${env.frontendUrl}/profile?calendar=denied`);
+      return;
+    }
+    if (!code || !state) {
+      res.redirect(`${env.frontendUrl}/profile?calendar=error`);
+      return;
+    }
+
+    await googleCalendarOAuthService.handleOAuthCallback(code, state);
+    res.redirect(`${env.frontendUrl}/profile?calendar=connected`);
+  } catch (e) {
+    console.error('Google Calendar OAuth callback failed:', e);
+    res.redirect(`${env.frontendUrl}/profile?calendar=error`);
+  }
+}
+
+/** GET /google/calendar — connection status for the current user. */
+export async function googleCalendarStatus(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw Unauthorized('Not authenticated');
+    const connection = await calendarConnectionService.findActive(userId);
+    res.status(200).json(calendarConnectionService.toPublicStatus(connection));
+  } catch (e) {
+    next(e);
+  }
+}
+
+/** DELETE /google/calendar — disconnect and invalidate stored refresh token. */
+export async function googleCalendarDisconnect(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const userId = req.user?.id;
+    if (!userId) throw Unauthorized('Not authenticated');
+    const removed = await calendarConnectionService.revoke(userId);
+    res.status(200).json({ disconnected: removed });
   } catch (e) {
     next(e);
   }

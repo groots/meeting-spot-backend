@@ -66,16 +66,37 @@ model User {
   createdAt         DateTime @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  meetingRequests    MeetingRequest[]    @relation("UserAMeetingRequests")
-  contacts           Contact[]
-  suggestedPlaces    Place[]
-  subscriptions      Subscription[]
-  passwordResets     PasswordReset[]
-  emailVerifications EmailVerification[]
+  meetingRequests      MeetingRequest[]      @relation("UserAMeetingRequests")
+  contacts             Contact[]
+  suggestedPlaces      Place[]
+  subscriptions        Subscription[]
+  passwordResets       PasswordReset[]
+  emailVerifications   EmailVerification[]
+  calendarConnections  CalendarConnection[]
 
   @@index([email])
   @@index([googleOauthId])
   @@map("users")
+}
+
+// OAuth calendar credentials for free/busy availability (Phase 1: Google).
+// refresh_token is AES-GCM encrypted; busy event details are never persisted.
+model CalendarConnection {
+  id                    String    @id @default(uuid()) @db.Uuid
+  userId                String    @map("user_id") @db.Uuid
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider              String    @db.VarChar(32)
+  accountEmail          String    @map("account_email") @db.VarChar(255)
+  refreshTokenEncrypted String    @map("refresh_token_encrypted") @db.Text
+  scopes                String    @db.VarChar(512)
+  timezone              String?   @db.VarChar(64)
+  revokedAt             DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt             DateTime  @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([userId, provider])
+  @@index([userId])
+  @@map("calendar_connections")
 }
 
 model MeetingRequest {

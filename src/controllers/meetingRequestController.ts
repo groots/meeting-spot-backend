@@ -18,6 +18,7 @@ import { sendSms } from '../services/smsService.js';
 import { decryptContact } from '../utils/encryption.js';
 import { buildDirectionsUrl } from '../utils/directions.js';
 import { buildCalendarUrl, buildIcs, endFromDuration, CalendarEvent } from '../utils/calendar.js';
+import { computeMeetingAvailability } from '../services/availabilityService.js';
 import { env } from '../config/env.js';
 import { ContactType } from '@prisma/client';
 import { BadRequest, Forbidden, NotFound, Unauthorized } from '../utils/errors.js';
@@ -696,6 +697,47 @@ async function notifyMeetingScheduled(request: {
     }
   } catch (e) {
     console.error('Failed to notify invitee of scheduled meeting:', e);
+  }
+}
+
+/**
+ * GET /:id/availability — open slots from Google FreeBusy (optional auth).
+ *
+ * Owner via Bearer or invitee via ?token=. Place must already be locked.
+ * Phase 1 returns organizer-only slots when the invitee has no calendar
+ * connection; never returns busy event titles — only open slot starts/ends.
+ */
+export async function getAvailability(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const request = await meetingRequestService.findById(req.params.id);
+    if (!request) throw NotFound('Meeting request not found');
+
+    const userId = req.user?.id;
+    const isOwner = Boolean(userId) && request.userAId === userId;
+    const isInvitee = meetingRequestService.tokenMatches(request.tokenB, req.query.token);
+    if (!isOwner && !isInvitee) throw Forbidden('Unauthorized');
+
+    if (
+      meetingRequestService.statusValue(request.status) !== 'completed' ||
+      !request.selectedPlaceDetails
+    ) {
+      throw BadRequest('A meeting place must be finalized before checking availability');
+    }
+
+    const availability = await computeMeetingAvailability({
+      organizerUserId: request.userAId,
+      inviteeUserId: null, // Phase 1: invitee calendar link comes later
+      viewerIsOrganizer: isOwner,
+      durationMin: request.meetingDurationMin,
+    });
+
+    res.status(200).json(availability);
+  } catch (e) {
+    next(e);
   }
 }
 

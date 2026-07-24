@@ -44,6 +44,9 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      # Authorized redirect for Google Calendar free/busy OAuth (API callback URL)
+      - key: GOOGLE_CALENDAR_REDIRECT_URI
+        sync: false
       # Facebook OAuth (optional). Set both in the dashboard to enable the FB
       # login button; leave unset to keep Facebook login disabled.
       - key: FACEBOOK_APP_ID

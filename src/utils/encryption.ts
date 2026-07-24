@@ -1,6 +1,5 @@
-// AES-256-GCM encryption for the user_b contact value.
+// AES-256-GCM encryption helpers.
 // Storage format: base64(iv).base64(authTag).base64(ciphertext)
-// The DB column is VarChar(255), so we guard the output length.
 //
 // Fresh start: no Fernet/legacy compatibility needed. The 32-byte key is
 // derived deterministically from ENCRYPTION_KEY via SHA-256.
@@ -8,7 +7,7 @@ import crypto from 'crypto';
 import { env } from '../config/env.js';
 
 const IV_LENGTH = 12; // 96-bit nonce, recommended for GCM
-const MAX_ENCRYPTED_LENGTH = 255;
+const MAX_CONTACT_ENCRYPTED_LENGTH = 255;
 
 function getKey(): Buffer {
   const secret = env.encryptionKey;
@@ -19,7 +18,8 @@ function getKey(): Buffer {
   return crypto.createHash('sha256').update(secret, 'utf8').digest();
 }
 
-export function encryptContact(plaintext: string): string {
+/** Encrypt an arbitrary secret (e.g. OAuth refresh tokens). No length cap. */
+export function encryptSecret(plaintext: string): string {
   if (!plaintext) return plaintext;
 
   const key = getKey();
@@ -29,15 +29,11 @@ export function encryptContact(plaintext: string): string {
   const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const authTag = cipher.getAuthTag();
 
-  const encoded = `${iv.toString('base64')}.${authTag.toString('base64')}.${ciphertext.toString('base64')}`;
-
-  if (encoded.length > MAX_ENCRYPTED_LENGTH) {
-    throw new Error(`Encrypted value exceeds ${MAX_ENCRYPTED_LENGTH} characters`);
-  }
-  return encoded;
+  return `${iv.toString('base64')}.${authTag.toString('base64')}.${ciphertext.toString('base64')}`;
 }
 
-export function decryptContact(encoded: string): string {
+/** Decrypt a value produced by encryptSecret / encryptContact. */
+export function decryptSecret(encoded: string): string {
   if (!encoded) return encoded;
 
   const parts = encoded.split('.');
@@ -56,4 +52,17 @@ export function decryptContact(encoded: string): string {
 
   const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   return plaintext.toString('utf8');
+}
+
+/** Encrypt user_b contact; enforces the VarChar(255) column budget. */
+export function encryptContact(plaintext: string): string {
+  const encoded = encryptSecret(plaintext);
+  if (encoded.length > MAX_CONTACT_ENCRYPTED_LENGTH) {
+    throw new Error(`Encrypted value exceeds ${MAX_CONTACT_ENCRYPTED_LENGTH} characters`);
+  }
+  return encoded;
+}
+
+export function decryptContact(encoded: string): string {
+  return decryptSecret(encoded);
 }

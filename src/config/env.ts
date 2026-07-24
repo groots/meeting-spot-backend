@@ -32,6 +32,11 @@ export const env = {
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+  // OAuth redirect for Google Calendar free/busy connect. Must match the
+  // authorized redirect URI in the Google Cloud console.
+  googleCalendarRedirectUri:
+    process.env.GOOGLE_CALENDAR_REDIRECT_URI ||
+    `http://localhost:${parseInt(process.env.PORT || '8081', 10)}/api/v1/auth/google/calendar/callback`,
 
   facebookAppId: process.env.FACEBOOK_APP_ID || '',
   facebookAppSecret: process.env.FACEBOOK_APP_SECRET || '',
