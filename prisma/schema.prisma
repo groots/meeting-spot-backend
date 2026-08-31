@@ -106,6 +106,7 @@ model MeetingRequest {
   userBContactType       ContactType          @map("user_b_contact_type")
   userBContactEncrypted  String               @map("user_b_contact_encrypted") @db.VarChar(255)
   locationType           String               @map("location_type") @db.VarChar(50)
+  preferredTimeOfDay     String?              @map("preferred_time_of_day") @db.VarChar(16)
   locationA              Json?                @map("location_a") @db.JsonB
   locationB              Json?                @map("location_b") @db.JsonB
   addressALat            Float                @map("address_a_lat") @db.DoublePrecision

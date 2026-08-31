@@ -7,7 +7,8 @@ import {
   FOOD_CUISINE_KEYWORDS,
   CUISINE_MIN_RATING,
 } from '../utils/constants.js';
-import { nearbySearch, buildPhotoUrl, distanceMatrix } from './placesClient.js';
+import { nearbySearch, buildPhotoUrl, distanceMatrix, placeDetails } from './placesClient.js';
+import { isOpenDuringTimeOfDay, type TimeOfDay } from '../utils/openingHours.js';
 
 const toRadians = (deg: number): number => (deg * Math.PI) / 180;
 const toDegrees = (rad: number): number => (rad * 180) / Math.PI;
@@ -35,6 +36,13 @@ export interface MeetingSpot {
   // with origins[0]=A, origins[1]=B today; generalizes to N participants later.
   travel_time_a_sec?: number | null;
   travel_time_b_sec?: number | null;
+  // Weekly opening hours from Google Place Details, enriched after ranking for
+  // the spots we actually return. null when Details had no data / no key.
+  opening_hours?: {
+    open_now?: boolean;
+    weekday_text?: string[];
+    periods?: unknown[];
+  } | null;
 }
 
 /**
@@ -368,12 +376,83 @@ export interface ProcessableRequest {
   maxResults?: number;
   // Fairness objective when isPremium (default 'minimax').
   objective?: FairnessObjective;
+  // Exclude venues not open during this time-of-day window (morning/afternoon/
+  // evening). When set, spots are enriched with Place Details hours and filtered
+  // by weekly opening periods before slicing to maxResults.
+  timeOfDay?: TimeOfDay | null;
 }
 
 export interface ProcessResult {
   success: boolean;
   suggestedOptions: MeetingSpot[] | null;
   status: 'completed' | 'failed';
+}
+
+// Fetch opening hours for a single spot (best-effort) and attach them. Returns a
+// new spot with `opening_hours` set (null when Details had no data).
+async function enrichWithHours(spot: MeetingSpot): Promise<MeetingSpot> {
+  const hours = await placeDetails(spot.place_id);
+  return { ...spot, opening_hours: hours };
+}
+
+/**
+ * Enrich ranked spots with opening hours (via Place Details) for display, and
+ * optionally filter to those open during `timeOfDay`.
+ *
+ * Place Details is billed per call, so we enrich lazily in ranked-order batches
+ * and — when filtering — stop once `maxResults` matches are collected (capped at
+ * the pool size). When not filtering, we still enrich only the top `maxResults`
+ * (the ones that will be shown). Degrades to the unfiltered/ranked input if
+ * Details returns nothing for the whole pool.
+ */
+async function enrichAndFilterByHours(
+  spots: MeetingSpot[],
+  maxResults: number,
+  timeOfDay: TimeOfDay | null
+): Promise<MeetingSpot[]> {
+  const BATCH = 5;
+
+  if (!timeOfDay) {
+    // No time filter: only enrich the spots we'll actually show.
+    const head = spots.slice(0, maxResults);
+    const enrichedHead: MeetingSpot[] = [];
+    for (let i = 0; i < head.length; i += BATCH) {
+      const batch = head.slice(i, i + BATCH);
+      enrichedHead.push(...(await Promise.all(batch.map(enrichWithHours))));
+    }
+    return [...enrichedHead, ...spots.slice(maxResults)];
+  }
+
+  // Time filter active: walk the ranked pool in batches, keep only spots that
+  // pass the window, and stop once we have enough matches.
+  const matches: MeetingSpot[] = [];
+  let anyHours = false;
+  for (let i = 0; i < spots.length && matches.length < maxResults; i += BATCH) {
+    const batch = spots.slice(i, i + BATCH);
+    const enriched = await Promise.all(batch.map(enrichWithHours));
+    for (const spot of enriched) {
+      if (spot.opening_hours) anyHours = true;
+      if (matches.length >= maxResults) break;
+      if (isOpenDuringTimeOfDay(spot.opening_hours?.periods as never, timeOfDay)) {
+        matches.push(spot);
+      }
+    }
+  }
+
+  // If Place Details yielded no hours at all (no key / API down), we can't
+  // filter meaningfully — degrade to the ranked pool so the user still gets
+  // results rather than an empty list.
+  if (!anyHours && matches.length === 0) {
+    const head = spots.slice(0, maxResults);
+    const enrichedHead: MeetingSpot[] = [];
+    for (let i = 0; i < head.length; i += BATCH) {
+      const batch = head.slice(i, i + BATCH);
+      enrichedHead.push(...(await Promise.all(batch.map(enrichWithHours))));
+    }
+    return enrichedHead;
+  }
+
+  return matches;
 }
 
 /**
@@ -421,6 +500,7 @@ export async function processMeetingRequest(
 
     const openNow = request.openNow ?? false;
     const finalCount = request.maxResults ?? 5;
+    const timeOfDay = request.timeOfDay ?? null;
 
     // Discovery ladder: progressively widen and relax the query until something
     // is found. The first rung honors an optional radius override (default 1500)
@@ -432,8 +512,9 @@ export async function processMeetingRequest(
       { radius: 5000, category: 'Food & Drink', subcategory: null },
     ];
 
-    // Discover a wide pool (10) so the fairness re-rank has candidates to choose
-    // from before we slice down to finalCount.
+    // Discover a wide pool (20 — one Nearby Search page) so the fairness re-rank
+    // AND time-of-day filtering have candidates to choose from before we slice
+    // down to finalCount.
     let meetingSpots: MeetingSpot[] = [];
     for (const rung of rungs) {
       meetingSpots = await findMeetingSpots(
@@ -442,7 +523,7 @@ export async function processMeetingRequest(
         rung.radius,
         rung.category,
         rung.subcategory,
-        10,
+        20,
         openNow
       );
       if (meetingSpots.length > 0) {
@@ -466,9 +547,14 @@ export async function processMeetingRequest(
       });
     }
 
+    // Enrich the ranked pool with opening hours (for display) and, when a
+    // time-of-day window is set, keep only spots open during it — collecting up
+    // to finalCount matches before stopping to limit Place Details calls.
+    const enriched = await enrichAndFilterByHours(meetingSpots, finalCount, timeOfDay);
+
     return {
       success: true,
-      suggestedOptions: meetingSpots.slice(0, finalCount),
+      suggestedOptions: enriched.slice(0, finalCount),
       status: 'completed',
     };
   } catch {

@@ -4,6 +4,7 @@
 jest.mock('../src/services/placesClient', () => ({
   __esModule: true,
   nearbySearch: jest.fn(),
+  placeDetails: jest.fn(),
   buildPhotoUrl: jest.fn((ref: string) => `https://photo/${ref}`),
 }));
 
@@ -15,9 +16,17 @@ import {
   findMeetingSpots,
   processMeetingRequest,
 } from '../src/services/locationService';
-import { nearbySearch } from '../src/services/placesClient';
+import { nearbySearch, placeDetails } from '../src/services/placesClient';
 
 const mockNearby = nearbySearch as jest.Mock;
+const mockPlaceDetails = placeDetails as jest.Mock;
+
+// Default: Place Details returns nothing (no hours). Individual tests override
+// this to exercise time-of-day filtering and hours enrichment.
+beforeEach(() => {
+  mockPlaceDetails.mockReset();
+  mockPlaceDetails.mockResolvedValue(null);
+});
 const TOL = 1e-9;
 
 describe('locationService geo math (golden parity vs Python)', () => {
@@ -210,5 +219,78 @@ describe('processMeetingRequest', () => {
       locationType: 'Food & Drink',
     });
     expect(result.status).toBe('failed');
+  });
+
+  const namedPlace = (id: string) => ({
+    name: id,
+    place_id: id,
+    vicinity: 'x',
+    geometry: { location: { lat: 37, lng: -122 } },
+    rating: 4.0,
+    types: ['restaurant'],
+  });
+
+  // Morning-only vs dinner-only opening periods for the coffee scenario.
+  const MORNING_PERIODS = [{ open: { day: 1, time: '0700' }, close: { day: 1, time: '1100' } }];
+  const DINNER_PERIODS = [{ open: { day: 1, time: '1700' }, close: { day: 1, time: '2200' } }];
+
+  it('attaches opening_hours to returned spots (no filter)', async () => {
+    mockNearby.mockResolvedValue([namedPlace('a')]);
+    mockPlaceDetails.mockResolvedValue({
+      open_now: true,
+      weekday_text: ['Monday: 7:00 AM – 11:00 AM'],
+      periods: MORNING_PERIODS,
+    });
+    const result = await processMeetingRequest({
+      requestId: 'r1',
+      addressALat: 37.0,
+      addressALon: -122.0,
+      addressBLat: 37.1,
+      addressBLon: -122.1,
+      locationType: 'Food & Drink',
+    });
+    expect(result.status).toBe('completed');
+    expect(result.suggestedOptions?.[0].opening_hours?.weekday_text).toEqual([
+      'Monday: 7:00 AM – 11:00 AM',
+    ]);
+  });
+
+  it('excludes venues closed during the requested time-of-day window', async () => {
+    mockNearby.mockResolvedValue([namedPlace('cafe'), namedPlace('dinner')]);
+    mockPlaceDetails.mockImplementation((placeId: string) =>
+      Promise.resolve(
+        placeId === 'cafe'
+          ? { weekday_text: ['Mon: 7–11'], periods: MORNING_PERIODS }
+          : { weekday_text: ['Mon: 5–10pm'], periods: DINNER_PERIODS }
+      )
+    );
+    const result = await processMeetingRequest({
+      requestId: 'r1',
+      addressALat: 37.0,
+      addressALon: -122.0,
+      addressBLat: 37.1,
+      addressBLon: -122.1,
+      locationType: 'Food & Drink',
+      timeOfDay: 'morning',
+    });
+    expect(result.status).toBe('completed');
+    const ids = result.suggestedOptions?.map((s) => s.place_id);
+    expect(ids).toEqual(['cafe']);
+  });
+
+  it('degrades to ranked results when Place Details yields no hours', async () => {
+    mockNearby.mockResolvedValue([namedPlace('a'), namedPlace('b')]);
+    mockPlaceDetails.mockResolvedValue(null); // no key / API down
+    const result = await processMeetingRequest({
+      requestId: 'r1',
+      addressALat: 37.0,
+      addressALon: -122.0,
+      addressBLat: 37.1,
+      addressBLon: -122.1,
+      locationType: 'Food & Drink',
+      timeOfDay: 'morning',
+    });
+    expect(result.status).toBe('completed');
+    expect(result.suggestedOptions?.length).toBeGreaterThan(0);
   });
 });

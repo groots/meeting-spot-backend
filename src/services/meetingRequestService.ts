@@ -92,6 +92,9 @@ export interface CreateMeetingRequestInput {
   userBContactType: ContactType;
   userBContact: string;
   selectionMode?: SelectionMode;
+  // Preferred time-of-day window ('morning'/'afternoon'/'evening') used to
+  // filter suggestions by opening hours. null = no preference.
+  preferredTimeOfDay?: string | null;
 }
 
 export async function createMeetingRequest(
@@ -111,6 +114,7 @@ export async function createMeetingRequest(
       userBContactType: input.userBContactType,
       userBContactEncrypted: encryptContact(input.userBContact),
       selectionMode: input.selectionMode ?? SelectionMode.OWNER,
+      preferredTimeOfDay: input.preferredTimeOfDay ?? null,
       tokenB,
       status: MeetingRequestStatus.PENDING_B_ADDRESS,
       createdAt: now,
@@ -213,6 +217,7 @@ export function toOwnerDto(request: MeetingRequest): Record<string, unknown> {
     user_b_contact: userBContact,
     user_b_contact_type: contactTypeValue(request.userBContactType),
     location_type: request.locationType,
+    preferred_time_of_day: request.preferredTimeOfDay,
     status: statusValue(request.status),
     selection_mode: selectionModeValue(request.selectionMode),
     selected_place_google_id: request.selectedPlaceGoogleId,

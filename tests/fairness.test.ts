@@ -5,6 +5,7 @@ jest.mock('../src/services/placesClient', () => ({
   __esModule: true,
   nearbySearch: jest.fn(),
   distanceMatrix: jest.fn(),
+  placeDetails: jest.fn().mockResolvedValue(null),
   buildPhotoUrl: jest.fn((ref: string) => `https://photo/${ref}`),
 }));
 

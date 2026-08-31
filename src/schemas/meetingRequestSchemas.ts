@@ -9,6 +9,7 @@ export const createMeetingRequestSchema = z
     user_b_contact_type: z.string().trim().min(1, 'user_b_contact_type is required'),
     user_b_contact: z.string().trim().min(1, 'user_b_contact is required'),
     selection_mode: z.enum(['owner', 'mutual']).optional(),
+    time_of_day: z.enum(['morning', 'afternoon', 'evening']).optional(),
   })
   .passthrough();
 
@@ -84,5 +85,7 @@ export const refineSchema = z
     radius: z.number().int().min(100).max(50000).optional(),
     max_results: z.number().int().min(1).max(20).optional(),
     objective: z.enum(['minimax', 'balance']).optional(),
+    // Empty string clears the stored preference; the three windows filter.
+    time_of_day: z.enum(['morning', 'afternoon', 'evening', '']).optional(),
   })
   .passthrough();

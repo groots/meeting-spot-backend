@@ -1,7 +1,12 @@
 // Thin client over the Google Places Nearby Search API. The result
 // filtering/sorting lives in locationService (ported from location.py).
 import axios from 'axios';
-import { PLACES_NEARBY_URL, PLACE_PHOTO_URL, DISTANCE_MATRIX_URL } from '../utils/constants.js';
+import {
+  PLACES_NEARBY_URL,
+  PLACE_DETAILS_URL,
+  PLACE_PHOTO_URL,
+  DISTANCE_MATRIX_URL,
+} from '../utils/constants.js';
 import { env } from '../config/env.js';
 
 export interface GooglePlacePhoto {
@@ -60,6 +65,61 @@ export async function nearbySearch(params: NearbySearchParams): Promise<GooglePl
     return [];
   }
   return (data.results ?? []) as GooglePlace[];
+}
+
+// A single opening period from Google Place Details. `open`/`close` carry a
+// `day` (0=Sunday..6=Saturday) and a 4-digit `time` ("HHMM"). A 24h period has
+// an `open` with no `close`.
+export interface GoogleOpeningPeriod {
+  open?: { day?: number; time?: string };
+  close?: { day?: number; time?: string };
+}
+
+// Normalized opening-hours shape used across the pipeline. Mirrors the subset of
+// Google's `opening_hours` we care about: the right-now boolean, the weekly
+// human-readable schedule, and the machine-readable periods for time filtering.
+export interface OpeningHours {
+  open_now?: boolean;
+  weekday_text?: string[];
+  periods?: GoogleOpeningPeriod[];
+}
+
+/**
+ * Calls Google Places Place Details for a single place, requesting only the
+ * `opening_hours` field. Returns a normalized OpeningHours object, or null when
+ * there's no key, the API errors, or no hours are available — mirroring the
+ * graceful-degradation style of nearbySearch so callers treat "no data"
+ * uniformly (they keep the venue, just without hours).
+ */
+export async function placeDetails(
+  placeId: string,
+  apiKey?: string
+): Promise<OpeningHours | null> {
+  const key = apiKey ?? env.googleMapsApiKey;
+  if (!key || !placeId) {
+    return null;
+  }
+
+  try {
+    const response = await axios.get(PLACE_DETAILS_URL, {
+      params: { place_id: placeId, fields: 'opening_hours', key },
+    });
+    const data = response.data;
+    if (data.status !== 'OK') {
+      return null;
+    }
+    const hours = data.result?.opening_hours;
+    if (!hours) {
+      return null;
+    }
+    return {
+      open_now: typeof hours.open_now === 'boolean' ? hours.open_now : undefined,
+      weekday_text: Array.isArray(hours.weekday_text) ? hours.weekday_text : undefined,
+      periods: Array.isArray(hours.periods) ? (hours.periods as GoogleOpeningPeriod[]) : undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export interface LatLon {

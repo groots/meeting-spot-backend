@@ -12,6 +12,7 @@ import * as meetingRequestService from '../services/meetingRequestService.js';
 import * as userService from '../services/userService.js';
 import { geocodeAddress } from '../services/geocodingService.js';
 import { processMeetingRequest } from '../services/locationService.js';
+import { parseTimeOfDay } from '../utils/openingHours.js';
 import { isPremium } from '../services/subscriptionService.js';
 import { sendMeetingInviteEmail, sendMeetingScheduledEmail } from '../services/emailService.js';
 import { sendSms } from '../services/smsService.js';
@@ -34,8 +35,14 @@ export async function createMeetingRequest(
     if (!userId) throw Unauthorized('Not authenticated');
 
     const body = req.body ?? {};
-    const { address_a, location_type, user_b_contact_type, user_b_contact, selection_mode } =
-      body;
+    const {
+      address_a,
+      location_type,
+      user_b_contact_type,
+      user_b_contact,
+      selection_mode,
+      time_of_day,
+    } = body;
 
     if (!address_a || !location_type || !user_b_contact_type || !user_b_contact) {
       throw BadRequest('Missing required fields');
@@ -47,6 +54,8 @@ export async function createMeetingRequest(
     }
 
     const selectionMode = meetingRequestService.parseSelectionMode(selection_mode);
+    // Optional time-of-day preference; invalid values are ignored (no filter).
+    const preferredTimeOfDay = parseTimeOfDay(time_of_day);
 
     // Geocode address_a (fixes the Python dummy-coordinate bug).
     const geo = await geocodeAddress(address_a);
@@ -70,6 +79,7 @@ export async function createMeetingRequest(
       userBContactType: contactType,
       userBContact: user_b_contact,
       selectionMode,
+      preferredTimeOfDay,
     });
 
     // Email invite to User B (only for EMAIL contact type).
@@ -277,6 +287,7 @@ export async function respondToMeetingRequest(
         addressBLon: address_b_lon,
         locationType: request.locationType,
         isPremium: ownerIsPremium,
+        timeOfDay: parseTimeOfDay(request.preferredTimeOfDay),
       });
 
       await meetingRequestService.updateRequest(request.requestId, {
@@ -484,6 +495,12 @@ export async function refineSuggestions(
     }
 
     const body = req.body ?? {};
+    // Time-of-day: an explicit body value overrides; otherwise fall back to the
+    // stored preference. A body value of null/'' (via parseTimeOfDay) clears it.
+    const timeOfDay =
+      body.time_of_day !== undefined
+        ? parseTimeOfDay(body.time_of_day)
+        : parseTimeOfDay(request.preferredTimeOfDay);
     const result = await processMeetingRequest({
       requestId: request.requestId,
       addressALat: request.addressALat,
@@ -496,6 +513,7 @@ export async function refineSuggestions(
       radius: body.radius,
       maxResults: body.max_results,
       objective: body.objective,
+      timeOfDay,
     });
 
     if (result.status !== 'completed' || !result.suggestedOptions) {
